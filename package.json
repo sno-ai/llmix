@@ -1,0 +1,72 @@
+{
+  "name": "llmix",
+  "version": "1.0.0",
+  "description": "Config-driven LLM client with three-tier caching and AI SDK v5 integration",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "yaml": "^2.6.0",
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@ai-sdk/google": ">=1.0.0",
+    "@ai-sdk/openai": ">=1.0.0",
+    "ai": ">=4.0.0",
+    "ioredis": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@ai-sdk/google": {
+      "optional": true
+    },
+    "@ai-sdk/openai": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    },
+    "ioredis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ai-sdk/google": "^1.0.0",
+    "@ai-sdk/openai": "^1.0.0",
+    "@types/node": "^22.0.0",
+    "ai": "^4.0.0",
+    "ioredis": "^5.4.1",
+    "typescript": "^5.7.0"
+  },
+  "keywords": [
+    "llm",
+    "ai",
+    "config",
+    "openai",
+    "anthropic",
+    "google",
+    "deepseek",
+    "cache",
+    "redis",
+    "lru"
+  ],
+  "license": "MIT"
+}
