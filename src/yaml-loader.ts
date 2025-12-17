@@ -439,6 +439,7 @@ export const LLMConfigSchema = z
     description: z.string().optional(),
     deprecated: z.boolean().optional(),
     tags: z.array(z.string()).optional(),
+    bypassGateway: z.boolean().optional(),
   })
   .strict()
   .superRefine((data, ctx) => {

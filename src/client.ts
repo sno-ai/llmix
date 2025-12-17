@@ -98,12 +98,17 @@ interface ParsedProfile {
 
 /**
  * AI SDK v5 usage format
- * Handles different field naming between providers
+ * AI SDK v5 uses inputTokens/outputTokens (not promptTokens/completionTokens)
+ * LH: Added cachedInputTokens for OpenAI/Anthropic prompt caching support
  */
 interface AISDKUsage {
-  promptTokens?: number;
-  completionTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
   totalTokens?: number;
+  /** Cached input tokens (OpenAI/Anthropic prompt caching) */
+  cachedInputTokens?: number;
+  /** Reasoning tokens (OpenAI o-series models) */
+  reasoningTokens?: number;
 }
 
 // =============================================================================
@@ -302,15 +307,17 @@ function deriveCapabilities(
 
 /**
  * Extract usage from AI SDK response
+ * LH: Now extracts cachedInputTokens for Anthropic prompt caching
  */
 function extractUsage(usage: AISDKUsage | undefined): LLMUsage {
-  const inputTokens = usage?.promptTokens ?? 0;
-  const outputTokens = usage?.completionTokens ?? 0;
+  const inputTokens = usage?.inputTokens ?? 0;
+  const outputTokens = usage?.outputTokens ?? 0;
+  const cachedInputTokens = usage?.cachedInputTokens;
   return {
     inputTokens,
     outputTokens,
     totalTokens: usage?.totalTokens ?? inputTokens + outputTokens,
-    cachedInputTokens: undefined,
+    cachedInputTokens: cachedInputTokens ?? undefined,
   };
 }
 
@@ -407,8 +414,16 @@ export class LLMClient {
     };
 
     try {
+      // LH: Bypass gateway if config or override specifies - use direct provider URLs for native features
+      const shouldBypassGateway = options.overrides?.bypassGateway ?? config.bypassGateway;
+      const effectiveProviderUrls = shouldBypassGateway ? undefined : this.providerUrls;
+      if (shouldBypassGateway) {
+        console.log(
+          `[LLMix] Bypassing AI Gateway for ${options.profile} (direct ${config.provider} API)`
+        );
+      }
       // Get provider model instance
-      const model = getProviderModel(config.provider, effectiveModel, this.providerUrls);
+      const model = getProviderModel(config.provider, effectiveModel, effectiveProviderUrls);
 
       // LH: Setup abort controller for timeout handling
       const abortController = new AbortController();
@@ -448,10 +463,29 @@ export class LLMClient {
 
       // Extract usage
       const usage = extractUsage(result.usage as AISDKUsage | undefined);
+      const latencyMs = Date.now() - startTime;
+
+      // LH: Log prompt cache status for production debugging (visible in Docker logs)
+      // Only log for prompts that could be cached (>1024 tokens)
+      if (usage.inputTokens >= 1024) {
+        if (usage.cachedInputTokens && usage.cachedInputTokens > 0) {
+          const cacheHitPercent = Math.round((usage.cachedInputTokens / usage.inputTokens) * 100);
+          const tokensSaved = usage.cachedInputTokens;
+          console.log(
+            `[LLMix] ✅ CACHE HIT | profile=${options.profile} | model=${effectiveModel} | ` +
+              `cached=${tokensSaved}/${usage.inputTokens} (${cacheHitPercent}%) | latency=${latencyMs}ms`
+          );
+        } else if (shouldBypassGateway) {
+          // Only log cache miss for profiles with bypassGateway (expecting native cache)
+          console.log(
+            `[LLMix] ⏳ CACHE MISS | profile=${options.profile} | model=${effectiveModel} | ` +
+              `tokens=${usage.inputTokens} | latency=${latencyMs}ms | (first request or cache expired)`
+          );
+        }
+      }
 
       // LH: Track telemetry fire-and-forget with timeout (non-blocking)
       // Prevents slow telemetry from blocking user responses
-      const latencyMs = Date.now() - startTime;
       void this.trackTelemetryNonBlocking({
         config,
         effectiveModel,

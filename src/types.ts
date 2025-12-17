@@ -332,6 +332,18 @@ export interface LLMConfig {
 
   /** Tags for organization/filtering (metadata) */
   tags?: string[];
+
+  /**
+   * Bypass AI Gateway (e.g., Cloudflare) and use direct provider URLs
+   *
+   * When true, ignores configured gateway URLs and calls providers directly.
+   * Use this for profiles that need provider-native features like:
+   * - OpenAI prompt caching (promptCacheKey/promptCacheRetention)
+   * - Provider-specific options not supported by gateways
+   *
+   * @default false
+   */
+  bypassGateway?: boolean;
 }
 
 /**
@@ -545,6 +557,9 @@ export interface RuntimeOverrides {
 
   /** Override provider options */
   providerOptions?: Partial<ProviderOptions>;
+
+  /** Bypass AI Gateway for native provider features (e.g., OpenAI prompt caching) */
+  bypassGateway?: boolean;
 }
 
 /**
