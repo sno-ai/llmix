@@ -81,6 +81,9 @@ export interface LLMConfigLoaderLogger {
  */
 export type Provider = "openai" | "anthropic" | "google" | "deepseek";
 
+/** Provider type with unknown for error cases (config load failures) */
+export type ProviderOrUnknown = Provider | "unknown";
+
 /**
  * Common AI SDK v5 parameters
  *
@@ -616,14 +619,20 @@ export interface LLMResponse {
   /** Model used for generation */
   model: string;
 
-  /** Provider used for generation */
-  provider: Provider;
+  /**
+   * Provider used for generation
+   * LH: "unknown" when config load fails (before provider is resolved)
+   */
+  provider: ProviderOrUnknown;
 
   /** Token usage statistics */
   usage: LLMUsage;
 
-  /** The resolved config that was used */
-  config: ResolvedLLMConfig;
+  /**
+   * The resolved config that was used
+   * LH: undefined when config load fails (before config is resolved)
+   */
+  config?: ResolvedLLMConfig;
 
   /** Whether the call succeeded */
   success: boolean;

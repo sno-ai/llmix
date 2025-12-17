@@ -43,7 +43,12 @@
 // MAIN CLASSES & FACTORIES
 // =============================================================================
 
-export { createLLMClient, LLMClient, type LLMClientConfig } from "./client";
+export {
+  createLLMClient,
+  LLMClient,
+  type LLMClientConfig,
+  type ProviderUrlConfig,
+} from "./client";
 export { createLLMConfigLoader, LLMConfigLoader } from "./config-loader";
 
 // =============================================================================
@@ -80,6 +85,7 @@ export type {
   OpenAIProviderOptions,
   Provider,
   ProviderOptions,
+  ProviderOrUnknown,
   ResolvedConfigResult,
   ResolvedLLMConfig,
   RuntimeOverrides,
