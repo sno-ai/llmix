@@ -632,7 +632,7 @@ export class LLMConfigLoader {
  * ```typescript
  * const loader = createLLMConfigLoader({
  *   configDir: '/app/config/llm',
- *   redisUrl: process.env.REDIS_URL,
+ *   redisUrl: process.env.REDIS_KV_URL,
  * });
  *
  * // Initialize (validates base config, connects Redis)

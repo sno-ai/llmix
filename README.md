@@ -61,7 +61,7 @@ import { createLLMConfigLoader, createLLMClient } from 'llmix';
 // 1. Create loader
 const loader = createLLMConfigLoader({
   configDir: './config/llm',
-  redisUrl: process.env.REDIS_URL,  // Optional
+  redisUrl: process.env.REDIS_KV_URL,  // Optional - use REDIS_KV_URL for consistency
 });
 await loader.init();
 

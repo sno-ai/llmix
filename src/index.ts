@@ -15,7 +15,7 @@
  * // Create and initialize loader
  * const loader = createLLMConfigLoader({
  *   configDir: '/app/config/llm',
- *   redisUrl: process.env.REDIS_URL,
+ *   redisUrl: process.env.REDIS_KV_URL,
  * });
  * await loader.init();
  *
