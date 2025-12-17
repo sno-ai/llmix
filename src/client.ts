@@ -434,6 +434,11 @@ export class LLMClient {
       };
 
       // Make the LLM call (assertion needed for AI SDK type flexibility)
+      // LH: Log model info for debugging/A/B test verification
+      console.log(
+        `[LLMix] Calling ${config.provider}/${effectiveModel} (profile: ${options.profile}, version: ${config.version})`
+      );
+
       let result;
       try {
         result = await generateText(generateOptions as Parameters<typeof generateText>[0]);
