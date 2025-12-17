@@ -22,8 +22,10 @@
  * ```
  */
 
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel } from "ai";
 import { generateText } from "ai";
 import type { LLMConfigLoader } from "./config-loader";
@@ -45,6 +47,24 @@ import type {
 // =============================================================================
 
 /**
+ * Provider base URL configuration for CF AI Gateway support
+ */
+export interface ProviderUrlConfig {
+  /** OpenAI base URL (for CF AI Gateway) */
+  openaiBaseUrl?: string;
+  /** Anthropic base URL (for CF AI Gateway) */
+  anthropicBaseUrl?: string;
+  /** Google/Gemini base URL (for CF AI Gateway) */
+  geminiBaseUrl?: string;
+  /** OpenRouter base URL (for CF AI Gateway) */
+  openRouterBaseUrl?: string;
+  /** OpenRouter API key (falls back to env var) */
+  openRouterApiKey?: string;
+  /** Whether CF AI Gateway is enabled (for debug logging) */
+  useCfAiGateway?: boolean;
+}
+
+/**
  * Configuration for LLMClient
  */
 export interface LLMClientConfig {
@@ -61,6 +81,12 @@ export interface LLMClientConfig {
    * Inject your implementation to integrate with PostHog, Langfuse, etc.
    */
   telemetry?: LLMixTelemetryProvider;
+
+  /**
+   * Provider URL configuration for CF AI Gateway support
+   * If not provided, uses provider defaults (direct API calls)
+   */
+  providerUrls?: ProviderUrlConfig;
 }
 
 /**
@@ -88,8 +114,37 @@ interface AISDKUsage {
 /** Models that support OpenAI Batch API */
 const BATCH_CAPABLE_MODEL_PATTERNS = [/^gpt-4/, /^gpt-5/, /^o1/, /^o3/];
 
-/** DeepSeek API base URL */
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+/**
+ * LH: DeepSeek model mappings for OpenRouter
+ * Maps config model names to OpenRouter format (provider/model)
+ */
+const DEEPSEEK_MODEL_MAPPINGS: Record<string, string> = {
+  "deepseek-chat": "deepseek/deepseek-chat-v3-0324",
+  "deepseek-v3": "deepseek/deepseek-chat-v3-0324",
+  "deepseek-v3.2-speciale": "deepseek/deepseek-chat-v3-0324:free", // Use free tier for speciale
+  "deepseek-reasoner": "deepseek/deepseek-reasoner",
+};
+
+/**
+ * LH: Telemetry payload capture control
+ * Set LLMIX_CAPTURE_TELEMETRY_PAYLOAD=true to include full messages/output in telemetry
+ * Default: false (redacted for privacy/PII protection)
+ */
+const CAPTURE_TELEMETRY_PAYLOAD = process.env.LLMIX_CAPTURE_TELEMETRY_PAYLOAD === "true";
+
+/**
+ * LH: Default timeout for LLM calls (in milliseconds)
+ * Set LLMIX_CALL_TIMEOUT_MS to override (default: 120000 = 2 minutes)
+ * Prevents hanging requests from tying up resources indefinitely
+ */
+const DEFAULT_CALL_TIMEOUT_MS = Number(process.env.LLMIX_CALL_TIMEOUT_MS) || 120000;
+
+/**
+ * LH: Telemetry timeout (in milliseconds)
+ * Prevents slow telemetry from blocking responses
+ * Default: 2000ms (2 seconds)
+ */
+const TELEMETRY_TIMEOUT_MS = 2000;
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -126,58 +181,119 @@ function isBatchCapable(model: string): boolean {
 /**
  * Get provider model instance for AI SDK v5
  *
+ * LH: Added CF AI Gateway support via baseURL configuration.
+ * Base URLs are passed via ProviderUrlConfig which handles:
+ * - Provider-specific gateway URLs
+ * - Graceful fallback to undefined (uses provider defaults)
+ *
  * @param provider - Provider name
  * @param model - Model ID
+ * @param urls - Optional provider URL config for CF AI Gateway
  * @returns AI SDK model instance
  */
-function getProviderModel(provider: Provider, model: string): LanguageModel {
+function getProviderModel(
+  provider: Provider,
+  model: string,
+  urls?: ProviderUrlConfig
+): LanguageModel {
+  // LH: Log when CF AI Gateway is being used (debug level)
+  if (urls?.useCfAiGateway) {
+    console.debug(`[LLMix] Using CF AI Gateway for provider: ${provider}`);
+  }
+
   switch (provider) {
     case "openai": {
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) {
-        throw new Error("OPENAI_API_KEY environment variable is required");
+        throw new Error(
+          "[LLMix] OPENAI_API_KEY environment variable is required for OpenAI provider"
+        );
       }
-      const openai = createOpenAI({ apiKey });
+      // LH: Pass baseURL for CF AI Gateway support (undefined = provider default)
+      const openai = createOpenAI({ apiKey, baseURL: urls?.openaiBaseUrl });
       return openai(model);
     }
     case "anthropic": {
-      // Anthropic provider requires @ai-sdk/anthropic package
-      // Currently not installed - throw clear error
-      throw new Error(
-        "Anthropic provider requires @ai-sdk/anthropic package. " +
-          "Install with: bun add @ai-sdk/anthropic"
-      );
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        throw new Error(
+          "[LLMix] ANTHROPIC_API_KEY environment variable is required for Anthropic provider"
+        );
+      }
+      // LH: Pass baseURL for CF AI Gateway support (undefined = provider default)
+      const anthropic = createAnthropic({ apiKey, baseURL: urls?.anthropicBaseUrl });
+      return anthropic(model);
     }
     case "google": {
       const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
       if (!apiKey) {
-        throw new Error("GOOGLE_GENERATIVE_AI_API_KEY environment variable is required");
+        throw new Error(
+          "[LLMix] GOOGLE_GENERATIVE_AI_API_KEY environment variable is required for Google provider"
+        );
       }
-      const google = createGoogleGenerativeAI({ apiKey });
+      // LH: Pass baseURL for CF AI Gateway support (undefined = provider default)
+      // Note: geminiBaseUrl includes /v1beta suffix when using CF AI Gateway
+      const google = createGoogleGenerativeAI({ apiKey, baseURL: urls?.geminiBaseUrl });
       return google(model);
     }
     case "deepseek": {
-      const apiKey = process.env.DEEPSEEK_API_KEY;
+      // LH: Route DeepSeek models through OpenRouter for better reliability
+      // OpenRouter provides unified access, automatic failover, and better rate limit handling
+      const apiKey = urls?.openRouterApiKey ?? process.env.OPENROUTER_API_KEY;
       if (!apiKey) {
-        throw new Error("DEEPSEEK_API_KEY environment variable is required");
+        throw new Error(
+          "[LLMix] OPENROUTER_API_KEY environment variable is required for DeepSeek provider (via OpenRouter)"
+        );
       }
-      // DeepSeek uses OpenAI-compatible API
-      const deepseek = createOpenAI({ apiKey, baseURL: DEEPSEEK_BASE_URL });
-      return deepseek(model);
+
+      // Map model name to OpenRouter format (provider/model)
+      const openRouterModel = DEEPSEEK_MODEL_MAPPINGS[model] ?? `deepseek/${model}`;
+
+      // LH: Use CF AI Gateway for OpenRouter if enabled
+      if (urls?.useCfAiGateway && urls.openRouterBaseUrl) {
+        console.debug(
+          `[LLMix] Routing DeepSeek "${model}" via OpenRouter (CF Gateway) as "${openRouterModel}"`
+        );
+      } else {
+        console.debug(
+          `[LLMix] Routing DeepSeek "${model}" via OpenRouter (direct) as "${openRouterModel}"`
+        );
+      }
+
+      const openrouter = createOpenRouter({
+        apiKey,
+        baseURL: urls?.openRouterBaseUrl, // undefined = OpenRouter default
+      });
+      return openrouter(openRouterModel);
+    }
+    default: {
+      // LH: Explicit guard against unsupported providers at runtime
+      // This should never happen if types are correct, but guards against bad config
+      const exhaustiveCheck: never = provider;
+      throw new Error(
+        `[LLMix] Unsupported provider: ${exhaustiveCheck}. Supported: openai, anthropic, google, deepseek`
+      );
     }
   }
 }
 
 /**
  * Derive capabilities from resolved config
+ *
+ * @param config - Resolved LLM config
+ * @param effectiveModel - The actual model that will be used (after overrides)
  */
-function deriveCapabilities(config: ResolvedLLMConfig): ConfigCapabilities {
+function deriveCapabilities(
+  config: ResolvedLLMConfig,
+  effectiveModel?: string
+): ConfigCapabilities {
+  const model = effectiveModel ?? config.model;
   return {
     provider: config.provider,
     // All supported providers are proprietary
     isProprietary: true,
     // Only OpenAI with batch-capable models supports batch API
-    supportsOpenAIBatch: config.provider === "openai" && isBatchCapable(config.model),
+    supportsOpenAIBatch: config.provider === "openai" && isBatchCapable(model),
   };
 }
 
@@ -195,7 +311,6 @@ function extractUsage(usage: AISDKUsage | undefined): LLMUsage {
   };
 }
 
-
 // =============================================================================
 // LLM CLIENT CLASS
 // =============================================================================
@@ -209,11 +324,13 @@ export class LLMClient {
   private readonly loader: LLMConfigLoader;
   private readonly defaultScope?: string;
   private readonly telemetry?: LLMixTelemetryProvider;
+  private readonly providerUrls?: ProviderUrlConfig;
 
   constructor(config: LLMClientConfig) {
     this.loader = config.loader;
     this.defaultScope = config.defaultScope;
     this.telemetry = config.telemetry;
+    this.providerUrls = config.providerUrls;
   }
 
   /**
@@ -237,14 +354,43 @@ export class LLMClient {
     // Parse profile string
     const { module, profile } = parseProfile(options.profile);
 
-    // Load config via loader
-    const config = await this.loader.loadConfig({
-      scope: options.scope ?? this.defaultScope,
-      module,
-      profile,
-      userId: options.userId,
-      version: options.version,
-    });
+    // LH: Wrap config loading in try/catch for consistent error response
+    let config: ResolvedLLMConfig;
+    try {
+      config = await this.loader.loadConfig({
+        scope: options.scope ?? this.defaultScope,
+        module,
+        profile,
+        userId: options.userId,
+        version: options.version,
+      });
+    } catch (configError) {
+      const latencyMs = Date.now() - startTime;
+      const errorMessage = configError instanceof Error ? configError.message : String(configError);
+      const errorStack = configError instanceof Error ? configError.stack : undefined;
+
+      // Log config load failure with context
+      console.error(`[LLMix] Config load failed for profile ${options.profile}`, {
+        error: errorMessage,
+        stack: errorStack,
+        module,
+        profile,
+        scope: options.scope ?? this.defaultScope,
+        latencyMs,
+      });
+
+      // LH: Return consistent error response with proper types for error case
+      // provider: "unknown" and config: undefined are type-safe for config load failures
+      return {
+        content: "",
+        model: options.overrides?.model ?? "unknown",
+        provider: "unknown", // Config load failed, provider is unknown
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        config: undefined, // No config available on config load failure
+        success: false,
+        error: `[LLMix] Config load failed: ${errorMessage}`,
+      };
+    }
 
     // Apply runtime overrides
     const effectiveModel = options.overrides?.model ?? config.model;
@@ -259,7 +405,13 @@ export class LLMClient {
 
     try {
       // Get provider model instance
-      const model = getProviderModel(config.provider, effectiveModel);
+      const model = getProviderModel(config.provider, effectiveModel, this.providerUrls);
+
+      // LH: Setup abort controller for timeout handling
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => {
+        abortController.abort();
+      }, DEFAULT_CALL_TIMEOUT_MS);
 
       // Build generateText options - direct AI SDK v5 mapping
       // Use type assertion for flexibility with different message formats
@@ -274,33 +426,34 @@ export class LLMClient {
             [config.provider]: effectiveProviderOptions[config.provider],
           },
         }),
+        // LH: Add abort signal for timeout handling
+        abortSignal: abortController.signal,
       };
 
       // Make the LLM call (assertion needed for AI SDK type flexibility)
-      const result = await generateText(generateOptions as Parameters<typeof generateText>[0]);
+      let result;
+      try {
+        result = await generateText(generateOptions as Parameters<typeof generateText>[0]);
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       // Extract usage
       const usage = extractUsage(result.usage as AISDKUsage | undefined);
 
-      // Track telemetry (best-effort - don't fail successful LLM calls)
+      // LH: Track telemetry fire-and-forget with timeout (non-blocking)
+      // Prevents slow telemetry from blocking user responses
       const latencyMs = Date.now() - startTime;
-      try {
-        await this.trackTelemetry({
-          config,
-          effectiveModel,
-          usage,
-          latencyMs,
-          success: true,
-          messages: options.messages,
-          output: result.text,
-          telemetryContext: options.telemetry,
-        });
-      } catch (telemetryError) {
-        // Log but don't fail the successful LLM call
-        console.warn(
-          `[LLMClient] Telemetry failed for ${config.configId}: ${String(telemetryError)}`
-        );
-      }
+      void this.trackTelemetryNonBlocking({
+        config,
+        effectiveModel,
+        usage,
+        latencyMs,
+        success: true,
+        messages: options.messages,
+        output: result.text,
+        telemetryContext: options.telemetry,
+      });
 
       return {
         content: result.text,
@@ -312,23 +465,45 @@ export class LLMClient {
       };
     } catch (error) {
       const latencyMs = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
 
-      // Track failed call telemetry (best-effort)
-      try {
-        await this.trackTelemetry({
-          config,
-          effectiveModel,
-          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      // LH: Detect timeout/abort errors for clearer messaging
+      const isAbortError =
+        error instanceof Error &&
+        (error.name === "AbortError" || error.message.includes("aborted"));
+      const isTimeoutError = isAbortError && latencyMs >= DEFAULT_CALL_TIMEOUT_MS - 100;
+
+      const baseErrorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = isTimeoutError
+        ? `[LLMix] Request timeout after ${DEFAULT_CALL_TIMEOUT_MS}ms: ${baseErrorMessage}`
+        : baseErrorMessage;
+      const errorStack = error instanceof Error ? error.stack : undefined;
+
+      // LH: Log error with full context for debugging (never fail silently)
+      console.error(
+        `[LLMix] LLM call failed for ${config.configId} (${config.provider}/${effectiveModel})`,
+        {
+          error: errorMessage,
+          stack: errorStack,
+          profile: options.profile,
           latencyMs,
-          success: false,
-          errorMessage,
-          messages: options.messages,
-          telemetryContext: options.telemetry,
-        });
-      } catch {
-        // Ignore telemetry errors in failure path
-      }
+          provider: config.provider,
+          model: effectiveModel,
+          isTimeout: isTimeoutError,
+          timeoutMs: DEFAULT_CALL_TIMEOUT_MS,
+        }
+      );
+
+      // LH: Track failed call telemetry fire-and-forget (non-blocking)
+      void this.trackTelemetryNonBlocking({
+        config,
+        effectiveModel,
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        latencyMs,
+        success: false,
+        errorMessage,
+        messages: options.messages,
+        telemetryContext: options.telemetry,
+      });
 
       return {
         content: "",
@@ -338,6 +513,7 @@ export class LLMClient {
         config,
         success: false,
         error: errorMessage,
+        // LH: Preserve stack trace for debugging (not exposed in LLMResponse type but useful for internal logging)
       };
     }
   }
@@ -374,10 +550,53 @@ export class LLMClient {
       version: options.version,
     });
 
-    // Derive capabilities
-    const capabilities = deriveCapabilities(config);
+    // LH: Apply overrides to compute effective model for accurate capability detection
+    const effectiveModel = options.overrides?.model ?? config.model;
+
+    // Derive capabilities using effective model (after overrides)
+    const capabilities = deriveCapabilities(config, effectiveModel);
 
     return { config, capabilities };
+  }
+
+  /**
+   * LH: Non-blocking telemetry wrapper with timeout
+   *
+   * Fire-and-forget pattern: tracks telemetry without blocking responses.
+   * Logs failures but never throws.
+   */
+  private async trackTelemetryNonBlocking(params: {
+    config?: ResolvedLLMConfig;
+    effectiveModel: string;
+    usage: LLMUsage;
+    latencyMs: number;
+    success: boolean;
+    errorMessage?: string;
+    messages: unknown[];
+    output?: string;
+    telemetryContext?: TelemetryContext;
+  }): Promise<void> {
+    // Skip if no telemetry provider or no config (config load failure)
+    if (!this.telemetry || !params.config) {
+      return;
+    }
+
+    try {
+      // Race telemetry against timeout to prevent blocking
+      const timeoutPromise = new Promise<void>((_, reject) => {
+        setTimeout(() => reject(new Error("Telemetry timeout")), TELEMETRY_TIMEOUT_MS);
+      });
+
+      await Promise.race([
+        this.trackTelemetry(params as Parameters<typeof this.trackTelemetry>[0]),
+        timeoutPromise,
+      ]);
+    } catch (error) {
+      // Log but never throw - telemetry should not affect response
+      console.warn(
+        `[LLMix] Telemetry failed for ${params.config?.configId ?? "unknown"}: ${String(error)}`
+      );
+    }
   }
 
   /**
@@ -413,6 +632,13 @@ export class LLMClient {
       telemetryContext,
     } = params;
 
+    // LH: Redact messages/output by default for privacy (PII protection)
+    // Set LLMIX_CAPTURE_TELEMETRY_PAYLOAD=true to include full payloads
+    const redactedMessages = CAPTURE_TELEMETRY_PAYLOAD
+      ? messages
+      : [{ redacted: true, count: messages.length }];
+    const redactedOutput = CAPTURE_TELEMETRY_PAYLOAD ? output : output ? "[redacted]" : undefined;
+
     // Build event data
     const event: LLMCallEventData = {
       configId: config.configId,
@@ -429,8 +655,8 @@ export class LLMClient {
       success,
       errorMessage,
       context: telemetryContext,
-      messages,
-      output,
+      messages: redactedMessages,
+      output: redactedOutput,
     };
 
     // Call injected provider
