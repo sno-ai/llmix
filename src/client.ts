@@ -25,7 +25,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel } from "ai";
 import { generateText } from "ai";
 import type { LLMConfigLoader } from "./config-loader";
@@ -239,6 +238,7 @@ function getProviderModel(
     case "deepseek": {
       // LH: Route DeepSeek models through OpenRouter for better reliability
       // OpenRouter provides unified access, automatic failover, and better rate limit handling
+      // Uses @ai-sdk/openai since OpenRouter is OpenAI-compatible (no need for dedicated provider)
       const apiKey = urls?.openRouterApiKey ?? process.env.OPENROUTER_API_KEY;
       if (!apiKey) {
         throw new Error(
@@ -249,7 +249,10 @@ function getProviderModel(
       // Map model name to OpenRouter format (provider/model)
       const openRouterModel = DEEPSEEK_MODEL_MAPPINGS[model] ?? `deepseek/${model}`;
 
-      // LH: Use CF AI Gateway for OpenRouter if enabled
+      // Base URL: CF Gateway > env > default OpenRouter
+      const baseURL = urls?.openRouterBaseUrl ?? "https://openrouter.ai/api/v1";
+
+      // LH: Log routing info
       if (urls?.useCfAiGateway && urls.openRouterBaseUrl) {
         console.debug(
           `[LLMix] Routing DeepSeek "${model}" via OpenRouter (CF Gateway) as "${openRouterModel}"`
@@ -260,9 +263,9 @@ function getProviderModel(
         );
       }
 
-      const openrouter = createOpenRouter({
+      const openrouter = createOpenAI({
         apiKey,
-        baseURL: urls?.openRouterBaseUrl, // undefined = OpenRouter default
+        baseURL,
       });
       return openrouter(openRouterModel);
     }
