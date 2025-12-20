@@ -9,26 +9,70 @@
  * PROJECT ROOT: Found by walking up from cwd looking for package.json
  */
 
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 
+/** Lockfiles that indicate project root (any package manager) */
+const LOCKFILES = ["bun.lock", "pnpm-lock.yaml", "yarn.lock", "package-lock.json"]
+
 /**
- * Find project root by walking up directory tree looking for package.json
- * Falls back to process.cwd() if not found
+ * Check if a package.json file indicates a monorepo root (has workspaces field)
+ */
+function isMonorepoRoot(packageJsonPath: string): boolean {
+	try {
+		const content = readFileSync(packageJsonPath, "utf-8")
+		const pkg = JSON.parse(content)
+		return Array.isArray(pkg.workspaces) || typeof pkg.workspaces === "object"
+	} catch {
+		return false
+	}
+}
+
+/**
+ * Check if directory contains a lockfile (final fallback for project root detection)
+ */
+function hasLockfile(dir: string): boolean {
+	return LOCKFILES.some((f) => existsSync(path.join(dir, f)))
+}
+
+/**
+ * Find project root by walking up directory tree.
+ * Priority (two-pass to ensure workspaces wins over lockfiles in subdirs):
+ * 1. package.json with "workspaces" field (monorepo root) - checked first across ALL dirs
+ * 2. Lockfile (bun.lock, pnpm-lock.yaml, yarn.lock, package-lock.json)
+ * 3. First package.json found
+ * 4. process.cwd()
  */
 function findProjectRoot(startDir: string = process.cwd()): string {
 	let current = path.resolve(startDir)
 	const root = path.parse(current).root
+	let firstPackageJson: string | null = null
+	let firstLockfileDir: string | null = null
 
+	// First pass: look for workspaces (highest priority) and track fallbacks
 	while (current !== root) {
-		if (existsSync(path.join(current, "package.json"))) {
+		const packageJsonPath = path.join(current, "package.json")
+
+		// Priority 1: package.json with workspaces - return immediately
+		if (existsSync(packageJsonPath) && isMonorepoRoot(packageJsonPath)) {
 			return current
 		}
+
+		// Track first lockfile dir as fallback
+		if (!firstLockfileDir && hasLockfile(current)) {
+			firstLockfileDir = current
+		}
+
+		// Track first package.json as fallback
+		if (!firstPackageJson && existsSync(packageJsonPath)) {
+			firstPackageJson = current
+		}
+
 		current = path.dirname(current)
 	}
 
-	// Fallback to cwd if no package.json found
-	return process.cwd()
+	// Fallback priority: lockfile > package.json > cwd
+	return firstLockfileDir ?? firstPackageJson ?? process.cwd()
 }
 
 export interface LLMixPathConfig {
@@ -73,16 +117,11 @@ export function resolveConfigDir(options?: LLMixPathConfig): ResolvedConfigDir {
 		}
 	}
 
-	// Priority 2: Environment variable
-	// LH: Resolve relative paths from PROJECT ROOT (not cwd) to fix HRKG subdirectory issue
+	// Priority 2: Environment variable - always resolve from project root
 	const envValue = process.env[envVarName]
 	if (envValue) {
-		// If absolute path, use as-is; if relative, resolve from project root
-		const resolvedPath = path.isAbsolute(envValue)
-			? envValue
-			: path.resolve(findProjectRoot(), envValue)
 		return {
-			configDir: resolvedPath,
+			configDir: path.resolve(findProjectRoot(), envValue),
 			source: "env",
 		}
 	}
