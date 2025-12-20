@@ -135,6 +135,9 @@ providerOptions:                    # Provider-specific options
     structuredOutputs: true
     reasoningEffort: medium         # For o1/o3 models
 
+timeout:                            # Per-profile timeout (in minutes)
+  totalTime: 2                      # Default: 2 min. Reasoning models: 10+ min
+
 description: "Entity extraction for knowledge graph"
 tags: [hrkg, extraction]
 ```
