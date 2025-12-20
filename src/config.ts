@@ -16,6 +16,8 @@ export interface LLMixPathConfig {
 	envVar?: string
 	/** Default path relative to project root (default: ./config/llm) */
 	defaultPath?: string
+	/** Project root directory (default: process.cwd()) */
+	projectRoot?: string
 }
 
 export interface ResolvedConfigDir {
@@ -39,6 +41,7 @@ export interface ResolvedConfigDir {
 export function resolveConfigDir(options?: LLMixPathConfig): ResolvedConfigDir {
 	const envVarName = options?.envVar ?? "LLMIX_CONFIG_DIR"
 	const defaultRelativePath = options?.defaultPath ?? "./config/llm"
+	const projectRoot = options?.projectRoot ?? process.cwd()
 
 	// Priority 1: Explicit override
 	if (options?.configDir) {
@@ -57,9 +60,9 @@ export function resolveConfigDir(options?: LLMixPathConfig): ResolvedConfigDir {
 		}
 	}
 
-	// Priority 3: Default relative to project root (process.cwd())
+	// Priority 3: Default relative to project root
 	return {
-		configDir: path.resolve(process.cwd(), defaultRelativePath),
+		configDir: path.resolve(projectRoot, defaultRelativePath),
 		source: "default",
 	}
 }

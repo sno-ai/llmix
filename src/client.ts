@@ -64,6 +64,21 @@ export interface ProviderUrlConfig {
 }
 
 /**
+ * API keys configuration for LLM providers
+ * Allows injecting API keys instead of relying on process.env
+ */
+export interface ApiKeysConfig {
+  /** OpenAI API key */
+  openai?: string;
+  /** Anthropic API key */
+  anthropic?: string;
+  /** Google Generative AI API key */
+  google?: string;
+  /** OpenRouter API key (used for DeepSeek) */
+  openrouter?: string;
+}
+
+/**
  * Configuration for LLMClient
  */
 export interface LLMClientConfig {
@@ -86,6 +101,26 @@ export interface LLMClientConfig {
    * If not provided, uses provider defaults (direct API calls)
    */
   providerUrls?: ProviderUrlConfig;
+
+  /**
+   * API keys for LLM providers
+   * If not provided, falls back to environment variables
+   */
+  apiKeys?: ApiKeysConfig;
+
+  /**
+   * Enable telemetry payload capture for debugging
+   * When true, full messages/output are included in telemetry
+   * Default: false (env fallback: LLMIX_CAPTURE_TELEMETRY_PAYLOAD)
+   */
+  captureTelemetryPayload?: boolean;
+
+  /**
+   * Call timeout in milliseconds
+   * Prevents hanging requests from tying up resources
+   * Default: 120000 (env fallback: LLMIX_CALL_TIMEOUT_MS)
+   */
+  callTimeoutMs?: number;
 }
 
 /**
@@ -128,20 +163,6 @@ const DEEPSEEK_MODEL_MAPPINGS: Record<string, string> = {
   "deepseek-v3.2-speciale": "deepseek/deepseek-chat-v3-0324:free", // Use free tier for speciale
   "deepseek-reasoner": "deepseek/deepseek-reasoner",
 };
-
-/**
- * LH: Telemetry payload capture control
- * Set LLMIX_CAPTURE_TELEMETRY_PAYLOAD=true to include full messages/output in telemetry
- * Default: false (redacted for privacy/PII protection)
- */
-const CAPTURE_TELEMETRY_PAYLOAD = process.env.LLMIX_CAPTURE_TELEMETRY_PAYLOAD === "true";
-
-/**
- * LH: Default timeout for LLM calls (in milliseconds)
- * Set LLMIX_CALL_TIMEOUT_MS to override (default: 120000 = 2 minutes)
- * Prevents hanging requests from tying up resources indefinitely
- */
-const DEFAULT_CALL_TIMEOUT_MS = Number(process.env.LLMIX_CALL_TIMEOUT_MS) || 120000;
 
 /**
  * LH: Telemetry timeout (in milliseconds)
@@ -193,12 +214,14 @@ function isBatchCapable(model: string): boolean {
  * @param provider - Provider name
  * @param model - Model ID
  * @param urls - Optional provider URL config for CF AI Gateway
+ * @param apiKeys - Optional API keys (falls back to process.env)
  * @returns AI SDK model instance
  */
 function getProviderModel(
   provider: Provider,
   model: string,
-  urls?: ProviderUrlConfig
+  urls?: ProviderUrlConfig,
+  apiKeys?: ApiKeysConfig
 ): LanguageModel {
   // LH: Log when CF AI Gateway is being used (debug level)
   if (urls?.useCfAiGateway) {
@@ -207,7 +230,7 @@ function getProviderModel(
 
   switch (provider) {
     case "openai": {
-      const apiKey = process.env.OPENAI_API_KEY;
+      const apiKey = apiKeys?.openai ?? process.env.OPENAI_API_KEY;
       if (!apiKey) {
         throw new Error(
           "[LLMix] OPENAI_API_KEY environment variable is required for OpenAI provider"
@@ -218,7 +241,7 @@ function getProviderModel(
       return openai(model);
     }
     case "anthropic": {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
+      const apiKey = apiKeys?.anthropic ?? process.env.ANTHROPIC_API_KEY;
       if (!apiKey) {
         throw new Error(
           "[LLMix] ANTHROPIC_API_KEY environment variable is required for Anthropic provider"
@@ -229,7 +252,7 @@ function getProviderModel(
       return anthropic(model);
     }
     case "google": {
-      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      const apiKey = apiKeys?.google ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY;
       if (!apiKey) {
         throw new Error(
           "[LLMix] GOOGLE_GENERATIVE_AI_API_KEY environment variable is required for Google provider"
@@ -244,7 +267,7 @@ function getProviderModel(
       // LH: Route DeepSeek models through OpenRouter for better reliability
       // OpenRouter provides unified access, automatic failover, and better rate limit handling
       // Uses @ai-sdk/openai since OpenRouter is OpenAI-compatible (no need for dedicated provider)
-      const apiKey = urls?.openRouterApiKey ?? process.env.OPENROUTER_API_KEY;
+      const apiKey = apiKeys?.openrouter ?? urls?.openRouterApiKey ?? process.env.OPENROUTER_API_KEY;
       if (!apiKey) {
         throw new Error(
           "[LLMix] OPENROUTER_API_KEY environment variable is required for DeepSeek provider (via OpenRouter)"
@@ -335,12 +358,21 @@ export class LLMClient {
   private readonly defaultScope?: string;
   private readonly telemetry?: LLMixTelemetryProvider;
   private readonly providerUrls?: ProviderUrlConfig;
+  private readonly apiKeys?: ApiKeysConfig;
+  private readonly captureTelemetryPayload: boolean;
+  private readonly callTimeoutMs: number;
 
   constructor(config: LLMClientConfig) {
     this.loader = config.loader;
     this.defaultScope = config.defaultScope;
     this.telemetry = config.telemetry;
     this.providerUrls = config.providerUrls;
+    this.apiKeys = config.apiKeys;
+    // Config takes precedence, then env var, then default
+    this.captureTelemetryPayload =
+      config.captureTelemetryPayload ?? process.env.LLMIX_CAPTURE_TELEMETRY_PAYLOAD === "true";
+    this.callTimeoutMs =
+      config.callTimeoutMs ?? (Number(process.env.LLMIX_CALL_TIMEOUT_MS) || 120000);
   }
 
   /**
@@ -413,6 +445,12 @@ export class LLMClient {
       ...options.overrides?.providerOptions,
     };
 
+    // LH: Compute effective timeout with fallback chain:
+    // profile.timeout.totalTime (minutes) → clientConfig.callTimeoutMs (ms) → 120000ms
+    const effectiveTimeoutMs = config.timeout?.totalTime
+      ? config.timeout.totalTime * 60 * 1000 // Convert minutes to ms
+      : this.callTimeoutMs;
+
     try {
       // LH: Bypass gateway if config or override specifies - use direct provider URLs for native features
       const shouldBypassGateway = options.overrides?.bypassGateway ?? config.bypassGateway;
@@ -423,13 +461,13 @@ export class LLMClient {
         );
       }
       // Get provider model instance
-      const model = getProviderModel(config.provider, effectiveModel, effectiveProviderUrls);
+      const model = getProviderModel(config.provider, effectiveModel, effectiveProviderUrls, this.apiKeys);
 
       // LH: Setup abort controller for timeout handling
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => {
         abortController.abort();
-      }, DEFAULT_CALL_TIMEOUT_MS);
+      }, effectiveTimeoutMs);
 
       // Build generateText options - direct AI SDK v5 mapping
       // Use type assertion for flexibility with different message formats
@@ -512,11 +550,11 @@ export class LLMClient {
       const isAbortError =
         error instanceof Error &&
         (error.name === "AbortError" || error.message.includes("aborted"));
-      const isTimeoutError = isAbortError && latencyMs >= DEFAULT_CALL_TIMEOUT_MS - 100;
+      const isTimeoutError = isAbortError && latencyMs >= effectiveTimeoutMs - 100;
 
       const baseErrorMessage = error instanceof Error ? error.message : String(error);
       const errorMessage = isTimeoutError
-        ? `[LLMix] Request timeout after ${DEFAULT_CALL_TIMEOUT_MS}ms: ${baseErrorMessage}`
+        ? `[LLMix] Request timeout after ${effectiveTimeoutMs}ms: ${baseErrorMessage}`
         : baseErrorMessage;
       const errorStack = error instanceof Error ? error.stack : undefined;
 
@@ -531,7 +569,7 @@ export class LLMClient {
           provider: config.provider,
           model: effectiveModel,
           isTimeout: isTimeoutError,
-          timeoutMs: DEFAULT_CALL_TIMEOUT_MS,
+          timeoutMs: effectiveTimeoutMs,
         }
       );
 
@@ -675,11 +713,11 @@ export class LLMClient {
     } = params;
 
     // LH: Redact messages/output by default for privacy (PII protection)
-    // Set LLMIX_CAPTURE_TELEMETRY_PAYLOAD=true to include full payloads
-    const redactedMessages = CAPTURE_TELEMETRY_PAYLOAD
+    // Set captureTelemetryPayload=true or LLMIX_CAPTURE_TELEMETRY_PAYLOAD=true to include full payloads
+    const redactedMessages = this.captureTelemetryPayload
       ? messages
       : [{ redacted: true, count: messages.length }];
-    const redactedOutput = CAPTURE_TELEMETRY_PAYLOAD ? output : output ? "[redacted]" : undefined;
+    const redactedOutput = this.captureTelemetryPayload ? output : output ? "[redacted]" : undefined;
 
     // Build event data
     const event: LLMCallEventData = {

@@ -31,6 +31,7 @@ import {
   type Provider,
   type ProviderOptions,
   SecurityError,
+  type TimeoutConfig,
   VALID_MODULE_PATTERN,
   VALID_PROFILE_PATTERN,
   VALID_SCOPE_PATTERN,
@@ -423,6 +424,18 @@ export const ProviderSchema = z.enum([
 ]) satisfies z.ZodType<Provider>;
 
 /**
+ * Timeout configuration schema (all values in minutes)
+ */
+export const TimeoutConfigSchema = z
+  .object({
+    /** Total time limit for the entire LLM call (minutes) */
+    totalTime: z.number().positive().optional(),
+    /** Max wait time for first chunk in streaming responses (minutes) */
+    streamFirstChunkTime: z.number().positive().optional(),
+  })
+  .strict() satisfies z.ZodType<TimeoutConfig>;
+
+/**
  * Full LLM config schema with cross-field validation
  *
  * Validates:
@@ -436,6 +449,7 @@ export const LLMConfigSchema = z
     model: z.string().min(1),
     common: CommonParamsSchema.optional(),
     providerOptions: ProviderOptionsSchema.optional(),
+    timeout: TimeoutConfigSchema.optional(),
     description: z.string().optional(),
     deprecated: z.boolean().optional(),
     tags: z.array(z.string()).optional(),

@@ -73,6 +73,43 @@ export interface LLMConfigLoaderLogger {
 }
 
 // =============================================================================
+// TIMEOUT CONFIGURATION
+// =============================================================================
+
+/**
+ * Timeout configuration for LLM calls (all values in milliseconds)
+ *
+ * Per-profile timeout allows reasoning models to have longer timeouts
+ * than fast models, without affecting global defaults.
+ *
+ * @example
+ * ```yaml
+ * # In LLM config YAML
+ * timeout:
+ *   totalTime: 10  # 10 minutes for reasoning models
+ *   streamFirstChunkTime: 2  # 2 minutes to first chunk
+ * ```
+ */
+export interface TimeoutConfig {
+  /**
+   * Total time limit for the entire LLM call (minutes)
+   *
+   * After this time, the request is aborted.
+   * Default: 2 (minutes)
+   */
+  totalTime?: number;
+
+  /**
+   * Max wait time for first chunk in streaming responses (minutes)
+   *
+   * For streaming calls, this limits how long to wait for the first token.
+   * Useful for detecting slow/stuck models early.
+   * Default: undefined (uses totalTime)
+   */
+  streamFirstChunkTime?: number;
+}
+
+// =============================================================================
 // LLM CONFIG SCHEMA - AI SDK V5 ALIGNED
 // =============================================================================
 
@@ -323,6 +360,14 @@ export interface LLMConfig {
 
   /** Provider-specific options */
   providerOptions?: ProviderOptions;
+
+  /**
+   * Timeout configuration for this profile
+   *
+   * Per-profile timeout allows reasoning models to have longer timeouts.
+   * Fallback chain: profile.timeout → clientConfig.callTimeoutMs → 120000ms
+   */
+  timeout?: TimeoutConfig;
 
   /** Human-readable description (metadata, not passed to LLM) */
   description?: string;

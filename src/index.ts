@@ -46,6 +46,7 @@
 export {
   createLLMClient,
   LLMClient,
+  type ApiKeysConfig,
   type LLMClientConfig,
   type ProviderUrlConfig,
 } from "./client";
@@ -91,6 +92,7 @@ export type {
   ResolvedLLMConfig,
   RuntimeOverrides,
   TelemetryContext,
+  TimeoutConfig,
 } from "./types";
 
 // =============================================================================
