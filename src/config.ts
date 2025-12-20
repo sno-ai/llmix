@@ -2,12 +2,34 @@
  * LLMix Path Configuration Utilities
  *
  * Provides flexible path resolution with priority:
- * 1. Explicit configDir override
- * 2. Environment variable (LLMIX_CONFIG_DIR)
- * 3. Default path relative to project root (process.cwd())
+ * 1. Explicit configDir override (absolute path)
+ * 2. Environment variable (LLMIX_CONFIG_DIR) - resolved relative to PROJECT ROOT
+ * 3. Default path relative to project root
+ *
+ * PROJECT ROOT: Found by walking up from cwd looking for package.json
  */
 
+import { existsSync } from "node:fs"
 import path from "node:path"
+
+/**
+ * Find project root by walking up directory tree looking for package.json
+ * Falls back to process.cwd() if not found
+ */
+function findProjectRoot(startDir: string = process.cwd()): string {
+	let current = path.resolve(startDir)
+	const root = path.parse(current).root
+
+	while (current !== root) {
+		if (existsSync(path.join(current, "package.json"))) {
+			return current
+		}
+		current = path.dirname(current)
+	}
+
+	// Fallback to cwd if no package.json found
+	return process.cwd()
+}
 
 export interface LLMixPathConfig {
 	/** Explicit config directory path (highest priority) */
@@ -52,17 +74,23 @@ export function resolveConfigDir(options?: LLMixPathConfig): ResolvedConfigDir {
 	}
 
 	// Priority 2: Environment variable
+	// LH: Resolve relative paths from PROJECT ROOT (not cwd) to fix HRKG subdirectory issue
 	const envValue = process.env[envVarName]
 	if (envValue) {
+		// If absolute path, use as-is; if relative, resolve from project root
+		const resolvedPath = path.isAbsolute(envValue)
+			? envValue
+			: path.resolve(findProjectRoot(), envValue)
 		return {
-			configDir: path.resolve(envValue),
+			configDir: resolvedPath,
 			source: "env",
 		}
 	}
 
-	// Priority 3: Default relative to project root
+	// Priority 3: Default relative to project root (use findProjectRoot, not cwd)
+	const actualProjectRoot = projectRoot === process.cwd() ? findProjectRoot() : projectRoot
 	return {
-		configDir: path.resolve(projectRoot, defaultRelativePath),
+		configDir: path.resolve(actualProjectRoot, defaultRelativePath),
 		source: "default",
 	}
 }
