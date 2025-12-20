@@ -49,6 +49,7 @@ export {
   type LLMClientConfig,
   type ProviderUrlConfig,
 } from "./client";
+export { resolveConfigDir, type LLMixPathConfig, type ResolvedConfigDir } from "./config";
 export { createLLMConfigLoader, LLMConfigLoader } from "./config-loader";
 
 // =============================================================================
