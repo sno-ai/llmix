@@ -72,6 +72,7 @@ export type {
   ConfigCapabilities,
   DeepSeekProviderOptions,
   DeepSeekThinkingConfig,
+  ExperimentConfig,
   GoogleProviderOptions,
   GoogleSafetySetting,
   GoogleThinkingConfig,

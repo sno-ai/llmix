@@ -77,7 +77,7 @@ export interface LLMConfigLoaderLogger {
 // =============================================================================
 
 /**
- * Timeout configuration for LLM calls (all values in milliseconds)
+ * Timeout configuration for LLM calls (all values in minutes)
  *
  * Per-profile timeout allows reasoning models to have longer timeouts
  * than fast models, without affecting global defaults.
@@ -437,6 +437,45 @@ export interface LoadConfigOptions {
 
   /** Config version (default: 1) */
   version?: number;
+
+  /**
+   * Bypass LRU cache and load fresh from file
+   *
+   * Used by A/B experiment switching to ensure fresh config when experiment is active.
+   * @default false
+   */
+  forceRefresh?: boolean;
+}
+
+// =============================================================================
+// A/B EXPERIMENT TYPES
+// =============================================================================
+
+/**
+ * A/B Experiment configuration stored in Redis
+ *
+ * Redis key: `experiment:llm:{module}:{profile}`
+ * Example: `experiment:llm:hrkg:extraction`
+ */
+export interface ExperimentConfig {
+  /** Whether the experiment is currently active */
+  enabled: boolean;
+
+  /** Version to use when experiment is enabled (e.g., 2 for v2) */
+  version: number;
+
+  /** ISO timestamp when experiment was enabled */
+  enabledAt: string;
+
+  /**
+   * Traffic split percentage (0-100)
+   *
+   * - null: 100% traffic to experiment version
+   * - number: Use deterministic hash of userId to route traffic
+   *   - hash(userId) % 100 < split -> experiment version
+   *   - Otherwise -> control (v1)
+   */
+  split: number | null;
 }
 
 /**

@@ -35,6 +35,7 @@ import { LRUCache } from "./lru-cache";
 import {
   type CacheStats,
   ConfigNotFoundError,
+  type ExperimentConfig,
   type LLMConfigLoaderConfig,
   type LLMConfigLoaderLogger,
   type LoadConfigOptions,
@@ -66,6 +67,9 @@ const MAX_WARNED_CONFIG_IDS = 1000;
 
 /** Redis key prefix for LLM configs */
 const REDIS_KEY_PREFIX = "llm:";
+
+/** Redis key prefix for A/B experiments */
+const EXPERIMENT_KEY_PREFIX = "experiment:llm:";
 
 // =============================================================================
 // DEFAULT LOGGER
@@ -283,25 +287,37 @@ export class LLMConfigLoader {
   async loadConfig(options: LoadConfigOptions): Promise<ResolvedLLMConfig> {
     const scope = options.scope ?? this.config.defaultScope;
     const { module, profile } = options;
-    const version = options.version ?? 1;
+    let version = options.version ?? 1;
+    let forceRefresh = options.forceRefresh ?? false;
 
     // Normalize userId before building cache key to prevent cache pollution
     // Invalid userIds fall back to "_" to ensure consistent cache keys
     const rawUserId = options.userId ?? "_";
     const userId = validateUserId(rawUserId) ? rawUserId : "_";
 
-    // Build primary ConfigId (uses normalized userId)
-    const configId = this.buildConfigId(scope, module, userId, profile, version);
-
-    // Tier 1: Check LRU cache
-    const cached = this.localCache.get(configId);
-    if (cached !== null) {
-      this.logger.debug(`LRU hit: ${configId}`);
-      return JSON.parse(cached) as ResolvedLLMConfig;
+    // LH: A/B Experiment Check - BEFORE cache lookup
+    // Check Redis for active experiment that may override version
+    const experimentResult = await this.getExperimentConfig(module, profile, userId);
+    if (experimentResult !== null) {
+      version = experimentResult.version;
+      forceRefresh = true; // Always bypass cache for experiment configs
+      this.logger.info(`[AB] Switched llm:${module}:${profile} to v${version}`);
     }
 
-    // Tier 2: Check Redis
-    if (this.redisAvailable && this.redisClient) {
+    // Build primary ConfigId (uses normalized userId and potentially experiment version)
+    const configId = this.buildConfigId(scope, module, userId, profile, version);
+
+    // Tier 1: Check LRU cache (skip if forceRefresh)
+    if (!forceRefresh) {
+      const cached = this.localCache.get(configId);
+      if (cached !== null) {
+        this.logger.debug(`LRU hit: ${configId}`);
+        return JSON.parse(cached) as ResolvedLLMConfig;
+      }
+    }
+
+    // Tier 2: Check Redis (skip if forceRefresh)
+    if (!forceRefresh && this.redisAvailable && this.redisClient) {
       const redisResult = await this.tryLoadFromRedis(configId);
       if (redisResult !== null) {
         // Store in LRU for faster subsequent access
@@ -314,7 +330,7 @@ export class LLMConfigLoader {
     // Tier 3: File system with cascade resolution
     const result = await this.resolveWithCascade(scope, module, userId, profile, version);
 
-    // Cache the result
+    // Cache the result (even for experiment configs - cache is per-version)
     const serialized = JSON.stringify(result);
     this.localCache.set(configId, serialized);
     await this.tryStoreInRedis(configId, serialized);
@@ -392,6 +408,116 @@ export class LLMConfigLoader {
    */
   private buildRedisKey(configId: string): string {
     return `${REDIS_KEY_PREFIX}${configId}`;
+  }
+
+  /**
+   * Build Redis key for A/B experiment
+   *
+   * Format: experiment:llm:{module}:{profile}
+   */
+  private buildExperimentKey(module: string, profile: string): string {
+    return `${EXPERIMENT_KEY_PREFIX}${module}:${profile}`;
+  }
+
+  /**
+   * Get A/B experiment configuration from Redis
+   *
+   * Checks if an experiment is active for the given module/profile.
+   * If split is configured, uses deterministic hash of userId to route traffic.
+   *
+   * @param module - Module name (e.g., "hrkg")
+   * @param profile - Profile name (e.g., "extraction")
+   * @param userId - User ID for split routing (uses "_" if not provided)
+   * @returns ExperimentConfig with resolved version, or null if no active experiment
+   */
+  private async getExperimentConfig(
+    module: string,
+    profile: string,
+    userId: string
+  ): Promise<ExperimentConfig | null> {
+    if (!this.redisAvailable || !this.redisClient) {
+      return null;
+    }
+
+    try {
+      const experimentKey = this.buildExperimentKey(module, profile);
+      const content = await this.redisClient.get(experimentKey);
+
+      if (!content) {
+        return null;
+      }
+
+      // Validate experiment payload before trusting it
+      const parsed = JSON.parse(content);
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        typeof parsed.enabled !== "boolean" ||
+        !Number.isInteger(parsed.version) ||
+        parsed.version < 1 ||
+        typeof parsed.enabledAt !== "string" ||
+        (parsed.split !== null &&
+          (typeof parsed.split !== "number" || parsed.split < 0 || parsed.split > 100))
+      ) {
+        this.logger.warn("[AB] Invalid experiment payload, ignoring");
+        return null;
+      }
+      const experiment = parsed as ExperimentConfig;
+
+      // Check if experiment is enabled
+      if (!experiment.enabled) {
+        return null;
+      }
+
+      // Check split routing if configured
+      if (experiment.split !== null && userId !== "_") {
+        const hash = this.deterministicHash(userId);
+        const bucket = hash % 100;
+
+        // If bucket >= split, user is in control group (no experiment)
+        if (bucket >= experiment.split) {
+          this.logger.debug(
+            `[AB] User ${userId} in control group (bucket=${bucket}, split=${experiment.split})`
+          );
+          return null;
+        }
+
+        this.logger.debug(
+          `[AB] User ${userId} in experiment group (bucket=${bucket}, split=${experiment.split})`
+        );
+      }
+
+      return experiment;
+    } catch (error) {
+      // Graceful degradation - log warning and continue with normal flow
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`[AB] Failed to fetch experiment config: ${errorMessage}`);
+      return null;
+    }
+  }
+
+  /**
+   * Deterministic hash function for userId
+   *
+   * Uses FNV-1a hash algorithm for consistent, fast hashing.
+   * Returns a non-negative integer suitable for modulo operations.
+   *
+   * @param str - String to hash (userId)
+   * @returns Non-negative 32-bit integer
+   */
+  private deterministicHash(str: string): number {
+    // FNV-1a 32-bit hash
+    let hash = 0x811c9dc5; // FNV offset basis
+
+    for (let i = 0; i < str.length; i++) {
+      hash ^= str.charCodeAt(i);
+      // FNV prime: multiply by 16777619 (0x01000193)
+      // Use bit operations for speed
+      hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+    }
+
+    // Ensure non-negative
+    return hash >>> 0;
   }
 
   /**
