@@ -333,6 +333,64 @@ const telemetryProvider: LLMixTelemetryProvider = {
 const client = createLLMClient({ loader, telemetry: telemetryProvider });
 ```
 
+## A/B Experiment Switching
+
+LLMix supports Redis-based A/B experiment switching for runtime config version control without code changes.
+
+### How It Works
+
+1. **Enable experiment via Redis** - Set experiment key with target version
+2. **LLMix detects experiment** - Checks Redis before cache lookup
+3. **Version override** - Loads experiment version, bypasses cache
+4. **Logging** - Logs `[AB] Switched llm:{module}:{profile} to v{version}`
+
+### Redis Key Schema
+
+```
+Key:   experiment:llm:{module}:{profile}
+Value: {"enabled": true, "version": 2, "enabledAt": "2025-01-15T10:30:00Z", "split": null}
+```
+
+### Usage with Shell Script (Dev)
+
+```bash
+# Enable experiment (v2)
+./dev-scripts/ab-switch.sh llm:hrkg:extraction on
+
+# Check status
+./dev-scripts/ab-switch.sh llm:hrkg:extraction status
+
+# Disable (rollback to v1)
+./dev-scripts/ab-switch.sh llm:hrkg:extraction off
+
+# List active experiments
+./dev-scripts/ab-switch.sh list
+```
+
+### Traffic Splitting
+
+Route partial traffic to experiment version:
+
+```bash
+# 50% of users get v2
+./dev-scripts/ab-switch.sh llm:hrkg:extraction on --split 50
+```
+
+Split uses deterministic hash of `userId` for consistent routing.
+
+### Dry-Run Testing
+
+Verify config resolution without making LLM calls:
+
+```typescript
+const { config, capabilities } = await client.getResolvedConfig({
+  profile: 'hrkg:extraction',
+});
+
+console.log(config.version); // 1 or 2 depending on experiment state
+console.log(config.model);   // Model from resolved version
+```
+
 ## Error Handling
 
 ```typescript
