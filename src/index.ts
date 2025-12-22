@@ -123,6 +123,18 @@ export {
 } from "./types";
 
 // =============================================================================
+// MODEL CAPABILITIES (for filtering unsupported params)
+// =============================================================================
+
+export {
+  adjustTemperatureForModel,
+  filterOpenAIProviderOptions,
+  getModelCapabilities,
+  type FilteredParams,
+  type ModelCapabilities,
+} from "./model-capabilities";
+
+// =============================================================================
 // INTERNAL UTILITIES (for advanced use cases)
 // =============================================================================
 

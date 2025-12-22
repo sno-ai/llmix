@@ -28,6 +28,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 import { generateText } from "ai";
 import type { LLMConfigLoader } from "./config-loader";
+import { filterOpenAIProviderOptions } from "./model-capabilities";
 import type {
   CallOptions,
   ConfigCapabilities,
@@ -35,6 +36,7 @@ import type {
   LLMixTelemetryProvider,
   LLMResponse,
   LLMUsage,
+  OpenAIProviderOptions,
   Provider,
   ResolvedConfigResult,
   ResolvedLLMConfig,
@@ -463,6 +465,29 @@ export class LLMClient {
       // Get provider model instance
       const model = getProviderModel(config.provider, effectiveModel, effectiveProviderUrls, this.apiKeys);
 
+      // LH: Filter provider options based on model capabilities
+      // This prevents errors like "textVerbosity not supported with gpt-4.1"
+      let finalProviderOptions = effectiveProviderOptions;
+      if (config.provider === "openai" && effectiveProviderOptions?.openai) {
+        const { filteredOptions, filteredParams, capabilities } = filterOpenAIProviderOptions(
+          effectiveModel,
+          effectiveProviderOptions.openai as OpenAIProviderOptions
+        );
+
+        // Log filtered params as warnings (helps debug config issues)
+        if (Object.keys(filteredParams).length > 0) {
+          console.warn(
+            `[LLMix] Filtered unsupported params for ${effectiveModel} (${capabilities.modelClass}):`,
+            filteredParams
+          );
+        }
+
+        // Update provider options with filtered version
+        finalProviderOptions = filteredOptions
+          ? { ...effectiveProviderOptions, openai: filteredOptions }
+          : { ...effectiveProviderOptions, openai: undefined };
+      }
+
       // LH: Setup abort controller for timeout handling
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => {
@@ -476,10 +501,10 @@ export class LLMClient {
         messages: options.messages,
         // Spread common params directly (AI SDK v5 compatible)
         ...effectiveCommon,
-        // Add provider-specific options if present
-        ...(effectiveProviderOptions?.[config.provider] && {
+        // Add provider-specific options if present (after capability filtering)
+        ...(finalProviderOptions?.[config.provider] && {
           providerOptions: {
-            [config.provider]: effectiveProviderOptions[config.provider],
+            [config.provider]: finalProviderOptions[config.provider],
           },
         }),
         // LH: Add abort signal for timeout handling
