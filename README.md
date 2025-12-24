@@ -125,6 +125,9 @@ Configs map directly to [AI SDK v5 generateText()](https://ai-sdk.dev/docs/refer
 provider: openai                    # openai | anthropic | google | deepseek
 model: gpt-4o                       # Provider-specific model ID
 
+caching:                            # Prompt caching strategy
+  strategy: native                  # native | gateway | disabled
+
 common:                             # AI SDK common params
   maxOutputTokens: 8192
   temperature: 0.7
@@ -141,6 +144,16 @@ timeout:                            # Per-profile timeout (in minutes)
 description: "Entity extraction for knowledge graph"
 tags: [hrkg, extraction]
 ```
+
+### Caching Strategy
+
+| Strategy | Routing | Use Case |
+|----------|---------|----------|
+| `native` | Helicone → OpenAI | **90% cost savings** on cached tokens. Requires `HELICONE_API_KEY`. |
+| `gateway` | CF AI Gateway | Response caching (exact match). Good for embeddings. |
+| `disabled` | Direct to provider | No caching proxy. |
+
+**Note:** Cache **key** comes from Promptix (`promptCacheKey`), not from YAML config. See [Prompt Caching](#prompt-caching) section.
 
 ### Provider Options
 
@@ -254,6 +267,7 @@ const response = await client.call({
   version?: number;
   overrides?: RuntimeOverrides;
   telemetry?: TelemetryContext;
+  promptCacheKey?: string;         // From Promptix for native prompt caching
 });
 
 // Get config + capabilities without calling LLM
@@ -437,6 +451,64 @@ export { buildConfigFilePath, verifyPathContainment };
 export { LRUCache };
 ```
 
+## Prompt Caching
+
+LLMix supports OpenAI/Anthropic native prompt caching for **90% cost savings** on repeated prompts.
+
+### Architecture
+
+```
+Promptix.loadPrompt()  →  returns { content, promptCacheKey }
+         │
+         ▼
+LLMix.call({ promptCacheKey })  →  Helicone-Cache-Key header
+         │
+         ▼
+Helicone  →  OpenAI (with cache key grouping)
+```
+
+### How It Works
+
+1. **Promptix generates cache key**: Format `{category}:{promptName}:v{version}`
+2. **Pass to LLMix call**: `promptCacheKey` option
+3. **Helicone routing**: When `caching.strategy: native`, routes via Helicone
+4. **Cache key header**: Adds `Helicone-Cache-Key` for prompt grouping
+
+### Usage
+
+```typescript
+import { getPromptLoader } from "./loader";
+import { makeModelCall } from "@/package/llm";
+
+// 1. Load prompt (returns cache key)
+const loader = await getPromptLoader();
+const { content, promptCacheKey } = await loader.getResolvedPrompt("hrkg_nodes", "extract_entities", 1);
+
+// 2. Build messages
+const messages = [
+  { role: "system", content },
+  { role: "user", content: userInput },
+];
+
+// 3. Call with cache key
+await makeModelCall(false, messages, onFinish, {
+  hrkgUseCase: "extraction",
+  promptCacheKey,  // Enables 90% cost savings on cached tokens
+});
+```
+
+### Requirements
+
+- `caching.strategy: native` in YAML config
+- `HELICONE_API_KEY` environment variable
+- Prompt >1024 tokens (OpenAI minimum for caching)
+
+### Fallback Behavior
+
+If `HELICONE_API_KEY` is not set, LLMix logs a warning and falls back to gateway strategy.
+
+---
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -445,6 +517,7 @@ export { LRUCache };
 | `ANTHROPIC_API_KEY` | For Anthropic | Anthropic API key |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | For Google | Google AI API key |
 | `DEEPSEEK_API_KEY` | For DeepSeek | DeepSeek API key |
+| `HELICONE_API_KEY` | For native caching | Helicone API key (enables 90% prompt cache savings) |
 
 ## Contributing
 
