@@ -426,7 +426,7 @@ export interface LLMConfig {
    * Controls how LLM responses and prompts are cached:
    * - "native": Use provider's native caching (OpenAI/Anthropic prompt caching)
    *             Routes through Helicone for OpenAI, provides 90% cost savings
-   *             Requires caching.key to group related prompts
+   *             Key can be provided via caching.key OR CallOptions.promptCacheKey (from Promptix)
    * - "gateway": Use AI Gateway response caching (CF AI Gateway)
    *              Exact match only, good for identical requests
    * - "disabled": No caching, always fresh calls

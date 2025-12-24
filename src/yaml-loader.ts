@@ -488,14 +488,9 @@ export const LLMConfigSchema = z
       }
     }
 
-    // Cross-field validation: Native caching requires cache key
-    if (data.caching?.strategy === "native" && !data.caching.key) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Native caching strategy requires caching.key to group related prompts",
-        path: ["caching", "key"],
-      });
-    }
+    // LH: caching.key is now optional when using native strategy.
+    // The cache key can be provided at call time via CallOptions.promptCacheKey
+    // (typically from Promptix). Config key is used as fallback if call-time key is not provided.
 
     // Warn if both bypassGateway and caching are set (potential conflict)
     if (data.bypassGateway !== undefined && data.caching !== undefined) {
