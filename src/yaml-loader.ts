@@ -16,6 +16,7 @@ import {
   type AnthropicCacheControl,
   type AnthropicProviderOptions,
   type AnthropicThinkingConfig,
+  type CachingConfig,
   type CommonParams,
   ConfigNotFoundError,
   type DeepSeekProviderOptions,
@@ -436,12 +437,26 @@ export const TimeoutConfigSchema = z
   .strict() satisfies z.ZodType<TimeoutConfig>;
 
 /**
+ * Caching configuration schema
+ */
+export const CachingConfigSchema = z
+  .object({
+    /** Caching strategy */
+    strategy: z.enum(["native", "gateway", "disabled"]),
+    /** Cache key (required for native strategy) */
+    key: z.string().optional(),
+  })
+  .strict() satisfies z.ZodType<CachingConfig>;
+
+/**
  * Full LLM config schema with cross-field validation
  *
  * Validates:
  * - All required fields present
  * - Unknown keys rejected (strict mode)
  * - Anthropic budgetTokens >= 1024 when thinking.type is "enabled"
+ * - Native caching requires cache key
+ * - Backwards compatibility with bypassGateway
  */
 export const LLMConfigSchema = z
   .object({
@@ -453,6 +468,7 @@ export const LLMConfigSchema = z
     description: z.string().optional(),
     deprecated: z.boolean().optional(),
     tags: z.array(z.string()).optional(),
+    caching: CachingConfigSchema.optional(),
     bypassGateway: z.boolean().optional(),
   })
   .strict()
@@ -470,6 +486,25 @@ export const LLMConfigSchema = z
           path: ["providerOptions", "anthropic", "thinking", "budgetTokens"],
         });
       }
+    }
+
+    // Cross-field validation: Native caching requires cache key
+    if (data.caching?.strategy === "native" && !data.caching.key) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Native caching strategy requires caching.key to group related prompts",
+        path: ["caching", "key"],
+      });
+    }
+
+    // Warn if both bypassGateway and caching are set (potential conflict)
+    if (data.bypassGateway !== undefined && data.caching !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Both bypassGateway (deprecated) and caching are set. Use caching.strategy instead of bypassGateway.",
+        path: ["bypassGateway"],
+      });
     }
   }) satisfies z.ZodType<LLMConfig>;
 

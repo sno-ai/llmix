@@ -8,6 +8,48 @@
  */
 
 // =============================================================================
+// CACHING STRATEGY
+// =============================================================================
+
+/**
+ * Caching strategy for LLM calls
+ *
+ * - "native": Provider's native caching (OpenAI/Anthropic prompt caching via Helicone)
+ *   - 90% cost savings on cached tokens
+ *   - Requires cache key to group related prompts
+ *   - Routes through Helicone for OpenAI (https://oai.helicone.ai/v1)
+ *   - Only for LLM calls (not embeddings)
+ *
+ * - "gateway": AI Gateway response caching (CF AI Gateway)
+ *   - Exact match only
+ *   - Good for identical requests
+ *   - Works for all providers
+ *
+ * - "disabled": No caching
+ *   - Always fresh calls
+ *   - Useful for real-time or non-repeatable prompts
+ */
+export type CachingStrategy = "native" | "gateway" | "disabled";
+
+/**
+ * Caching configuration
+ */
+export interface CachingConfig {
+  /** Caching strategy */
+  strategy: CachingStrategy;
+
+  /**
+   * Cache key for native strategy
+   *
+   * Required for native strategy - groups related prompts together.
+   * Optional for gateway/disabled strategies.
+   *
+   * Example: "extraction-v1", "search-2024"
+   */
+  key?: string;
+}
+
+// =============================================================================
 // CONFIGURATION
 // =============================================================================
 
@@ -379,14 +421,23 @@ export interface LLMConfig {
   tags?: string[];
 
   /**
-   * Bypass AI Gateway (e.g., Cloudflare) and use direct provider URLs
+   * Caching strategy for this profile
    *
-   * When true, ignores configured gateway URLs and calls providers directly.
-   * Use this for profiles that need provider-native features like:
-   * - OpenAI prompt caching (promptCacheKey/promptCacheRetention)
-   * - Provider-specific options not supported by gateways
+   * Controls how LLM responses and prompts are cached:
+   * - "native": Use provider's native caching (OpenAI/Anthropic prompt caching)
+   *             Routes through Helicone for OpenAI, provides 90% cost savings
+   *             Requires caching.key to group related prompts
+   * - "gateway": Use AI Gateway response caching (CF AI Gateway)
+   *              Exact match only, good for identical requests
+   * - "disabled": No caching, always fresh calls
    *
-   * @default false
+   * @default "gateway"
+   */
+  caching?: CachingConfig;
+
+  /**
+   * @deprecated Use caching.strategy instead
+   * Legacy flag: true maps to caching.strategy="native"
    */
   bypassGateway?: boolean;
 }
@@ -685,6 +736,13 @@ export interface CallOptions {
 
   /** Telemetry context */
   telemetry?: TelemetryContext;
+
+  /**
+   * Cache key for native prompt caching (OpenAI/Anthropic).
+   * Usually obtained from Promptix: prompt.promptCacheKey
+   * Format: "{category}:{promptName}:v{version}"
+   */
+  promptCacheKey?: string;
 }
 
 // =============================================================================

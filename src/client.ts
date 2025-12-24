@@ -30,6 +30,8 @@ import { generateText } from "ai";
 import type { LLMConfigLoader } from "./config-loader";
 import { filterOpenAIProviderOptions } from "./model-capabilities";
 import type {
+  CachingConfig,
+  CachingStrategy,
   CallOptions,
   ConfigCapabilities,
   LLMCallEventData,
@@ -63,6 +65,19 @@ export interface ProviderUrlConfig {
   openRouterApiKey?: string;
   /** Whether CF AI Gateway is enabled (for debug logging) */
   useCfAiGateway?: boolean;
+}
+
+/**
+ * Helicone configuration for native prompt caching
+ *
+ * Used when caching.strategy = "native" for OpenAI calls.
+ * Helicone proxies OpenAI requests and enables 90% cost savings on cached tokens.
+ */
+export interface HeliconeConfig {
+  /** Helicone API key (required for native caching) */
+  apiKey?: string;
+  /** Helicone base URL (default: https://oai.helicone.ai/v1) */
+  baseUrl?: string;
 }
 
 /**
@@ -103,6 +118,12 @@ export interface LLMClientConfig {
    * If not provided, uses provider defaults (direct API calls)
    */
   providerUrls?: ProviderUrlConfig;
+
+  /**
+   * Helicone configuration for native prompt caching
+   * Required for caching.strategy = "native" with OpenAI
+   */
+  helicone?: HeliconeConfig;
 
   /**
    * API keys for LLM providers
@@ -155,6 +176,9 @@ interface AISDKUsage {
 /** Models that support OpenAI Batch API */
 const BATCH_CAPABLE_MODEL_PATTERNS = [/^gpt-4/, /^gpt-5/, /^o1/, /^o3/];
 
+/** Default Helicone base URL for OpenAI proxy */
+const HELICONE_OPENAI_BASE_URL = "https://oai.helicone.ai/v1";
+
 /**
  * LH: DeepSeek model mappings for OpenRouter
  * Maps config model names to OpenRouter format (provider/model)
@@ -206,28 +230,99 @@ function isBatchCapable(model: string): boolean {
 }
 
 /**
+ * Check if a model is an embedding model
+ */
+function isEmbeddingModel(model: string): boolean {
+  return model.toLowerCase().includes("embedding");
+}
+
+/**
+ * Resolve effective caching strategy from config and overrides
+ *
+ * Priority: override.bypassGateway (legacy) > config.caching > config.bypassGateway (legacy) > default
+ *
+ * @param config - Resolved LLM config
+ * @param overrideBypassGateway - Legacy override flag
+ * @returns Effective caching config
+ */
+function resolveCachingStrategy(
+  config: ResolvedLLMConfig,
+  overrideBypassGateway?: boolean
+): CachingConfig {
+  // Priority 1: Legacy override.bypassGateway (backwards compat)
+  if (overrideBypassGateway !== undefined) {
+    console.warn(
+      `[LLMix] DEPRECATED: bypassGateway override used. Use caching.strategy instead.`
+    );
+    return overrideBypassGateway
+      ? { strategy: "native", key: config.caching?.key }
+      : { strategy: "gateway" };
+  }
+
+  // Priority 2: Config caching (new system)
+  if (config.caching) {
+    return config.caching;
+  }
+
+  // Priority 3: Legacy config.bypassGateway (backwards compat)
+  if (config.bypassGateway !== undefined) {
+    console.warn(
+      `[LLMix] DEPRECATED: bypassGateway config used in ${config.configId}. Use caching.strategy instead.`
+    );
+    return config.bypassGateway ? { strategy: "native" } : { strategy: "gateway" };
+  }
+
+  // Default: gateway caching (backwards compat with existing behavior)
+  return { strategy: "gateway" };
+}
+
+/**
+ * Routing options for getProviderModel
+ */
+interface ProviderRoutingOptions {
+  /** Provider URL config for CF AI Gateway */
+  urls?: ProviderUrlConfig;
+  /** API keys (falls back to process.env) */
+  apiKeys?: ApiKeysConfig;
+  /** Helicone config for native caching */
+  helicone?: HeliconeConfig;
+  /** Caching strategy */
+  cachingStrategy?: CachingStrategy;
+  /** Cache key for native strategy */
+  cacheKey?: string;
+}
+
+/**
  * Get provider model instance for AI SDK v5
  *
  * LH: Added CF AI Gateway support via baseURL configuration.
- * Base URLs are passed via ProviderUrlConfig which handles:
- * - Provider-specific gateway URLs
- * - Graceful fallback to undefined (uses provider defaults)
+ * LH: Added Helicone routing for native prompt caching.
+ *
+ * Routing logic:
+ * - strategy="native" + OpenAI + LLM: Route via Helicone (https://oai.helicone.ai/v1)
+ * - strategy="native" + OpenAI + embedding: Direct OpenAI (native caching not supported)
+ * - strategy="gateway": Use CF AI Gateway URLs
+ * - strategy="disabled": Direct provider URLs
  *
  * @param provider - Provider name
  * @param model - Model ID
- * @param urls - Optional provider URL config for CF AI Gateway
- * @param apiKeys - Optional API keys (falls back to process.env)
- * @returns AI SDK model instance
+ * @param options - Routing options (URLs, API keys, caching)
+ * @returns AI SDK model instance with appropriate headers
  */
 function getProviderModel(
   provider: Provider,
   model: string,
-  urls?: ProviderUrlConfig,
-  apiKeys?: ApiKeysConfig
+  options?: ProviderRoutingOptions
 ): LanguageModel {
-  // LH: Log when CF AI Gateway is being used (debug level)
-  if (urls?.useCfAiGateway) {
+  const { urls, apiKeys, helicone, cachingStrategy, cacheKey } = options ?? {};
+
+  // LH: Log routing decision
+  if (cachingStrategy === "native") {
+    console.debug(`[LLMix] Using native caching for provider: ${provider}`);
+  } else if (urls?.useCfAiGateway && cachingStrategy === "gateway") {
     console.debug(`[LLMix] Using CF AI Gateway for provider: ${provider}`);
+  } else if (cachingStrategy === "disabled") {
+    console.debug(`[LLMix] Caching disabled for provider: ${provider}`);
   }
 
   switch (provider) {
@@ -238,8 +333,38 @@ function getProviderModel(
           "[LLMix] OPENAI_API_KEY environment variable is required for OpenAI provider"
         );
       }
-      // LH: Pass baseURL for CF AI Gateway support (undefined = provider default)
-      const openai = createOpenAI({ apiKey, baseURL: urls?.openaiBaseUrl });
+
+      // LH: Native caching for OpenAI LLM calls (not embeddings)
+      if (cachingStrategy === "native" && !isEmbeddingModel(model)) {
+        const heliconeApiKey = helicone?.apiKey ?? process.env.HELICONE_API_KEY;
+        if (!heliconeApiKey) {
+          console.warn(
+            `[LLMix] Native caching requested but HELICONE_API_KEY not set. Falling back to gateway.`
+          );
+          // Fall through to gateway logic
+        } else {
+          const heliconeBaseUrl = helicone?.baseUrl ?? HELICONE_OPENAI_BASE_URL;
+          console.log(
+            `[LLMix] Routing OpenAI via Helicone for native prompt caching (key: ${cacheKey ?? "auto"})`
+          );
+
+          // Create OpenAI client with Helicone proxy and auth header
+          const openai = createOpenAI({
+            apiKey,
+            baseURL: heliconeBaseUrl,
+            headers: {
+              "Helicone-Auth": `Bearer ${heliconeApiKey}`,
+              // LH: Add cache key header if provided for prompt grouping
+              ...(cacheKey && { "Helicone-Cache-Key": cacheKey }),
+            },
+          });
+          return openai(model);
+        }
+      }
+
+      // Gateway or disabled: use CF AI Gateway or direct
+      const baseURL = cachingStrategy === "disabled" ? undefined : urls?.openaiBaseUrl;
+      const openai = createOpenAI({ apiKey, baseURL });
       return openai(model);
     }
     case "anthropic": {
@@ -249,8 +374,10 @@ function getProviderModel(
           "[LLMix] ANTHROPIC_API_KEY environment variable is required for Anthropic provider"
         );
       }
-      // LH: Pass baseURL for CF AI Gateway support (undefined = provider default)
-      const anthropic = createAnthropic({ apiKey, baseURL: urls?.anthropicBaseUrl });
+      // LH: Native caching for Anthropic uses direct API (Anthropic's built-in caching)
+      // Gateway or disabled: use CF AI Gateway or direct
+      const baseURL = cachingStrategy === "disabled" ? undefined : urls?.anthropicBaseUrl;
+      const anthropic = createAnthropic({ apiKey, baseURL });
       return anthropic(model);
     }
     case "google": {
@@ -260,9 +387,10 @@ function getProviderModel(
           "[LLMix] GOOGLE_GENERATIVE_AI_API_KEY environment variable is required for Google provider"
         );
       }
-      // LH: Pass baseURL for CF AI Gateway support (undefined = provider default)
+      // Gateway or disabled: use CF AI Gateway or direct
       // Note: geminiBaseUrl includes /v1beta suffix when using CF AI Gateway
-      const google = createGoogleGenerativeAI({ apiKey, baseURL: urls?.geminiBaseUrl });
+      const baseURL = cachingStrategy === "disabled" ? undefined : urls?.geminiBaseUrl;
+      const google = createGoogleGenerativeAI({ apiKey, baseURL });
       return google(model);
     }
     case "deepseek": {
@@ -279,11 +407,14 @@ function getProviderModel(
       // Map model name to OpenRouter format (provider/model)
       const openRouterModel = DEEPSEEK_MODEL_MAPPINGS[model] ?? `deepseek/${model}`;
 
-      // Base URL: CF Gateway > env > default OpenRouter
-      const baseURL = urls?.openRouterBaseUrl ?? "https://openrouter.ai/api/v1";
+      // Base URL: CF Gateway (if not disabled) > env > default OpenRouter
+      const baseURL =
+        cachingStrategy === "disabled"
+          ? "https://openrouter.ai/api/v1"
+          : urls?.openRouterBaseUrl ?? "https://openrouter.ai/api/v1";
 
       // LH: Log routing info
-      if (urls?.useCfAiGateway && urls.openRouterBaseUrl) {
+      if (urls?.useCfAiGateway && urls.openRouterBaseUrl && cachingStrategy !== "disabled") {
         console.debug(
           `[LLMix] Routing DeepSeek "${model}" via OpenRouter (CF Gateway) as "${openRouterModel}"`
         );
@@ -360,6 +491,7 @@ export class LLMClient {
   private readonly defaultScope?: string;
   private readonly telemetry?: LLMixTelemetryProvider;
   private readonly providerUrls?: ProviderUrlConfig;
+  private readonly helicone?: HeliconeConfig;
   private readonly apiKeys?: ApiKeysConfig;
   private readonly captureTelemetryPayload: boolean;
   private readonly callTimeoutMs: number;
@@ -369,6 +501,7 @@ export class LLMClient {
     this.defaultScope = config.defaultScope;
     this.telemetry = config.telemetry;
     this.providerUrls = config.providerUrls;
+    this.helicone = config.helicone;
     this.apiKeys = config.apiKeys;
     // Config takes precedence, then env var, then default
     this.captureTelemetryPayload =
@@ -454,16 +587,26 @@ export class LLMClient {
       : this.callTimeoutMs;
 
     try {
-      // LH: Bypass gateway if config or override specifies - use direct provider URLs for native features
-      const shouldBypassGateway = options.overrides?.bypassGateway ?? config.bypassGateway;
-      const effectiveProviderUrls = shouldBypassGateway ? undefined : this.providerUrls;
-      if (shouldBypassGateway) {
-        console.log(
-          `[LLMix] Bypassing AI Gateway for ${options.profile} (direct ${config.provider} API)`
-        );
-      }
-      // Get provider model instance
-      const model = getProviderModel(config.provider, effectiveModel, effectiveProviderUrls, this.apiKeys);
+      // LH: Resolve caching strategy from config and overrides
+      const cachingConfig = resolveCachingStrategy(config, options.overrides?.bypassGateway);
+      const { strategy: cachingStrategy, key: configCacheKey } = cachingConfig;
+
+      // LH: Use promptCacheKey from call options (takes priority over config key)
+      const effectiveCacheKey = options.promptCacheKey ?? configCacheKey;
+
+      // Log caching strategy
+      console.log(
+        `[LLMix] Caching strategy: ${cachingStrategy} for ${options.profile}${effectiveCacheKey ? ` (key: ${effectiveCacheKey})` : ""}`
+      );
+
+      // Get provider model instance with caching configuration
+      const model = getProviderModel(config.provider, effectiveModel, {
+        urls: this.providerUrls,
+        apiKeys: this.apiKeys,
+        helicone: this.helicone,
+        cachingStrategy,
+        cacheKey: effectiveCacheKey,
+      });
 
       // LH: Filter provider options based on model capabilities
       // This prevents errors like "textVerbosity not supported with gpt-4.1"
@@ -535,13 +678,13 @@ export class LLMClient {
           const cacheHitPercent = Math.round((usage.cachedInputTokens / usage.inputTokens) * 100);
           const tokensSaved = usage.cachedInputTokens;
           console.log(
-            `[LLMix] ✅ CACHE HIT | profile=${options.profile} | model=${effectiveModel} | ` +
+            `[LLMix] CACHE HIT | profile=${options.profile} | model=${effectiveModel} | ` +
               `cached=${tokensSaved}/${usage.inputTokens} (${cacheHitPercent}%) | latency=${latencyMs}ms`
           );
-        } else if (shouldBypassGateway) {
-          // Only log cache miss for profiles with bypassGateway (expecting native cache)
+        } else if (cachingStrategy === "native") {
+          // Only log cache miss for native caching strategy (expecting prompt cache)
           console.log(
-            `[LLMix] ⏳ CACHE MISS | profile=${options.profile} | model=${effectiveModel} | ` +
+            `[LLMix] CACHE MISS | profile=${options.profile} | model=${effectiveModel} | ` +
               `tokens=${usage.inputTokens} | latency=${latencyMs}ms | (first request or cache expired)`
           );
         }

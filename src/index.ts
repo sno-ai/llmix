@@ -47,6 +47,7 @@ export {
   createLLMClient,
   LLMClient,
   type ApiKeysConfig,
+  type HeliconeConfig,
   type LLMClientConfig,
   type ProviderUrlConfig,
 } from "./client";
@@ -67,6 +68,8 @@ export type {
   AnthropicProviderOptions,
   AnthropicThinkingConfig,
   CacheStats,
+  CachingConfig,
+  CachingStrategy,
   CallOptions,
   CommonParams,
   ConfigCapabilities,
@@ -143,6 +146,7 @@ export { LRUCache } from "./lru-cache";
 export {
   AnthropicProviderOptionsSchema,
   buildConfigFilePath,
+  CachingConfigSchema,
   // Zod schemas for external validation
   CommonParamsSchema,
   DeepSeekProviderOptionsSchema,
