@@ -362,13 +362,13 @@ LLMix supports Redis-based A/B experiment switching for runtime config version c
 
 ```
 Key:   experiment:llm:{module}:{profile}
-Value: {"enabled": true, "version": 2, "enabledAt": "2025-01-15T10:30:00Z", "split": null}
+Value: {"enabled": true, "version": 2, "enabledAt": "2025-01-15T10:30:00Z"}
 ```
 
 ### Usage with Shell Script (Dev)
 
 ```bash
-# Enable experiment (v2)
+# Enable experiment (100% traffic to v2)
 ./dev-scripts/ab-switch.sh llm:hrkg:extraction on
 
 # Check status
@@ -380,17 +380,6 @@ Value: {"enabled": true, "version": 2, "enabledAt": "2025-01-15T10:30:00Z", "spl
 # List active experiments
 ./dev-scripts/ab-switch.sh list
 ```
-
-### Traffic Splitting
-
-Route partial traffic to experiment version:
-
-```bash
-# 50% of users get v2
-./dev-scripts/ab-switch.sh llm:hrkg:extraction on --split 50
-```
-
-Split uses deterministic hash of `userId` for consistent routing.
 
 ### Dry-Run Testing
 

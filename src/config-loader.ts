@@ -423,17 +423,17 @@ export class LLMConfigLoader {
    * Get A/B experiment configuration from Redis
    *
    * Checks if an experiment is active for the given module/profile.
-   * If split is configured, uses deterministic hash of userId to route traffic.
+   * 100% toggle only - when enabled, all traffic goes to experiment version.
    *
    * @param module - Module name (e.g., "hrkg")
    * @param profile - Profile name (e.g., "extraction")
-   * @param userId - User ID for split routing (uses "_" if not provided)
-   * @returns ExperimentConfig with resolved version, or null if no active experiment
+   * @param userId - User ID (unused, kept for interface compatibility)
+   * @returns ExperimentConfig if experiment is enabled, null otherwise
    */
   private async getExperimentConfig(
     module: string,
     profile: string,
-    userId: string
+    _userId: string
   ): Promise<ExperimentConfig | null> {
     if (!this.redisAvailable || !this.redisClient) {
       return null;
@@ -455,9 +455,8 @@ export class LLMConfigLoader {
         typeof parsed.enabled !== "boolean" ||
         !Number.isInteger(parsed.version) ||
         parsed.version < 1 ||
-        typeof parsed.enabledAt !== "string" ||
-        (parsed.split !== null &&
-          (typeof parsed.split !== "number" || parsed.split < 0 || parsed.split > 100))
+        typeof parsed.enabledAt !== "string"
+        // LH: split field validation removed - ignore if present (backward compatible)
       ) {
         this.logger.warn("[AB] Invalid experiment payload, ignoring");
         return null;
@@ -469,23 +468,8 @@ export class LLMConfigLoader {
         return null;
       }
 
-      // Check split routing if configured
-      if (experiment.split !== null && userId !== "_") {
-        const hash = this.deterministicHash(userId);
-        const bucket = hash % 100;
-
-        // If bucket >= split, user is in control group (no experiment)
-        if (bucket >= experiment.split) {
-          this.logger.debug(
-            `[AB] User ${userId} in control group (bucket=${bucket}, split=${experiment.split})`
-          );
-          return null;
-        }
-
-        this.logger.debug(
-          `[AB] User ${userId} in experiment group (bucket=${bucket}, split=${experiment.split})`
-        );
-      }
+      // LH: Removed traffic splitting (split field) - only 100% toggle now
+      // If old Redis keys have split field, just ignore it (backward compatible)
 
       return experiment;
     } catch (error) {
@@ -494,30 +478,6 @@ export class LLMConfigLoader {
       this.logger.warn(`[AB] Failed to fetch experiment config: ${errorMessage}`);
       return null;
     }
-  }
-
-  /**
-   * Deterministic hash function for userId
-   *
-   * Uses FNV-1a hash algorithm for consistent, fast hashing.
-   * Returns a non-negative integer suitable for modulo operations.
-   *
-   * @param str - String to hash (userId)
-   * @returns Non-negative 32-bit integer
-   */
-  private deterministicHash(str: string): number {
-    // FNV-1a 32-bit hash
-    let hash = 0x811c9dc5; // FNV offset basis
-
-    for (let i = 0; i < str.length; i++) {
-      hash ^= str.charCodeAt(i);
-      // FNV prime: multiply by 16777619 (0x01000193)
-      // Use bit operations for speed
-      hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-    }
-
-    // Ensure non-negative
-    return hash >>> 0;
   }
 
   /**
