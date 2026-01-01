@@ -18,7 +18,7 @@
  *
  * @example
  * ```typescript
- * import { LLMConfigLoader } from '@sno-mem/llmix';
+ * import { LLMConfigLoader } from '@sno-cortex/llmix';
  *
  * const loader = new LLMConfigLoader({
  *   configDir: '/app/config/llm',

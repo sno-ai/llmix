@@ -10,7 +10,7 @@
  *
  * @example
  * ```typescript
- * import { createLLMConfigLoader, createLLMClient } from '@sno-mem/llmix';
+ * import { createLLMConfigLoader, createLLMClient } from '@sno-cortex/llmix';
  *
  * // Create and initialize loader
  * const loader = createLLMConfigLoader({
