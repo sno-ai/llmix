@@ -2,7 +2,7 @@
  * LLMix Types
  *
  * Type definitions for the LLM Config Loader package.
- * Schema mirrors AI SDK v5 exactly - no parameter renaming required.
+ * Schema mirrors AI SDK v6 exactly - no parameter renaming required.
  *
  * @see https://ai-sdk.dev/docs/reference/ai-sdk-core/generate-text
  */
@@ -152,7 +152,7 @@ export interface TimeoutConfig {
 }
 
 // =============================================================================
-// LLM CONFIG SCHEMA - AI SDK V5 ALIGNED
+// LLM CONFIG SCHEMA - AI SDK V6 ALIGNED
 // =============================================================================
 
 /**
@@ -164,7 +164,7 @@ export type Provider = "openai" | "anthropic" | "google" | "deepseek";
 export type ProviderOrUnknown = Provider | "unknown";
 
 /**
- * Common AI SDK v5 parameters
+ * Common AI SDK v6 parameters
  *
  * These map directly to generateText/streamText params.
  * @see https://ai-sdk.dev/docs/reference/ai-sdk-core/generate-text
@@ -199,7 +199,7 @@ export interface CommonParams {
 }
 
 // =============================================================================
-// PROVIDER-SPECIFIC OPTIONS - AI SDK V5 ALIGNED
+// PROVIDER-SPECIFIC OPTIONS - AI SDK V6 ALIGNED
 // =============================================================================
 
 /**
@@ -375,7 +375,7 @@ export interface DeepSeekProviderOptions {
 /**
  * Union type for all provider options
  *
- * Keys match AI SDK v5 providerOptions structure.
+ * Keys match AI SDK v6 providerOptions structure.
  */
 export interface ProviderOptions {
   openai?: OpenAIProviderOptions;
@@ -387,7 +387,7 @@ export interface ProviderOptions {
 /**
  * Full LLM configuration schema
  *
- * This schema mirrors AI SDK v5 exactly - values are passed directly
+ * This schema mirrors AI SDK v6 exactly - values are passed directly
  * to generateText/streamText without translation.
  */
 export interface LLMConfig {
@@ -397,7 +397,7 @@ export interface LLMConfig {
   /** Provider-specific model ID (required) */
   model: string;
 
-  /** Common AI SDK v5 parameters */
+  /** Common AI SDK v6 parameters */
   common?: CommonParams;
 
   /** Provider-specific options */

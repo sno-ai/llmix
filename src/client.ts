@@ -298,7 +298,7 @@ interface ProviderRoutingOptions {
 }
 
 /**
- * Get provider model instance for AI SDK v5
+ * Get provider model instance for AI SDK v6
  *
  * LH: Added CF AI Gateway support via baseURL configuration.
  * LH: Added Helicone routing for native prompt caching.
@@ -643,12 +643,12 @@ export class LLMClient {
         abortController.abort();
       }, effectiveTimeoutMs);
 
-      // Build generateText options - direct AI SDK v5 mapping
+      // Build generateText options - direct AI SDK v6 mapping
       // Use type assertion for flexibility with different message formats
       const generateOptions = {
         model,
         messages: options.messages,
-        // Spread common params directly (AI SDK v5 compatible)
+        // Spread common params directly (AI SDK v6 compatible)
         ...effectiveCommon,
         // Add provider-specific options if present (after capability filtering)
         ...(finalProviderOptions?.[config.provider] && {

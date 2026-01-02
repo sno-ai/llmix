@@ -275,7 +275,7 @@ export async function verifyPathContainmentAsync(
 // =============================================================================
 
 /**
- * Common AI SDK v5 parameters schema
+ * Common AI SDK v6 parameters schema
  */
 export const CommonParamsSchema = z
   .object({

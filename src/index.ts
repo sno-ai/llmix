@@ -1,7 +1,7 @@
 /**
  * LLMix - LLM Config Loader Package
  *
- * Three-tier caching system for LLM configurations with AI SDK v5 alignment.
+ * Three-tier caching system for LLM configurations with AI SDK v6 alignment.
  *
  * Architecture:
  * 1. Local LRU cache (0.1ms)
