@@ -2,7 +2,7 @@
  * LLMClient - Unified LLM Interface with Config-Driven Calls
  *
  * Provides a unified interface for making LLM calls using config from LLMConfigLoader.
- * Direct AI SDK v5 mapping - no parameter renaming.
+ * Direct AI SDK v6 mapping - no parameter renaming.
  *
  * Features:
  * - Profile string parsing ("module:profile" or "profile")
@@ -155,18 +155,23 @@ interface ParsedProfile {
 }
 
 /**
- * AI SDK v5 usage format
- * AI SDK v5 uses inputTokens/outputTokens (not promptTokens/completionTokens)
- * LH: Added cachedInputTokens for OpenAI/Anthropic prompt caching support
+ * AI SDK v6 usage format
+ * Token details are now nested under inputTokenDetails/outputTokenDetails
  */
 interface AISDKUsage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
-  /** Cached input tokens (OpenAI/Anthropic prompt caching) */
-  cachedInputTokens?: number;
-  /** Reasoning tokens (OpenAI o-series models) */
-  reasoningTokens?: number;
+  /** Input token details (v6 structure) */
+  inputTokenDetails?: {
+    /** Cached input tokens (prompt caching) - was cachedInputTokens in v5 */
+    cacheReadTokens?: number;
+  };
+  /** Output token details (v6 structure) */
+  outputTokenDetails?: {
+    /** Reasoning tokens (o-series models) - was reasoningTokens in v5 */
+    reasoningTokens?: number;
+  };
 }
 
 // =============================================================================
@@ -468,7 +473,8 @@ function deriveCapabilities(
 function extractUsage(usage: AISDKUsage | undefined): LLMUsage {
   const inputTokens = usage?.inputTokens ?? 0;
   const outputTokens = usage?.outputTokens ?? 0;
-  const cachedInputTokens = usage?.cachedInputTokens;
+  // v6: cachedInputTokens moved to inputTokenDetails.cacheReadTokens
+  const cachedInputTokens = usage?.inputTokenDetails?.cacheReadTokens;
   return {
     inputTokens,
     outputTokens,
@@ -484,7 +490,7 @@ function extractUsage(usage: AISDKUsage | undefined): LLMUsage {
 /**
  * LLM Client for making config-driven LLM calls
  *
- * Uses LLMConfigLoader for configuration resolution and AI SDK v5 for LLM calls.
+ * Uses LLMConfigLoader for configuration resolution and AI SDK v6 for LLM calls.
  */
 export class LLMClient {
   private readonly loader: LLMConfigLoader;
