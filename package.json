@@ -1,7 +1,7 @@
 {
   "name": "llmix",
   "version": "1.0.0",
-  "description": "Config-driven LLM client with three-tier caching and AI SDK v5 integration",
+  "description": "Config-driven LLM client with three-tier caching and AI SDK v6 integration",
   "publishConfig": {
     "access": "public"
   },
@@ -29,9 +29,9 @@
     "zod": "^3.24.0"
   },
   "peerDependencies": {
-    "@ai-sdk/google": ">=1.0.0",
-    "@ai-sdk/openai": ">=1.0.0",
-    "ai": ">=4.0.0",
+    "@ai-sdk/google": ">=3.0.0",
+    "@ai-sdk/openai": ">=3.0.0",
+    "ai": ">=6.0.0",
     "ioredis": ">=5.0.0"
   },
   "peerDependenciesMeta": {
@@ -49,10 +49,10 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/google": "^1.0.0",
-    "@ai-sdk/openai": "^1.0.0",
+    "@ai-sdk/google": "^3.0.0",
+    "@ai-sdk/openai": "^3.0.0",
     "@types/node": "^22.0.0",
-    "ai": "^4.0.0",
+    "ai": "^6.0.0",
     "ioredis": "^5.4.1",
     "typescript": "^5.7.0"
   },
