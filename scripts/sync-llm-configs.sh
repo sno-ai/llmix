@@ -42,10 +42,18 @@ fi
 
 cd "$PROJECT_ROOT"
 
+# Get dev Redis port from config (Single Source of Truth)
+CONFIG_FILE="$PROJECT_ROOT/config/ip-port.yaml"
+if [[ -f "$CONFIG_FILE" ]] && command -v yq &>/dev/null; then
+    DEV_REDIS_PORT=$(yq -e '.dev.redis.port' "$CONFIG_FILE" 2>/dev/null || echo "16379")
+else
+    DEV_REDIS_PORT="16379"
+fi
+
 # Get dev Redis password from Doppler
 DEV_REDIS_PASSWORD=$(doppler secrets get REDIS_PASSWORD --config dev --plain 2>/dev/null || echo "")
 
-exec doppler run --config prd -- uv run python -c "
+DEV_REDIS_PORT="$DEV_REDIS_PORT" exec doppler run --config prd -- uv run python -c "
 import os
 import sys
 import re
@@ -122,7 +130,8 @@ def sync_to_redis(client, config_dir: Path) -> int:
 print(f'{BLUE}━━━ DEV Redis (Docker) ━━━{NC}')
 dev_client = None
 try:
-    dev_redis_url = f'redis://:{dev_redis_password}@localhost:16379/0' if dev_redis_password else 'redis://localhost:16379/0'
+    dev_redis_port = os.environ.get('DEV_REDIS_PORT', '16379')
+    dev_redis_url = f'redis://:{dev_redis_password}@localhost:{dev_redis_port}/0' if dev_redis_password else f'redis://localhost:{dev_redis_port}/0'
     dev_client = redis.from_url(dev_redis_url, decode_responses=True, socket_connect_timeout=5)
     dev_client.ping()
     print(f'{GREEN}[OK]{NC} Connected')
