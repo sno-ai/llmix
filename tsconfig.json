@@ -5,7 +5,11 @@
     "moduleResolution": "bundler",
     "lib": ["ES2022"],
     "outDir": "./dist",
-    "rootDir": "./src",
+    "baseUrl": "../..",
+    "paths": {
+      "@/utils/*": ["package/utils/*"],
+      "@/config/*": ["config/*"]
+    },
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

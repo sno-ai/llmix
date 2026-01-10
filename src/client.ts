@@ -27,7 +27,10 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 import { generateText } from "ai";
+import { createLogger } from "@/utils/logger";
 import type { LLMConfigLoader } from "./config-loader";
+
+const logger = createLogger("llmix");
 import { filterOpenAIProviderOptions } from "./model-capabilities";
 import type {
   CachingConfig,
@@ -256,7 +259,7 @@ function resolveCachingStrategy(
 ): CachingConfig {
   // Priority 1: Legacy override.bypassGateway (backwards compat)
   if (overrideBypassGateway !== undefined) {
-    console.warn(
+    logger.warn(
       `[LLMix] DEPRECATED: bypassGateway override used. Use caching.strategy instead.`
     );
     return overrideBypassGateway
@@ -271,7 +274,7 @@ function resolveCachingStrategy(
 
   // Priority 3: Legacy config.bypassGateway (backwards compat)
   if (config.bypassGateway !== undefined) {
-    console.warn(
+    logger.warn(
       `[LLMix] DEPRECATED: bypassGateway config used in ${config.configId}. Use caching.strategy instead.`
     );
     return config.bypassGateway ? { strategy: "native" } : { strategy: "gateway" };
@@ -323,11 +326,11 @@ function getProviderModel(
 
   // LH: Log routing decision
   if (cachingStrategy === "native") {
-    console.debug(`[LLMix] Using native caching for provider: ${provider}`);
+    logger.debug(`[LLMix] Using native caching for provider: ${provider}`);
   } else if (urls?.useCfAiGateway && cachingStrategy === "gateway") {
-    console.debug(`[LLMix] Using CF AI Gateway for provider: ${provider}`);
+    logger.debug(`[LLMix] Using CF AI Gateway for provider: ${provider}`);
   } else if (cachingStrategy === "disabled") {
-    console.debug(`[LLMix] Caching disabled for provider: ${provider}`);
+    logger.debug(`[LLMix] Caching disabled for provider: ${provider}`);
   }
 
   switch (provider) {
@@ -343,13 +346,13 @@ function getProviderModel(
       if (cachingStrategy === "native" && !isEmbeddingModel(model)) {
         const heliconeApiKey = helicone?.apiKey ?? process.env.HELICONE_API_KEY;
         if (!heliconeApiKey) {
-          console.warn(
+          logger.warn(
             `[LLMix] Native caching requested but HELICONE_API_KEY not set. Falling back to gateway.`
           );
           // Fall through to gateway logic
         } else {
           const heliconeBaseUrl = helicone?.baseUrl ?? HELICONE_OPENAI_BASE_URL;
-          console.log(
+          logger.info(
             `[LLMix] Routing OpenAI via Helicone for native prompt caching (key: ${cacheKey ?? "auto"})`
           );
 
@@ -420,11 +423,11 @@ function getProviderModel(
 
       // LH: Log routing info
       if (urls?.useCfAiGateway && urls.openRouterBaseUrl && cachingStrategy !== "disabled") {
-        console.debug(
+        logger.debug(
           `[LLMix] Routing DeepSeek "${model}" via OpenRouter (CF Gateway) as "${openRouterModel}"`
         );
       } else {
-        console.debug(
+        logger.debug(
           `[LLMix] Routing DeepSeek "${model}" via OpenRouter (direct) as "${openRouterModel}"`
         );
       }
@@ -553,7 +556,7 @@ export class LLMClient {
       const errorStack = configError instanceof Error ? configError.stack : undefined;
 
       // Log config load failure with context
-      console.error(`[LLMix] Config load failed for profile ${options.profile}`, {
+      logger.error(`[LLMix] Config load failed for profile ${options.profile}`, {
         error: errorMessage,
         stack: errorStack,
         module,
@@ -601,7 +604,7 @@ export class LLMClient {
       const effectiveCacheKey = options.promptCacheKey ?? configCacheKey;
 
       // Log caching strategy
-      console.log(
+      logger.info(
         `[LLMix] Caching strategy: ${cachingStrategy} for ${options.profile}${effectiveCacheKey ? ` (key: ${effectiveCacheKey})` : ""}`
       );
 
@@ -625,9 +628,9 @@ export class LLMClient {
 
         // Log filtered params as warnings (helps debug config issues)
         if (Object.keys(filteredParams).length > 0) {
-          console.warn(
+          logger.warn(
             `[LLMix] Filtered unsupported params for ${effectiveModel} (${capabilities.modelClass}):`,
-            filteredParams
+            filteredParams as Record<string, unknown>
           );
         }
 
@@ -662,7 +665,7 @@ export class LLMClient {
 
       // Make the LLM call (assertion needed for AI SDK type flexibility)
       // LH: Log model info for debugging/A/B test verification
-      console.log(
+      logger.info(
         `[LLMix] Calling ${config.provider}/${effectiveModel} (profile: ${options.profile}, version: ${config.version})`
       );
 
@@ -683,13 +686,13 @@ export class LLMClient {
         if (usage.cachedInputTokens && usage.cachedInputTokens > 0) {
           const cacheHitPercent = Math.round((usage.cachedInputTokens / usage.inputTokens) * 100);
           const tokensSaved = usage.cachedInputTokens;
-          console.log(
+          logger.info(
             `[LLMix] CACHE HIT | profile=${options.profile} | model=${effectiveModel} | ` +
               `cached=${tokensSaved}/${usage.inputTokens} (${cacheHitPercent}%) | latency=${latencyMs}ms`
           );
         } else if (cachingStrategy === "native") {
           // Only log cache miss for native caching strategy (expecting prompt cache)
-          console.log(
+          logger.info(
             `[LLMix] CACHE MISS | profile=${options.profile} | model=${effectiveModel} | ` +
               `tokens=${usage.inputTokens} | latency=${latencyMs}ms | (first request or cache expired)`
           );
@@ -733,7 +736,7 @@ export class LLMClient {
       const errorStack = error instanceof Error ? error.stack : undefined;
 
       // LH: Log error with full context for debugging (never fail silently)
-      console.error(
+      logger.error(
         `[LLMix] LLM call failed for ${config.configId} (${config.provider}/${effectiveModel})`,
         {
           error: errorMessage,
@@ -847,7 +850,7 @@ export class LLMClient {
       ]);
     } catch (error) {
       // Log but never throw - telemetry should not affect response
-      console.warn(
+      logger.warn(
         `[LLMix] Telemetry failed for ${params.config?.configId ?? "unknown"}: ${String(error)}`
       );
     }

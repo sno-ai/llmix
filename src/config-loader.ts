@@ -31,7 +31,10 @@
  */
 
 import type Redis from "ioredis";
+import { createLogger } from "@/utils/logger";
 import { LRUCache } from "./lru-cache";
+
+const sharedLogger = createLogger("llmix-config");
 import {
   type CacheStats,
   ConfigNotFoundError,
@@ -76,10 +79,10 @@ const EXPERIMENT_KEY_PREFIX = "experiment:llm:";
 // =============================================================================
 
 const defaultLogger: LLMConfigLoaderLogger = {
-  debug: (msg, ...args) => console.debug(`[LLMConfigLoader] ${msg}`, ...args),
-  info: (msg, ...args) => console.info(`[LLMConfigLoader] ${msg}`, ...args),
-  warn: (msg, ...args) => console.warn(`[LLMConfigLoader] ${msg}`, ...args),
-  error: (msg, ...args) => console.error(`[LLMConfigLoader] ${msg}`, ...args),
+  debug: (msg, ...args) => sharedLogger.debug(`${msg}`, ...(args.length ? [args[0] as Record<string, unknown>] : [])),
+  info: (msg, ...args) => sharedLogger.info(`${msg}`, ...(args.length ? [args[0] as Record<string, unknown>] : [])),
+  warn: (msg, ...args) => sharedLogger.warn(`${msg}`, ...(args.length ? [args[0] as Record<string, unknown>] : [])),
+  error: (msg, ...args) => sharedLogger.error(`${msg}`, ...(args.length ? [args[0] as Record<string, unknown>] : [])),
 };
 
 // =============================================================================
