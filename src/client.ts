@@ -626,9 +626,10 @@ export class LLMClient {
           effectiveProviderOptions.openai as OpenAIProviderOptions
         );
 
-        // Log filtered params as warnings (helps debug config issues)
+        // Log filtered params at debug level (expected behavior for GPT-4.x with reasoning params)
+        // These params are kept in YAML config for GPT-5+ models that support them
         if (Object.keys(filteredParams).length > 0) {
-          logger.warn(
+          logger.debug(
             `[LLMix] Filtered unsupported params for ${effectiveModel} (${capabilities.modelClass}):`,
             filteredParams as Record<string, unknown>
           );
