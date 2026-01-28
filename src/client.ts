@@ -80,7 +80,7 @@ export interface ProviderUrlConfig {
 export interface HeliconeConfig {
   /** Helicone API key (required for native caching) */
   apiKey?: string;
-  /** Helicone base URL (default: https://oai.helicone.ai/v1) */
+  /** Helicone base URL (default: https://helicone.sno.ai) */
   baseUrl?: string;
 }
 
@@ -328,7 +328,7 @@ interface ProviderRoutingOptions {
  * LH: Added Helicone routing for native prompt caching.
  *
  * Routing logic:
- * - strategy="native" + OpenAI + LLM: Route via Helicone (https://oai.helicone.ai/v1)
+ * - strategy="native" + OpenAI + LLM: Route via Helicone (https://helicone.sno.ai)
  * - strategy="native" + OpenAI + embedding: Direct OpenAI (native caching not supported)
  * - strategy="gateway": Use CF AI Gateway URLs
  * - strategy="disabled": Direct provider URLs

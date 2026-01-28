@@ -17,7 +17,7 @@
  * - "native": Provider's native caching (OpenAI/Anthropic prompt caching via Helicone)
  *   - 90% cost savings on cached tokens
  *   - Requires cache key to group related prompts
- *   - Routes through Helicone for OpenAI (https://oai.helicone.ai/v1)
+ *   - Routes through Helicone for OpenAI (https://helicone.sno.ai)
  *   - Only for LLM calls (not embeddings)
  *
  * - "gateway": AI Gateway response caching (CF AI Gateway)
