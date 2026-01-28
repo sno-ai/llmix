@@ -32,20 +32,21 @@ import type { LLMConfigLoader } from "./config-loader";
 
 const logger = createLogger("llmix");
 import { filterOpenAIProviderOptions } from "./model-capabilities";
-import type {
-  CachingConfig,
-  CachingStrategy,
-  CallOptions,
-  ConfigCapabilities,
-  LLMCallEventData,
-  LLMixTelemetryProvider,
-  LLMResponse,
-  LLMUsage,
-  OpenAIProviderOptions,
-  Provider,
-  ResolvedConfigResult,
-  ResolvedLLMConfig,
-  TelemetryContext,
+import {
+  OPENAI_PROMPT_CACHE_MIN_TOKENS,
+  type CachingConfig,
+  type CachingStrategy,
+  type CallOptions,
+  type ConfigCapabilities,
+  type LLMCallEventData,
+  type LLMixTelemetryProvider,
+  type LLMResponse,
+  type LLMUsage,
+  type OpenAIProviderOptions,
+  type Provider,
+  type ResolvedConfigResult,
+  type ResolvedLLMConfig,
+  type TelemetryContext,
 } from "./types";
 
 // =============================================================================
@@ -316,6 +317,8 @@ interface ProviderRoutingOptions {
   cachingStrategy?: CachingStrategy;
   /** Cache key for native strategy */
   cacheKey?: string;
+  /** Module name for Helicone tracking (default: "llmix") */
+  module?: string;
 }
 
 /**
@@ -340,7 +343,7 @@ function getProviderModel(
   model: string,
   options?: ProviderRoutingOptions
 ): LanguageModel {
-  const { urls, apiKeys, helicone, cachingStrategy, cacheKey } = options ?? {};
+  const { urls, apiKeys, helicone, cachingStrategy, cacheKey, module: heliconeModule } = options ?? {};
 
   // LH: Log routing decision
   if (cachingStrategy === "native") {
@@ -383,7 +386,7 @@ function getProviderModel(
               // MANDATORY headers
               "Helicone-Auth": `Bearer ${heliconeApiKey}`,
               "Helicone-Property-App": "sno-cortex",
-              "Helicone-Property-Module": "hrkg",
+              "Helicone-Property-Module": heliconeModule ?? "llmix",
               "Helicone-Property-Environment": getHeliconeEnvironment(),
               // Response caching for deterministic calls
               "Helicone-Cache-Enabled": "true",
@@ -641,6 +644,7 @@ export class LLMClient {
         helicone: this.helicone,
         cachingStrategy,
         cacheKey: effectiveCacheKey,
+        module: config.module,
       });
 
       // LH: Filter provider options based on model capabilities
@@ -708,8 +712,8 @@ export class LLMClient {
       const latencyMs = Date.now() - startTime;
 
       // LH: Log prompt cache status for production debugging (visible in Docker logs)
-      // Only log for prompts that could be cached (>1024 tokens)
-      if (usage.inputTokens >= 1024) {
+      // Only log for prompts that could be cached (>= OPENAI_PROMPT_CACHE_MIN_TOKENS)
+      if (usage.inputTokens >= OPENAI_PROMPT_CACHE_MIN_TOKENS) {
         if (usage.cachedInputTokens && usage.cachedInputTokens > 0) {
           const cacheHitPercent = Math.round((usage.cachedInputTokens / usage.inputTokens) * 100);
           const tokensSaved = usage.cachedInputTokens;

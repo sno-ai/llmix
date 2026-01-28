@@ -958,3 +958,10 @@ export const VALID_PROVIDERS: readonly Provider[] = [
 
 /** Minimum budgetTokens for Anthropic extended thinking */
 export const ANTHROPIC_MIN_BUDGET_TOKENS = 1024;
+
+/**
+ * OpenAI prompt cache minimum token threshold.
+ * Prompts must be >= this many tokens for OpenAI's automatic prompt caching to activate.
+ * @see https://platform.openai.com/docs/guides/prompt-caching
+ */
+export const OPENAI_PROMPT_CACHE_MIN_TOKENS = 1024;
