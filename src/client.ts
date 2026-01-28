@@ -184,8 +184,26 @@ interface AISDKUsage {
 /** Models that support OpenAI Batch API */
 const BATCH_CAPABLE_MODEL_PATTERNS = [/^gpt-4/, /^gpt-5/, /^o1/, /^o3/];
 
-/** Default Helicone base URL for OpenAI proxy */
-const HELICONE_OPENAI_BASE_URL = "https://oai.helicone.ai/v1";
+/**
+ * Get Helicone base URL for OpenAI proxy.
+ * Doppler: https://helicone.sno.ai/v1/gateway/oai
+ * AI SDK needs: https://helicone.sno.ai/v1/gateway/oai/v1 (appends /chat/completions)
+ */
+function getHeliconeBaseUrl(): string {
+  const base = process.env.HELICONE_BASE_URL || "https://helicone.sno.ai/v1/gateway/oai";
+  // AI SDK appends /chat/completions, so we need /v1 suffix
+  return base.endsWith("/v1") ? base : `${base}/v1`;
+}
+
+/**
+ * Get Helicone environment from NODE_ENV
+ */
+function getHeliconeEnvironment(): "dev" | "stg" | "prd" {
+  const env = (process.env.NODE_ENV || "development").toLowerCase();
+  if (env === "production") return "prd";
+  if (env === "staging") return "stg";
+  return "dev";
+}
 
 /**
  * LH: DeepSeek model mappings for OpenRouter
@@ -351,18 +369,26 @@ function getProviderModel(
           );
           // Fall through to gateway logic
         } else {
-          const heliconeBaseUrl = helicone?.baseUrl ?? HELICONE_OPENAI_BASE_URL;
+          const heliconeBaseUrl = helicone?.baseUrl ?? getHeliconeBaseUrl();
           logger.info(
             `[LLMix] Routing OpenAI via Helicone for native prompt caching (key: ${cacheKey ?? "auto"})`
           );
 
-          // Create OpenAI client with Helicone proxy and auth header
+          // Create OpenAI client with Helicone proxy and MANDATORY headers
+          // Per SNO_CORTEX_HELICONE.md standards
           const openai = createOpenAI({
             apiKey,
             baseURL: heliconeBaseUrl,
             headers: {
+              // MANDATORY headers
               "Helicone-Auth": `Bearer ${heliconeApiKey}`,
-              // LH: Add cache key header if provided for prompt grouping
+              "Helicone-Property-App": "sno-cortex",
+              "Helicone-Property-Module": "hrkg",
+              "Helicone-Property-Environment": getHeliconeEnvironment(),
+              // Response caching for deterministic calls
+              "Helicone-Cache-Enabled": "true",
+              "Cache-Control": "max-age=86400",
+              // Optional: Cache key for prompt grouping
               ...(cacheKey && { "Helicone-Cache-Key": cacheKey }),
             },
           });
