@@ -2,20 +2,24 @@
  * LLM Model Pricing Table
  *
  * AUTO-GENERATED from Helicone API (https://api.helicone.ai)
- * Generated: 2026-01-27T09:36:40.403Z
+ * Last synced: 2026-01-29
  *
- * DO NOT EDIT MANUALLY - Run sync script to update:
- *   cd ~/infra/onprem-infra && ./scripts/sync-llm-pricing/sync.sh
+ * Pricing: USD per 1M tokens (input/output)
+ * - For rerankers: input = cost per 1M tokens processed, output = 0
+ * - For embeddings: input = cost per 1M tokens, output = 0
  *
- * Pricing: USD per 1M tokens
+ * To update: cd ~/infra/onprem-infra && ./scripts/sync-llm-pricing/sync.sh
  */
 
 /**
- * Model pricing: USD per 1M tokens
+ * Unified model pricing: USD per 1M tokens
  */
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+	// ============================================
 	// OpenAI
-	"gemini-embedding-001": { input: 0, output: 0 },
+	// ============================================
+	"chatgpt-4o-latest": { input: 5.28, output: 15.82 },
+	"codex-mini-latest": { input: 1.5, output: 6 },
 	"gpt-4.1-2025-04-14": { input: 2, output: 8 },
 	"gpt-4.1-mini-2025-04-14": { input: 0.4, output: 1.6 },
 	"gpt-4.1-nano": { input: 0.1, output: 0.4 },
@@ -43,96 +47,114 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 	"gpt-image-1.5": { input: 5, output: 10 },
 	"gpt-oss-120b": { input: 0.04, output: 0.16 },
 	"gpt-oss-20b": { input: 0.05, output: 0.2 },
-	"qwen3-vl-embedding-8b": { input: 0, output: 0 },
+	"text-embedding-3-small": { input: 0.02, output: 0 },
+	"text-embedding-3-large": { input: 0.13, output: 0 },
 
+	// ============================================
 	// Anthropic
+	// ============================================
 	"claude-4.5-haiku": { input: 1, output: 5 },
 	"claude-4.5-sonnet": { input: 3, output: 15 },
 	"claude-haiku-4-5-20251001": { input: 1, output: 5 },
 	"claude-sonnet-4-5-20250929": { input: 3, output: 15 },
 
+	// ============================================
 	// Google
-	"gemini-2.0-flash-exp": { input: 0, output: 0 },
+	// ============================================
+	"gemini-2.5-flash": { input: 0.3, output: 2.5 },
 	"gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
 	"gemini-2.5-pro-preview": { input: 1.25, output: 10 },
 	"gemini-3-flash-preview": { input: 0.5, output: 3 },
 	"gemini-3-pro-image-preview": { input: 2, output: 12 },
 	"gemini-3-pro-preview": { input: 2, output: 12 },
-	"models/gemini-2.5-flash": { input: 0.3, output: 2.5 },
-	"semantic-ranker-default-004": { input: 0, output: 0 },
-	"semantic-ranker-default@latest": { input: 0, output: 0 },
-	"semantic-ranker-fast-004": { input: 0, output: 0 },
+	"gemini-embedding-001": { input: 0, output: 0 },
 
-	// Other (Jina, self-hosted, etc.)
-	"Qwen/Qwen3-Reranker-4B": { input: 0, output: 0 },
-	"Qwen/Qwen3-Reranker-8B": { input: 0, output: 0 },
-	"chatgpt-4o-latest": { input: 5.28, output: 15.82 },
-	"codex-mini-latest": { input: 1.5, output: 6 },
+	// ============================================
+	// DeepSeek
+	// ============================================
 	"deepseek-r1-distill-llama-70b": { input: 0.03, output: 0.13 },
 	"deepseek-reasoner": { input: 0.56, output: 1.68 },
 	"deepseek-tng-r1t2-chimera": { input: 0.3, output: 1.2 },
 	"deepseek-v3": { input: 0.27, output: 1 },
 	"deepseek-v3.1-terminus": { input: 0.27, output: 1 },
 	"deepseek-v3.2": { input: 0.26, output: 0.4 },
-	"gemma-3-12b-it": { input: 0.05, output: 0.1 },
-	"gemma2-9b-it": { input: 0.01, output: 0.03 },
+
+	// ============================================
+	// Mistral
+	// ============================================
 	"mistral-large-2411": { input: 2, output: 6 },
 	"mistral-nemo": { input: 20, output: 40 },
 	"mistral-small": { input: 75, output: 200 },
+
+	// ============================================
+	// Other (Gemma, etc.)
+	// ============================================
+	"gemma-3-12b-it": { input: 0.05, output: 0.1 },
+	"gemma2-9b-it": { input: 0.01, output: 0.03 },
+
+	// ============================================
+	// Rerankers (input only, output = 0)
+	// ============================================
+	// Cohere (~$2 per 1K searches ≈ $2 per 1M tokens)
+	"rerank-english-v3.5": { input: 2, output: 0 },
+	"rerank-multilingual-v3.5": { input: 2, output: 0 },
+	"rerank-v3.5": { input: 2, output: 0 },
+	// Google Semantic Ranker (free tier)
+	"semantic-ranker-default-004": { input: 0, output: 0 },
+	"semantic-ranker-default@latest": { input: 0, output: 0 },
+	"semantic-ranker-fast-004": { input: 0, output: 0 },
+
+	// ============================================
+	// Self-hosted (free - our own GPUs)
+	// ============================================
+	// Embeddings
+	"qwen3-vl-embedding-8b": { input: 0, output: 0 },
+	// Rerankers
+	"qwen3-reranker-4b": { input: 0, output: 0 },
+	"qwen3-reranker-8b": { input: 0, output: 0 },
 	"qwen3-vl-reranker-2b": { input: 0, output: 0 },
 }
 
 /**
- * Cohere Rerank Pricing: USD per 1,000 searches
- * A "search" = 1 query against a document set
- * https://cohere.com/pricing
- */
-const RERANK_PRICING: Record<string, number> = {
-	"rerank-english-v3.5": 2,
-	"rerank-multilingual-v3.5": 2,
-	"rerank-v3.5": 2,
-}
-
-/**
- * Calculate cost for a Cohere rerank call
- *
- * @param modelName - Rerank model identifier
- * @param searchCount - Number of searches (usually 1 per rerank call)
- * @returns Cost in USD
- */
-export function calculateRerankCost(modelName: string, searchCount: number = 1): number {
-	const pricePerThousand = RERANK_PRICING[modelName]
-	if (!pricePerThousand) {
-		console.warn(`[llmix/pricing] No pricing data for rerank model: ${modelName}`)
-		return 0
-	}
-	return Number(((searchCount / 1000) * pricePerThousand).toFixed(6))
-}
-
-/**
  * Get pricing for a specific model
+ * @returns { input, output } in USD per 1M tokens, or null if not found
  */
 export function getModelPricing(modelName: string): { input: number; output: number } | null {
-	const pricing = MODEL_PRICING[modelName]
-	if (!pricing) {
-		console.warn(`[llmix/pricing] No pricing data for model: ${modelName}`)
-		return null
+	// Try exact match
+	if (MODEL_PRICING[modelName]) {
+		return MODEL_PRICING[modelName]
 	}
-	return pricing
+
+	// Try lowercase match (handles Qwen/Qwen3-Reranker-4B → qwen3-reranker-4b)
+	const normalized = modelName.toLowerCase().replace(/\//g, "-").replace(/qwen-/g, "")
+	if (MODEL_PRICING[normalized]) {
+		return MODEL_PRICING[normalized]
+	}
+
+	// Try removing models/ prefix
+	if (modelName.startsWith("models/")) {
+		const stripped = modelName.slice(7)
+		if (MODEL_PRICING[stripped]) {
+			return MODEL_PRICING[stripped]
+		}
+	}
+
+	console.warn(`[llmix/pricing] No pricing data for model: ${modelName}`)
+	return null
 }
 
 /**
- * Calculate costs for an LLM call
+ * Calculate costs for an LLM/embedding/reranker call
  *
  * @param modelName - Model identifier
- * @param promptTokens - Number of input tokens
- * @param completionTokens - Number of output tokens
+ * @param inputTokens - Number of input tokens (prompt, documents, etc.)
+ * @param outputTokens - Number of output tokens (completion, 0 for embeddings/rerankers)
  * @returns Cost breakdown in USD
  */
 export function calculateCost(
 	modelName: string,
-	promptTokens: number,
-	completionTokens: number
+	inputTokens: number,
+	outputTokens: number = 0
 ): {
 	inputCostUsd: number
 	outputCostUsd: number
@@ -141,17 +163,11 @@ export function calculateCost(
 	const pricing = getModelPricing(modelName)
 
 	if (!pricing) {
-		// Unknown model - return zero costs
-		return {
-			inputCostUsd: 0,
-			outputCostUsd: 0,
-			totalCostUsd: 0,
-		}
+		return { inputCostUsd: 0, outputCostUsd: 0, totalCostUsd: 0 }
 	}
 
-	// Calculate costs: (tokens / 1M) * price_per_1M
-	const inputCostUsd = (promptTokens / 1_000_000) * pricing.input
-	const outputCostUsd = (completionTokens / 1_000_000) * pricing.output
+	const inputCostUsd = (inputTokens / 1_000_000) * pricing.input
+	const outputCostUsd = (outputTokens / 1_000_000) * pricing.output
 	const totalCostUsd = inputCostUsd + outputCostUsd
 
 	return {
@@ -159,4 +175,11 @@ export function calculateCost(
 		outputCostUsd: Number(outputCostUsd.toFixed(6)),
 		totalCostUsd: Number(totalCostUsd.toFixed(6)),
 	}
+}
+
+// Backwards compatibility - deprecated, use calculateCost instead
+export const calculateRerankCost = (modelName: string, searchCount: number = 1): number => {
+	// Rough estimate: 1 search ≈ 1000 tokens
+	const estimatedTokens = searchCount * 1000
+	return calculateCost(modelName, estimatedTokens, 0).totalCostUsd
 }
