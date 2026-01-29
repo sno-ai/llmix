@@ -25,6 +25,6 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "test/pricing.test.ts"],
   "exclude": ["node_modules", "dist"]
 }
