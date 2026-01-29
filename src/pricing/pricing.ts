@@ -8,11 +8,15 @@
  * - For rerankers: input = cost per 1M tokens processed, output = 0
  * - For embeddings: input = cost per 1M tokens, output = 0
  *
+ * Note: Date suffixes are stripped automatically in lookups.
+ * e.g., "gpt-5-mini-2025-08-07" → "gpt-5-mini"
+ *
  * To update: cd ~/infra/onprem-infra && ./scripts/sync-llm-pricing/sync.sh
  */
 
 /**
  * Unified model pricing: USD per 1M tokens
+ * Only base model names - date variants resolved via normalization
  */
 export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 	// ============================================
@@ -20,23 +24,18 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
 	// ============================================
 	"chatgpt-4o-latest": { input: 5.28, output: 15.82 },
 	"codex-mini-latest": { input: 1.5, output: 6 },
-	"gpt-4.1-2025-04-14": { input: 2, output: 8 },
-	"gpt-4.1-mini-2025-04-14": { input: 0.4, output: 1.6 },
+	"gpt-4.1": { input: 2, output: 8 },
+	"gpt-4.1-mini": { input: 0.4, output: 1.6 },
 	"gpt-4.1-nano": { input: 0.1, output: 0.4 },
 	"gpt-4o": { input: 2.5, output: 10 },
 	"gpt-4o-mini": { input: 0.15, output: 0.6 },
 	"gpt-5": { input: 1.25, output: 10 },
-	"gpt-5-2025-08-07": { input: 1.25, output: 10 },
 	"gpt-5-chat-latest": { input: 1.25, output: 10 },
 	"gpt-5-codex": { input: 1.25, output: 10 },
 	"gpt-5-mini": { input: 0.25, output: 2 },
-	"gpt-5-mini-2025-08-07": { input: 0.25, output: 2 },
 	"gpt-5-nano": { input: 0.05, output: 0.4 },
-	"gpt-5-nano-2025-08-07": { input: 0.05, output: 0.4 },
 	"gpt-5-pro": { input: 15, output: 120 },
-	"gpt-5-pro-2025-10-01": { input: 15, output: 120 },
 	"gpt-5.1": { input: 1.25, output: 10 },
-	"gpt-5.1-2025-11-13": { input: 1.25, output: 10 },
 	"gpt-5.1-chat-latest": { input: 1.25, output: 10 },
 	"gpt-5.1-codex": { input: 1.25, output: 10 },
 	"gpt-5.1-codex-mini": { input: 0.25, output: 2 },
@@ -55,8 +54,6 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
 	// ============================================
 	"claude-4.5-haiku": { input: 1, output: 5 },
 	"claude-4.5-sonnet": { input: 3, output: 15 },
-	"claude-haiku-4-5-20251001": { input: 1, output: 5 },
-	"claude-sonnet-4-5-20250929": { input: 3, output: 15 },
 
 	// ============================================
 	// Google
@@ -74,15 +71,13 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
 	// ============================================
 	"deepseek-r1-distill-llama-70b": { input: 0.03, output: 0.13 },
 	"deepseek-reasoner": { input: 0.56, output: 1.68 },
-	"deepseek-tng-r1t2-chimera": { input: 0.3, output: 1.2 },
 	"deepseek-v3": { input: 0.27, output: 1 },
-	"deepseek-v3.1-terminus": { input: 0.27, output: 1 },
 	"deepseek-v3.2": { input: 0.26, output: 0.4 },
 
 	// ============================================
 	// Mistral
 	// ============================================
-	"mistral-large-2411": { input: 2, output: 6 },
+	"mistral-large": { input: 2, output: 6 },
 	"mistral-nemo": { input: 20, output: 40 },
 	"mistral-small": { input: 75, output: 200 },
 
@@ -109,6 +104,8 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
 	// ============================================
 	// Embeddings
 	"qwen3-vl-embedding-8b": { input: 0, output: 0 },
+	"qwen3-embedding-4b": { input: 0, output: 0 },
+	"qwen3-embedding-8b": { input: 0, output: 0 },
 	// Rerankers
 	"qwen3-reranker-4b": { input: 0, output: 0 },
 	"qwen3-reranker-8b": { input: 0, output: 0 },
@@ -116,27 +113,69 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
 }
 
 /**
+ * Normalize model name for lookup:
+ * - Strip date suffixes: -2025-08-07, -20251001, -2411
+ * - Handle Anthropic naming: claude-haiku-4-5 → claude-4.5-haiku
+ * - Handle prefixes: models/, Qwen/
+ * - Lowercase
+ */
+function normalizeModelName(name: string): string {
+	let normalized = name.toLowerCase()
+
+	// Remove models/ prefix
+	if (normalized.startsWith("models/")) {
+		normalized = normalized.slice(7)
+	}
+
+	// Remove Qwen/ prefix and normalize
+	normalized = normalized.replace(/^qwen\/qwen/, "qwen")
+
+	// Strip date suffixes:
+	// -2025-08-07 (OpenAI YYYY-MM-DD)
+	// -20251001 (Anthropic YYYYMMDD)
+	// -2411 (Mistral YYMM)
+	normalized = normalized
+		.replace(/-\d{4}-\d{2}-\d{2}$/, "") // YYYY-MM-DD
+		.replace(/-\d{8}$/, "") // YYYYMMDD
+		.replace(/-\d{4}$/, "") // YYMM (but be careful with model versions like gpt-5.1)
+
+	// Anthropic naming normalization: claude-haiku-4-5 → claude-4.5-haiku
+	// claude-sonnet-4-5 → claude-4.5-sonnet
+	const anthropicMatch = normalized.match(/^claude-(haiku|sonnet|opus)-(\d+)-(\d+)$/)
+	if (anthropicMatch) {
+		const [, tier, major, minor] = anthropicMatch
+		normalized = `claude-${major}.${minor}-${tier}`
+	}
+
+	return normalized
+}
+
+/**
  * Get pricing for a specific model
  * @returns { input, output } in USD per 1M tokens, or null if not found
+ *
+ * Handles various input formats:
+ * - Exact match: "gpt-5-mini"
+ * - With date: "gpt-5-mini-2025-08-07" → "gpt-5-mini"
+ * - Anthropic: "claude-haiku-4-5-20251001" → "claude-4.5-haiku"
+ * - With prefix: "models/gemini-2.5-flash" → "gemini-2.5-flash"
  */
 export function getModelPricing(modelName: string): { input: number; output: number } | null {
-	// Try exact match
+	// Try exact match first
 	if (MODEL_PRICING[modelName]) {
 		return MODEL_PRICING[modelName]
 	}
 
-	// Try lowercase match (handles Qwen/Qwen3-Reranker-4B → qwen3-reranker-4b)
-	const normalized = modelName.toLowerCase().replace(/\//g, "-").replace(/qwen-/g, "")
+	// Try normalized match
+	const normalized = normalizeModelName(modelName)
 	if (MODEL_PRICING[normalized]) {
 		return MODEL_PRICING[normalized]
 	}
 
-	// Try removing models/ prefix
-	if (modelName.startsWith("models/")) {
-		const stripped = modelName.slice(7)
-		if (MODEL_PRICING[stripped]) {
-			return MODEL_PRICING[stripped]
-		}
+	// Try lowercase only (for case mismatches without date suffix)
+	const lowercase = modelName.toLowerCase()
+	if (MODEL_PRICING[lowercase]) {
+		return MODEL_PRICING[lowercase]
 	}
 
 	console.warn(`[llmix/pricing] No pricing data for model: ${modelName}`)
@@ -146,7 +185,7 @@ export function getModelPricing(modelName: string): { input: number; output: num
 /**
  * Calculate costs for an LLM/embedding/reranker call
  *
- * @param modelName - Model identifier
+ * @param modelName - Model identifier (date suffixes stripped automatically)
  * @param inputTokens - Number of input tokens (prompt, documents, etc.)
  * @param outputTokens - Number of output tokens (completion, 0 for embeddings/rerankers)
  * @returns Cost breakdown in USD
