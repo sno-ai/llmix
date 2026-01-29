@@ -3,7 +3,4 @@ dist/
 *.log
 .DS_Store
 .npmrc
-src/pricing/__pycache__/__init__.cpython-310.pyc
-src/pricing/__pycache__/pricing.cpython-310.pyc
-src/pricing/__pycache__/pricing.cpython-311.pyc
-src/pricing/__pycache__/__init__.cpython-311.pyc
+src/pricing/__pycache__/*
