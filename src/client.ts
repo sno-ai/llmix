@@ -27,10 +27,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 import { generateText } from "ai";
-import { createLogger } from "@/utils/logger";
 import type { LLMConfigLoader } from "./config-loader";
-
-const logger = createLogger("llmix");
 import { filterOpenAIProviderOptions } from "./model-capabilities";
 import {
   OPENAI_PROMPT_CACHE_MIN_TOKENS,
@@ -39,6 +36,7 @@ import {
   type CallOptions,
   type ConfigCapabilities,
   type LLMCallEventData,
+  type LLMConfigLoaderLogger,
   type LLMixTelemetryProvider,
   type LLMResponse,
   type LLMUsage,
@@ -48,6 +46,17 @@ import {
   type ResolvedLLMConfig,
   type TelemetryContext,
 } from "./types";
+
+// =============================================================================
+// DEFAULT LOGGER
+// =============================================================================
+
+const defaultLogger: LLMConfigLoaderLogger = {
+  debug: (msg, ...args) => console.debug(`[llmix] ${msg}`, ...args),
+  info: (msg, ...args) => console.info(`[llmix] ${msg}`, ...args),
+  warn: (msg, ...args) => console.warn(`[llmix] ${msg}`, ...args),
+  error: (msg, ...args) => console.error(`[llmix] ${msg}`, ...args),
+};
 
 // =============================================================================
 // TYPES
@@ -148,6 +157,11 @@ export interface LLMClientConfig {
    * Default: 120000 (env fallback: LLMIX_CALL_TIMEOUT_MS)
    */
   callTimeoutMs?: number;
+
+  /**
+   * Custom logger - uses console if not provided
+   */
+  logger?: LLMConfigLoaderLogger;
 }
 
 /**
@@ -278,7 +292,7 @@ function resolveCachingStrategy(
 ): CachingConfig {
   // Priority 1: Legacy override.bypassGateway (backwards compat)
   if (overrideBypassGateway !== undefined) {
-    logger.warn(
+    defaultLogger.warn(
       `[LLMix] DEPRECATED: bypassGateway override used. Use caching.strategy instead.`
     );
     return overrideBypassGateway
@@ -293,7 +307,7 @@ function resolveCachingStrategy(
 
   // Priority 3: Legacy config.bypassGateway (backwards compat)
   if (config.bypassGateway !== undefined) {
-    logger.warn(
+    defaultLogger.warn(
       `[LLMix] DEPRECATED: bypassGateway config used in ${config.configId}. Use caching.strategy instead.`
     );
     return config.bypassGateway ? { strategy: "native" } : { strategy: "gateway" };
@@ -347,11 +361,11 @@ function getProviderModel(
 
   // LH: Log routing decision
   if (cachingStrategy === "native") {
-    logger.debug(`[LLMix] Using native caching for provider: ${provider}`);
+    defaultLogger.debug(`[LLMix] Using native caching for provider: ${provider}`);
   } else if (urls?.useCfAiGateway && cachingStrategy === "gateway") {
-    logger.debug(`[LLMix] Using CF AI Gateway for provider: ${provider}`);
+    defaultLogger.debug(`[LLMix] Using CF AI Gateway for provider: ${provider}`);
   } else if (cachingStrategy === "disabled") {
-    logger.debug(`[LLMix] Caching disabled for provider: ${provider}`);
+    defaultLogger.debug(`[LLMix] Caching disabled for provider: ${provider}`);
   }
 
   switch (provider) {
@@ -367,13 +381,13 @@ function getProviderModel(
       if (cachingStrategy === "native" && !isEmbeddingModel(model)) {
         const heliconeApiKey = helicone?.apiKey ?? process.env.HELICONE_API_KEY;
         if (!heliconeApiKey) {
-          logger.warn(
+          defaultLogger.warn(
             `[LLMix] Native caching requested but HELICONE_API_KEY not set. Falling back to gateway.`
           );
           // Fall through to gateway logic
         } else {
           const heliconeBaseUrl = helicone?.baseUrl ?? getHeliconeBaseUrl();
-          logger.info(
+          defaultLogger.info(
             `[LLMix] Routing OpenAI via Helicone for native prompt caching (key: ${cacheKey ?? "auto"})`
           );
 
@@ -452,11 +466,11 @@ function getProviderModel(
 
       // LH: Log routing info
       if (urls?.useCfAiGateway && urls.openRouterBaseUrl && cachingStrategy !== "disabled") {
-        logger.debug(
+        defaultLogger.debug(
           `[LLMix] Routing DeepSeek "${model}" via OpenRouter (CF Gateway) as "${openRouterModel}"`
         );
       } else {
-        logger.debug(
+        defaultLogger.debug(
           `[LLMix] Routing DeepSeek "${model}" via OpenRouter (direct) as "${openRouterModel}"`
         );
       }
@@ -533,6 +547,7 @@ export class LLMClient {
   private readonly apiKeys?: ApiKeysConfig;
   private readonly captureTelemetryPayload: boolean;
   private readonly callTimeoutMs: number;
+  private readonly logger: LLMConfigLoaderLogger;
 
   constructor(config: LLMClientConfig) {
     this.loader = config.loader;
@@ -541,6 +556,7 @@ export class LLMClient {
     this.providerUrls = config.providerUrls;
     this.helicone = config.helicone;
     this.apiKeys = config.apiKeys;
+    this.logger = config.logger ?? defaultLogger;
     // Config takes precedence, then env var, then default
     this.captureTelemetryPayload =
       config.captureTelemetryPayload ?? process.env.LLMIX_CAPTURE_TELEMETRY_PAYLOAD === "true";
@@ -585,7 +601,7 @@ export class LLMClient {
       const errorStack = configError instanceof Error ? configError.stack : undefined;
 
       // Log config load failure with context
-      logger.error(`[LLMix] Config load failed for profile ${options.profile}`, {
+      this.logger.error(`[LLMix] Config load failed for profile ${options.profile}`, {
         error: errorMessage,
         stack: errorStack,
         module,
@@ -633,7 +649,7 @@ export class LLMClient {
       const effectiveCacheKey = options.promptCacheKey ?? configCacheKey;
 
       // Log caching strategy
-      logger.info(
+      this.logger.info(
         `[LLMix] Caching strategy: ${cachingStrategy} for ${options.profile}${effectiveCacheKey ? ` (key: ${effectiveCacheKey})` : ""}`
       );
 
@@ -659,7 +675,7 @@ export class LLMClient {
         // Log filtered params at debug level (expected behavior for GPT-4.x with reasoning params)
         // These params are kept in YAML config for GPT-5+ models that support them
         if (Object.keys(filteredParams).length > 0) {
-          logger.debug(
+          this.logger.debug(
             `[LLMix] Filtered unsupported params for ${effectiveModel} (${capabilities.modelClass}):`,
             filteredParams as Record<string, unknown>
           );
@@ -696,7 +712,7 @@ export class LLMClient {
 
       // Make the LLM call (assertion needed for AI SDK type flexibility)
       // LH: Log model info for debugging/A/B test verification
-      logger.info(
+      this.logger.info(
         `[LLMix] Calling ${config.provider}/${effectiveModel} (profile: ${options.profile}, version: ${config.version})`
       );
 
@@ -717,13 +733,13 @@ export class LLMClient {
         if (usage.cachedInputTokens && usage.cachedInputTokens > 0) {
           const cacheHitPercent = Math.round((usage.cachedInputTokens / usage.inputTokens) * 100);
           const tokensSaved = usage.cachedInputTokens;
-          logger.info(
+          this.logger.info(
             `[LLMix] CACHE HIT | profile=${options.profile} | model=${effectiveModel} | ` +
               `cached=${tokensSaved}/${usage.inputTokens} (${cacheHitPercent}%) | latency=${latencyMs}ms`
           );
         } else if (cachingStrategy === "native") {
           // Only log cache miss for native caching strategy (expecting prompt cache)
-          logger.info(
+          this.logger.info(
             `[LLMix] CACHE MISS | profile=${options.profile} | model=${effectiveModel} | ` +
               `tokens=${usage.inputTokens} | latency=${latencyMs}ms | (first request or cache expired)`
           );
@@ -767,7 +783,7 @@ export class LLMClient {
       const errorStack = error instanceof Error ? error.stack : undefined;
 
       // LH: Log error with full context for debugging (never fail silently)
-      logger.error(
+      this.logger.error(
         `[LLMix] LLM call failed for ${config.configId} (${config.provider}/${effectiveModel})`,
         {
           error: errorMessage,
@@ -881,7 +897,7 @@ export class LLMClient {
       ]);
     } catch (error) {
       // Log but never throw - telemetry should not affect response
-      logger.warn(
+      this.logger.warn(
         `[LLMix] Telemetry failed for ${params.config?.configId ?? "unknown"}: ${String(error)}`
       );
     }
