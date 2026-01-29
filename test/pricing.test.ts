@@ -1,4 +1,4 @@
-import { getModelPricing } from "./pricing"
+import { getModelPricing, calculateCost, MODEL_PRICING } from "../src/pricing/pricing"
 
 const testCases: [string, boolean][] = [
 	// Base models (should work)
@@ -39,11 +39,33 @@ for (const [model, shouldFind] of testCases) {
 
 	if (ok) {
 		passed++
-		console.log(`✓ ${model}`)
+		console.log(`+ ${model}`)
 	} else {
 		failed++
-		console.log(`✗ ${model} → expected ${shouldFind ? "found" : "null"}, got ${found ? "found" : "null"}`)
+		console.log(`x ${model} - expected ${shouldFind ? "found" : "null"}, got ${found ? "found" : "null"}`)
 	}
+}
+
+// Test calculateCost
+console.log("\nTesting calculateCost:")
+const cost = calculateCost("gpt-5-mini", 1000, 500)
+if (cost.totalCostUsd > 0) {
+	passed++
+	console.log(`+ calculateCost returned: ${JSON.stringify(cost)}`)
+} else {
+	failed++
+	console.log(`x calculateCost failed`)
+}
+
+// Test MODEL_PRICING is loaded from JSON
+console.log("\nTesting MODEL_PRICING from JSON:")
+const modelCount = Object.keys(MODEL_PRICING).length
+if (modelCount > 0) {
+	passed++
+	console.log(`+ MODEL_PRICING has ${modelCount} models`)
+} else {
+	failed++
+	console.log(`x MODEL_PRICING is empty`)
 }
 
 console.log(`\nResult: ${passed} passed, ${failed} failed`)

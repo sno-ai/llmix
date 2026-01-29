@@ -1,1 +1,8 @@
-export { MODEL_PRICING, calculateCost, getModelPricing, calculateRerankCost } from "./pricing"
+export {
+	MODEL_PRICING,
+	getModelPricing,
+	calculateCost,
+	calculateRerankCost,
+} from "./pricing"
+
+export type { ModelPrice, CostBreakdown, ModelPricingTable } from "./pricing"
