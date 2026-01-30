@@ -201,12 +201,11 @@ const BATCH_CAPABLE_MODEL_PATTERNS = [/^gpt-4/, /^gpt-5/, /^o1/, /^o3/];
 
 /**
  * Get Helicone base URL for OpenAI proxy.
- * Doppler: https://helicone.sno.ai/v1/gateway/oai
- * AI SDK needs: https://helicone.sno.ai/v1/gateway/oai/v1 (appends /chat/completions)
+ * Canonical: https://helicone.sno.ai/openai/v1 (see ai-doc/reference/helicone/HELICONE_API_GUIDE.md)
+ * AI SDK appends /chat/completions, so base must end with /v1
  */
 function getHeliconeBaseUrl(): string {
-  const base = process.env.HELICONE_BASE_URL || "https://helicone.sno.ai/v1/gateway/oai";
-  // AI SDK appends /chat/completions, so we need /v1 suffix
+  const base = process.env.HELICONE_BASE_URL || "https://helicone.sno.ai/openai";
   return base.endsWith("/v1") ? base : `${base}/v1`;
 }
 
