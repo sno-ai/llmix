@@ -16,7 +16,7 @@ LLMix decouples LLM configuration from code, enabling runtime model switching, A
 - **Multi-Provider** - OpenAI, Anthropic, Google, DeepSeek with unified interface
 - **AI SDK v5 Native** - Zero translation layer, configs map directly to `generateText()` params
 - **Cascade Resolution** - User → Module → Scope → Global fallback chain
-- **Telemetry Ready** - Optional PostHog/Langfuse integration via dependency injection
+- **Telemetry Ready** - Optional PostHog/Helicone integration via dependency injection
 - **Type-Safe** - Full TypeScript support with exported Zod schemas
 
 ## Installation
@@ -327,7 +327,7 @@ import { createLLMClient, type LLMixTelemetryProvider } from 'llmix';
 
 const telemetryProvider: LLMixTelemetryProvider = {
   async trackLLMCall(event) {
-    // Send to PostHog, Langfuse, Datadog, etc.
+    // Send to PostHog, Helicone, Datadog, etc.
     await posthog.capture('llm_call', {
       model: event.model,
       provider: event.provider,
