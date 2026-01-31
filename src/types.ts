@@ -636,7 +636,7 @@ export interface LLMCallEventData {
  * ```typescript
  * const telemetryProvider: LLMixTelemetryProvider = {
  *   async trackLLMCall(event) {
- *     // Send to your telemetry system (PostHog, Langfuse, etc.)
+ *     // Send to your telemetry system (PostHog or equivalent)
  *     await posthog.capture('llm_call', event);
  *   },
  *   calculateCost(model, inputTokens, outputTokens) {

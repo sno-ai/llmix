@@ -130,19 +130,19 @@ function normalizeModelName(name: string): string {
 export function getModelPricing(modelName: string): ModelPrice | null {
 	// Try exact match first (use hasOwn to avoid prototype-chain access)
 	if (hasOwn(modelName)) {
-		return MODEL_PRICING[modelName]
+		return MODEL_PRICING[modelName] ?? null
 	}
 
 	// Try normalized match
 	const normalized = normalizeModelName(modelName)
 	if (hasOwn(normalized)) {
-		return MODEL_PRICING[normalized]
+		return MODEL_PRICING[normalized] ?? null
 	}
 
 	// Try lowercase only (for case mismatches without date suffix)
 	const lowercase = modelName.toLowerCase()
 	if (hasOwn(lowercase)) {
-		return MODEL_PRICING[lowercase]
+		return MODEL_PRICING[lowercase] ?? null
 	}
 
 	console.warn(`[llmix/pricing] No pricing data for model: ${modelName}`)

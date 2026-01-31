@@ -122,7 +122,7 @@ export interface LLMClientConfig {
    * Optional telemetry provider for tracking LLM calls
    *
    * If not provided, telemetry is disabled (no external dependencies).
-   * Inject your implementation to integrate with PostHog, Langfuse, etc.
+   * Inject your implementation to integrate with PostHog or other systems.
    */
   telemetry?: LLMixTelemetryProvider;
 
