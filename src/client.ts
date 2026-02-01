@@ -46,6 +46,7 @@ import {
   type ResolvedLLMConfig,
   type TelemetryContext,
 } from "./types";
+import { getHeliconeHeaders, getHeliconeUrl, isHeliconeEnabled, logCacheRatio } from "../../telemetry";
 
 // =============================================================================
 // DEFAULT LOGGER
@@ -198,26 +199,6 @@ interface AISDKUsage {
 
 /** Models that support OpenAI Batch API */
 const BATCH_CAPABLE_MODEL_PATTERNS = [/^gpt-4/, /^gpt-5/, /^o1/, /^o3/];
-
-/**
- * Get Helicone base URL for OpenAI proxy.
- * Canonical: https://helicone.sno.ai/openai/v1 (see ai-doc/reference/helicone/HELICONE_API_GUIDE.md)
- * AI SDK appends /chat/completions, so base must end with /v1
- */
-function getHeliconeBaseUrl(): string {
-  const base = process.env.HELICONE_BASE_URL || "https://helicone.sno.ai/openai";
-  return base.endsWith("/v1") ? base : `${base}/v1`;
-}
-
-/**
- * Get Helicone environment from NODE_ENV
- */
-function getHeliconeEnvironment(): "dev" | "stg" | "prd" {
-  const env = (process.env.NODE_ENV || "development").toLowerCase();
-  if (env === "production") return "prd";
-  if (env === "staging") return "stg";
-  return "dev";
-}
 
 /**
  * LH: DeepSeek model mappings for OpenRouter
@@ -378,35 +359,45 @@ function getProviderModel(
 
       // LH: Native caching for OpenAI LLM calls (not embeddings)
       if (cachingStrategy === "native" && !isEmbeddingModel(model)) {
+        // LH: Use injected apiKey (config) or fall back to env var
         const heliconeApiKey = helicone?.apiKey ?? process.env.HELICONE_API_KEY;
-        if (!heliconeApiKey) {
+        if (!isHeliconeEnabled(heliconeApiKey)) {
           defaultLogger.warn(
             `[LLMix] Native caching requested but HELICONE_API_KEY not set. Falling back to gateway.`
           );
           // Fall through to gateway logic
         } else {
-          const heliconeBaseUrl = helicone?.baseUrl ?? getHeliconeBaseUrl();
+          const heliconeBaseUrl = helicone?.baseUrl ?? getHeliconeUrl("openai");
           defaultLogger.info(
-            `[LLMix] Routing OpenAI via Helicone for native prompt caching (key: ${cacheKey ?? "auto"})`
+            `[LLMix] Routing OpenAI via Helicone for native prompt caching`
           );
 
-          // Create OpenAI client with Helicone proxy and MANDATORY headers
-          // Per SNO_CORTEX_HELICONE.md standards
+          // Get base headers from shared utility (use injected apiKey if provided)
+          const headers = getHeliconeHeaders({
+            apiKey: heliconeApiKey,
+            properties: {
+              app: "sno-cortex",
+              module: heliconeModule ?? "llmix",
+              environment:
+                process.env.NODE_ENV === "production"
+                  ? "prd"
+                  : process.env.NODE_ENV === "staging"
+                    ? "stg"
+                    : "dev",
+            },
+          });
+          // Add response caching headers
+          headers["Helicone-Cache-Enabled"] = "true";
+          headers["Cache-Control"] = "max-age=86400";
+          // Add optional cache key
+          if (cacheKey) {
+            headers["Helicone-Cache-Key"] = cacheKey;
+          }
+
           const openai = createOpenAI({
             apiKey,
             baseURL: heliconeBaseUrl,
-            headers: {
-              // MANDATORY headers
-              "Helicone-Auth": `Bearer ${heliconeApiKey}`,
-              "Helicone-Property-App": "sno-cortex",
-              "Helicone-Property-Module": heliconeModule ?? "llmix",
-              "Helicone-Property-Environment": getHeliconeEnvironment(),
-              // Response caching for deterministic calls
-              "Helicone-Cache-Enabled": "true",
-              "Cache-Control": "max-age=86400",
-              // Optional: Cache key for prompt grouping
-              ...(cacheKey && { "Helicone-Cache-Key": cacheKey }),
-            },
+            headers,
           });
           return openai(model);
         }
@@ -647,19 +638,21 @@ export class LLMClient {
       // LH: Use promptCacheKey from call options (takes priority over config key)
       const effectiveCacheKey = options.promptCacheKey ?? configCacheKey;
 
-      // Log caching strategy
+      // Log caching strategy (redact cache key for security - may contain tenant/user identifiers)
       this.logger.info(
-        `[LLMix] Caching strategy: ${cachingStrategy} for ${options.profile}${effectiveCacheKey ? ` (key: ${effectiveCacheKey})` : ""}`
+        `[LLMix] Caching strategy: ${cachingStrategy} for ${options.profile}${effectiveCacheKey ? " (custom key)" : ""}`
       );
 
       // Get provider model instance with caching configuration
+      // Use "llmix" for _default module to properly identify LLMix calls in Helicone
+      const heliconeModule = config.module === "_default" ? "llmix" : config.module;
       const model = getProviderModel(config.provider, effectiveModel, {
         urls: this.providerUrls,
         apiKeys: this.apiKeys,
         helicone: this.helicone,
         cachingStrategy,
         cacheKey: effectiveCacheKey,
-        module: config.module,
+        module: heliconeModule,
       });
 
       // LH: Filter provider options based on model capabilities
@@ -725,6 +718,18 @@ export class LLMClient {
       // Extract usage
       const usage = extractUsage(result.usage as AISDKUsage | undefined);
       const latencyMs = Date.now() - startTime;
+
+      // LH: Standardized cache ratio logging (adapts AI SDK format to logCacheRatio's expected format)
+      logCacheRatio(
+        {
+          usage: {
+            prompt_tokens: usage.inputTokens,
+            prompt_tokens_details: { cached_tokens: usage.cachedInputTokens ?? 0 },
+          },
+        },
+        heliconeModule,
+        "client"
+      );
 
       // LH: Log prompt cache status for production debugging (visible in Docker logs)
       // Only log for prompts that could be cached (>= OPENAI_PROMPT_CACHE_MIN_TOKENS)
@@ -884,10 +889,13 @@ export class LLMClient {
       return;
     }
 
+    // LH: Use object wrapper to satisfy TypeScript control flow analysis
+    // (TS doesn't recognize Promise constructor callback runs synchronously)
+    const timer = { id: undefined as ReturnType<typeof setTimeout> | undefined };
     try {
       // Race telemetry against timeout to prevent blocking
       const timeoutPromise = new Promise<void>((_, reject) => {
-        setTimeout(() => reject(new Error("Telemetry timeout")), TELEMETRY_TIMEOUT_MS);
+        timer.id = setTimeout(() => reject(new Error("Telemetry timeout")), TELEMETRY_TIMEOUT_MS);
       });
 
       await Promise.race([
@@ -899,6 +907,11 @@ export class LLMClient {
       this.logger.warn(
         `[LLMix] Telemetry failed for ${params.config?.configId ?? "unknown"}: ${String(error)}`
       );
+    } finally {
+      // LH: Clear timeout to prevent unhandled rejections and timer leaks
+      if (timer.id !== undefined) {
+        clearTimeout(timer.id);
+      }
     }
   }
 
