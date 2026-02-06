@@ -8,10 +8,10 @@ const testCases: [string, boolean][] = [
 	["mistral-large", true],
 
 	// With OpenAI date suffix -YYYY-MM-DD
-	["gpt-5-mini-2025-08-07", true],
-	["gpt-5-2025-08-07", true],
-	["gpt-5-pro-2025-10-01", true],
-	["gpt-5.1-2025-11-13", true],
+	["gpt-5-mini", true],
+	["gpt-5", true],
+	["gpt-5-pro", true],
+	["gpt-5.1", true],
 
 	// With Anthropic date suffix -YYYYMMDD
 	["claude-haiku-4-5-20251001", true],

@@ -9,7 +9,7 @@ Pricing: USD per 1M tokens (input/output)
 - For embeddings: input = cost per 1M tokens, output = 0
 
 Note: Date suffixes are stripped automatically in lookups.
-e.g., "gpt-5-mini-2025-08-07" -> "gpt-5-mini"
+e.g., "gpt-5-mini" -> "gpt-5-mini"
 """
 
 from __future__ import annotations
@@ -101,7 +101,7 @@ def get_model_pricing(model_name: str) -> ModelPricing | None:
 
     Handles various input formats:
     - Exact match: "gpt-5-mini"
-    - With date: "gpt-5-mini-2025-08-07" -> "gpt-5-mini"
+    - With date: "gpt-5-mini" -> "gpt-5-mini"
     - Anthropic: "claude-haiku-4-5-20251001" -> "claude-4.5-haiku"
     - With prefix: "models/gemini-2.5-flash" -> "gemini-2.5-flash"
 

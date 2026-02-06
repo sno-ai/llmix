@@ -9,7 +9,7 @@
  * - For embeddings: input = cost per 1M tokens, output = 0
  *
  * Note: Date suffixes are stripped automatically in lookups.
- * e.g., "gpt-5-mini-2025-08-07" -> "gpt-5-mini"
+ * e.g., "gpt-5-mini" -> "gpt-5-mini"
  *
  * To update pricing data: cd ~/infra/onprem-infra && ./scripts/sync-llm-pricing/sync.sh
  */
@@ -123,7 +123,7 @@ function normalizeModelName(name: string): string {
  *
  * Handles various input formats:
  * - Exact match: "gpt-5-mini"
- * - With date: "gpt-5-mini-2025-08-07" -> "gpt-5-mini"
+ * - With date: "gpt-5-mini" -> "gpt-5-mini"
  * - Anthropic: "claude-haiku-4-5-20251001" -> "claude-4.5-haiku"
  * - With prefix: "models/gemini-2.5-flash" -> "gemini-2.5-flash"
  */

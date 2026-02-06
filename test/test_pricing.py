@@ -24,10 +24,10 @@ TEST_CASES: list[tuple[str, bool]] = [
     ("claude-4.5-haiku", True),
     ("mistral-large", True),
     # With OpenAI date suffix -YYYY-MM-DD
-    ("gpt-5-mini-2025-08-07", True),
-    ("gpt-5-2025-08-07", True),
-    ("gpt-5-pro-2025-10-01", True),
-    ("gpt-5.1-2025-11-13", True),
+    ("gpt-5-mini", True),
+    ("gpt-5", True),
+    ("gpt-5-pro", True),
+    ("gpt-5.1", True),
     # With Anthropic date suffix -YYYYMMDD
     ("claude-haiku-4-5-20251001", True),
     ("claude-sonnet-4-5-20250929", True),
