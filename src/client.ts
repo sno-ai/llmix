@@ -46,7 +46,6 @@ import {
   type ResolvedLLMConfig,
   type TelemetryContext,
 } from "./types";
-import { getHeliconeHeaders, getHeliconeUrl, isHeliconeEnabled, logCacheRatio } from "../../telemetry";
 
 // =============================================================================
 // DEFAULT LOGGER
@@ -58,6 +57,68 @@ const defaultLogger: LLMConfigLoaderLogger = {
   warn: (msg, ...args) => console.warn(`[llmix] ${msg}`, ...args),
   error: (msg, ...args) => console.error(`[llmix] ${msg}`, ...args),
 };
+
+// =============================================================================
+// HELICONE HELPERS
+// =============================================================================
+
+interface HeliconeHeaderOptions {
+  apiKey?: string;
+  properties?: Record<string, string | number | boolean | undefined>;
+}
+
+interface CacheRatioPayload {
+  usage?: {
+    prompt_tokens?: number;
+    prompt_tokens_details?: {
+      cached_tokens?: number;
+    };
+  };
+}
+
+function isHeliconeEnabled(apiKey?: string): boolean {
+  const resolvedApiKey = apiKey ?? process.env.HELICONE_API_KEY;
+  return typeof resolvedApiKey === "string" && resolvedApiKey.trim().length > 0;
+}
+
+function getHeliconeUrl(provider: "openai" | "anthropic"): string {
+  if (provider === "anthropic") {
+    return process.env.HELICONE_ANTHROPIC_BASE_URL?.trim() || "https://anthropic.helicone.ai/v1";
+  }
+  return process.env.HELICONE_OPENAI_BASE_URL?.trim() || "https://oai.helicone.ai/v1";
+}
+
+function getHeliconeHeaders(options?: HeliconeHeaderOptions): Record<string, string> {
+  const apiKey = options?.apiKey ?? process.env.HELICONE_API_KEY;
+  if (!apiKey || apiKey.trim().length === 0) {
+    return {};
+  }
+
+  const headers: Record<string, string> = {
+    "Helicone-Auth": `Bearer ${apiKey.trim()}`,
+  };
+
+  for (const [key, value] of Object.entries(options?.properties ?? {})) {
+    if (value === undefined || value === "") {
+      continue;
+    }
+    headers[`Helicone-Property-${key}`] = String(value);
+  }
+
+  return headers;
+}
+
+function logCacheRatio(payload: CacheRatioPayload, module = "llmix", source = "client"): void {
+  const promptTokens = payload.usage?.prompt_tokens ?? 0;
+  const cachedTokens = payload.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+  if (promptTokens <= 0) {
+    return;
+  }
+  const cachePercent = Math.round((cachedTokens / promptTokens) * 100);
+  defaultLogger.info(
+    `[LLMix] CACHE RATIO | module=${module} | source=${source} | cached=${cachedTokens}/${promptTokens} (${cachePercent}%)`
+  );
+}
 
 // =============================================================================
 // TYPES
@@ -381,7 +442,7 @@ function getProviderModel(
               environment:
                 process.env.NODE_ENV === "production"
                   ? "prd"
-                  : process.env.NODE_ENV === "staging"
+                  : (process.env.NODE_ENV as string) === "staging"
                     ? "stg"
                     : "dev",
             },
