@@ -57,5 +57,8 @@
 	"qwen3-reranker-4b": { "input": 0, "output": 0 },
 	"qwen3-reranker-8b": { "input": 0, "output": 0 },
 	"qwen3-vl-embedding-8b": { "input": 0, "output": 0 },
-	"qwen3-vl-reranker-2b": { "input": 0, "output": 0 }
+	"qwen3-vl-reranker-2b": { "input": 0, "output": 0 },
+	"Qwen/Qwen3-32B": { "input": 0.12, "output": 0.24 },
+	"Qwen/Qwen3-14B": { "input": 0.07, "output": 0.14 },
+	"openai/gpt-oss-120b": { "input": 0.09, "output": 0.45 }
 }
