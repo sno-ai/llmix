@@ -27,6 +27,8 @@
 	"text-embedding-3-small": { "input": 0.02, "output": 0 },
 	"claude-4.5-haiku": { "input": 1, "output": 5 },
 	"claude-4.5-sonnet": { "input": 3, "output": 15 },
+	"claude-4.6-opus": { "input": 5, "output": 25 },
+	"claude-4.6-sonnet": { "input": 3, "output": 15 },
 	"gemini-2.0-flash-exp": { "input": 0, "output": 0 },
 	"gemini-2.5-flash": { "input": 0.3, "output": 2.5 },
 	"gemini-2.5-flash-lite": { "input": 0.1, "output": 0.4 },
@@ -34,6 +36,7 @@
 	"gemini-3-flash-preview": { "input": 0.5, "output": 3 },
 	"gemini-3-pro-image-preview": { "input": 2, "output": 12 },
 	"gemini-3-pro-preview": { "input": 2, "output": 12 },
+	"gemini-3.1-pro-preview": { "input": 2, "output": 12 },
 	"gemini-embedding-001": { "input": 0, "output": 0 },
 	"semantic-ranker-default-004": { "input": 0, "output": 0 },
 	"semantic-ranker-default@latest": { "input": 0, "output": 0 },
@@ -57,9 +60,5 @@
 	"qwen3-reranker-4b": { "input": 0, "output": 0 },
 	"qwen3-reranker-8b": { "input": 0, "output": 0 },
 	"qwen3-vl-embedding-8b": { "input": 0, "output": 0 },
-	"qwen3-vl-reranker-2b": { "input": 0, "output": 0 },
-	"Qwen/Qwen3-32B": { "input": 0.12, "output": 0.24 },
-	"Qwen/Qwen3-235B-A22B-Instruct-2507": { "input": 0.071, "output": 0.10 },
-	"Qwen/Qwen3-14B": { "input": 0.07, "output": 0.14 },
-	"openai/gpt-oss-120b": { "input": 0.09, "output": 0.45 }
+	"qwen3-vl-reranker-2b": { "input": 0, "output": 0 }
 }
