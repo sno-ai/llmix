@@ -129,11 +129,7 @@ def get_model_pricing(model_name: str) -> ModelPricing | None:
     return None
 
 
-def calculate_cost(
-    model_name: str,
-    input_tokens: int,
-    output_tokens: int = 0,
-) -> CostBreakdown:
+def calculate_cost(model_name: str, input_tokens: int, output_tokens: int = 0) -> CostBreakdown:
     """
     Calculate costs for an LLM/embedding/reranker call.
 
@@ -157,21 +153,13 @@ def calculate_cost(
     pricing = get_model_pricing(model_name)
 
     if pricing is None:
-        return {
-            "input_cost_usd": 0.0,
-            "output_cost_usd": 0.0,
-            "total_cost_usd": 0.0,
-        }
+        return {"input_cost_usd": 0.0, "output_cost_usd": 0.0, "total_cost_usd": 0.0}
 
     input_cost_usd = (input_tokens / 1_000_000) * pricing["input"]
     output_cost_usd = (output_tokens / 1_000_000) * pricing["output"]
     total_cost_usd = input_cost_usd + output_cost_usd
 
-    return {
-        "input_cost_usd": round(input_cost_usd, 6),
-        "output_cost_usd": round(output_cost_usd, 6),
-        "total_cost_usd": round(total_cost_usd, 6),
-    }
+    return {"input_cost_usd": round(input_cost_usd, 6), "output_cost_usd": round(output_cost_usd, 6), "total_cost_usd": round(total_cost_usd, 6)}
 
 
 def calculate_rerank_cost(model_name: str, search_count: int = 1) -> float:
