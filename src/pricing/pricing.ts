@@ -157,11 +157,7 @@ export function getModelPricing(modelName: string): ModelPrice | null {
  * @param outputTokens - Number of output tokens (completion, 0 for embeddings/rerankers)
  * @returns Cost breakdown in USD
  */
-export function calculateCost(
-	modelName: string,
-	inputTokens: number,
-	outputTokens: number = 0
-): CostBreakdown {
+export function calculateCost(modelName: string, inputTokens: number, outputTokens: number = 0): CostBreakdown {
 	// Validate inputs to prevent NaN/negative costs corrupting billing
 	if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens)) {
 		throw new RangeError("inputTokens/outputTokens must be finite numbers")

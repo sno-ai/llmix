@@ -1,4 +1,4 @@
-import { getModelPricing, calculateCost, MODEL_PRICING } from "../src/pricing/pricing"
+import { calculateCost, getModelPricing, MODEL_PRICING } from "../src/pricing/pricing"
 
 const testCases: [string, boolean][] = [
 	// Base models (should work)
