@@ -460,14 +460,14 @@ function getProviderModel(
             baseURL: heliconeBaseUrl,
             headers,
           });
-          return openai(model);
+          return openai(model) as unknown as LanguageModel;
         }
       }
 
       // Gateway or disabled: use CF AI Gateway or direct
       const baseURL = cachingStrategy === "disabled" ? undefined : urls?.openaiBaseUrl;
       const openai = createOpenAI({ apiKey, baseURL });
-      return openai(model);
+      return openai(model) as unknown as LanguageModel;
     }
     case "anthropic": {
       const apiKey = apiKeys?.anthropic ?? process.env.ANTHROPIC_API_KEY;
@@ -480,7 +480,7 @@ function getProviderModel(
       // Gateway or disabled: use CF AI Gateway or direct
       const baseURL = cachingStrategy === "disabled" ? undefined : urls?.anthropicBaseUrl;
       const anthropic = createAnthropic({ apiKey, baseURL });
-      return anthropic(model);
+      return anthropic(model) as unknown as LanguageModel;
     }
     case "google": {
       const apiKey = apiKeys?.google ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY;
@@ -493,7 +493,7 @@ function getProviderModel(
       // Note: geminiBaseUrl includes /v1beta suffix when using CF AI Gateway
       const baseURL = cachingStrategy === "disabled" ? undefined : urls?.geminiBaseUrl;
       const google = createGoogleGenerativeAI({ apiKey, baseURL });
-      return google(model);
+      return google(model) as unknown as LanguageModel;
     }
     case "deepseek": {
       // LH: Route DeepSeek models through OpenRouter for better reliability
@@ -530,7 +530,7 @@ function getProviderModel(
         apiKey,
         baseURL,
       });
-      return openrouter(openRouterModel);
+      return openrouter(openRouterModel) as unknown as LanguageModel;
     }
     default: {
       // LH: Explicit guard against unsupported providers at runtime
