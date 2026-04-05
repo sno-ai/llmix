@@ -5,3 +5,4 @@ dist/
 .npmrc
 src/pricing/__pycache__/*
 test/__pycache__/*
+.remember/*
