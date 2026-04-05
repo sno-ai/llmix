@@ -19,10 +19,11 @@
     "src"
   ],
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "check": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "build": "bun run tsc",
+    "dev": "bun run tsc --watch",
+    "check": "bun run tsc --noEmit",
+    "clean": "rm -rf dist",
+    "test": "bun test"
   },
   "dependencies": {
     "yaml": "^2.6.0",
