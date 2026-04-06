@@ -450,8 +450,13 @@ class FileLock:
         if _fcntl is None:
             return
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
-        self._fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR, 0o600)
-        _fcntl.flock(self._fd, _fcntl.LOCK_EX)
+        fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            _fcntl.flock(fd, _fcntl.LOCK_EX)
+        except Exception:
+            os.close(fd)
+            raise
+        self._fd = fd
 
     def release(self) -> None:
         """Release the file lock. No-op if not enabled or not acquired."""

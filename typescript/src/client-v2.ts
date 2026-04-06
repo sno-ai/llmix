@@ -181,7 +181,7 @@ export class V2CallPipeline {
 
     try {
       // Step 1: Kill Switch
-      this.killSwitch.check();
+      await this.killSwitch.checkAsync();
 
       // Step 2: Config — already resolved by caller (input.config)
 

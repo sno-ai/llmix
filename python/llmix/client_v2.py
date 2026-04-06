@@ -278,20 +278,25 @@ class V2CallPipeline:
         provider: str = config.get("provider", "unknown")
         semaphore = self._get_semaphore(provider)
 
+        # Step 8: AIMD Semaphore acquire (before lock to avoid convoy/deadlock)
+        await semaphore.acquire()
+
         # Step 7: Cross-process lock — only wrap state reads, not the API call
         await asyncio.to_thread(self._file_lock.acquire)
         try:
             # Step 9: Key Pool select (under lock)
             pool = self._key_pools.get(provider)
-            api_key = pool.select() if pool else ""
+            if not pool:
+                raise ValueError(
+                    f'No API key pool for provider "{provider}". '
+                    f"Set {provider.upper()}_API_KEY or {provider.upper()}_KEYS."
+                )
+            api_key = pool.select()
 
             # Step 5 (re-check): Circuit breaker check (under lock)
             cb.check()
         finally:
             await asyncio.to_thread(self._file_lock.release)
-
-        # Step 8: AIMD Semaphore acquire
-        await semaphore.acquire()
 
         try:
             # Step 10: Provider kwargs transform
