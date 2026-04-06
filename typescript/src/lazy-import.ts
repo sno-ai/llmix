@@ -42,21 +42,25 @@ export function lazyImport<T>(
   packageName?: string,
 ): () => Promise<T> {
   const pkg = packageName ?? moduleName;
-  let cached: T | undefined;
+  let pending: Promise<T> | undefined;
 
-  return async (): Promise<T> => {
-    if (cached !== undefined) {
-      return cached;
+  return (): Promise<T> => {
+    if (pending !== undefined) {
+      return pending;
     }
-    try {
-      cached = (await import(moduleName)) as T;
-      return cached;
-    } catch {
-      const installCmd =
-        PROVIDER_INSTALL_COMMANDS[pkg] ?? `bun add ${pkg}`;
-      throw new Error(
-        `"${pkg}" is required. Install with: ${installCmd}`,
-      );
-    }
+    pending = (async () => {
+      try {
+        return (await import(moduleName)) as T;
+      } catch {
+        // Clear pending so a retry can attempt the import again
+        pending = undefined;
+        const installCmd =
+          PROVIDER_INSTALL_COMMANDS[pkg] ?? `bun add ${pkg}`;
+        throw new Error(
+          `"${pkg}" is required. Install with: ${installCmd}`,
+        );
+      }
+    })();
+    return pending;
   };
 }

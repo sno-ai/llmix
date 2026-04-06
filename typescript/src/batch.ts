@@ -123,7 +123,7 @@ export interface BatchResult {
 // ---------------------------------------------------------------------------
 
 export interface BatchMetadata {
-  key: string;
+  keyFingerprint: string;
   provider: BatchProvider;
   nPrompts: number;
   submittedAt: string;
@@ -151,7 +151,7 @@ export async function writeMetadata(
   await mkdir(dir, { recursive: true });
 
   const metadata: BatchMetadata = {
-    key: apiKey,
+    keyFingerprint: keyFingerprint(apiKey),
     provider,
     nPrompts,
     submittedAt: new Date().toISOString(),
@@ -220,6 +220,7 @@ async function openaiSubmit(
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
     body: formData,
+    signal: AbortSignal.timeout(60_000),
   });
   if (!uploadRes.ok) {
     throw new Error(`OpenAI file upload failed: ${uploadRes.status} ${await uploadRes.text()}`);
@@ -237,6 +238,7 @@ async function openaiSubmit(
       endpoint: "/v1/chat/completions",
       completion_window: "24h",
     }),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!batchRes.ok) {
     throw new Error(`OpenAI batch create failed: ${batchRes.status} ${await batchRes.text()}`);
@@ -248,6 +250,7 @@ async function openaiSubmit(
 async function openaiStatus(apiKey: string, rawBatchId: string): Promise<BatchStatus> {
   const res = await fetch(`https://api.openai.com/v1/batches/${rawBatchId}`, {
     headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) {
     throw new Error(`OpenAI batch status failed: ${res.status} ${await res.text()}`);
@@ -285,6 +288,7 @@ async function openaiResults(
 ): Promise<BatchResult[]> {
   const res = await fetch(`https://api.openai.com/v1/batches/${rawBatchId}`, {
     headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) {
     throw new Error(`OpenAI batch retrieve failed: ${res.status} ${await res.text()}`);
@@ -307,7 +311,7 @@ async function openaiResults(
 
   const contentRes = await fetch(
     `https://api.openai.com/v1/files/${batch.output_file_id}/content`,
-    { headers: { Authorization: `Bearer ${apiKey}` } },
+    { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(60_000) },
   );
   if (!contentRes.ok) {
     throw new Error(`OpenAI file download failed: ${contentRes.status}`);
@@ -372,6 +376,7 @@ async function anthropicSubmit(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({ requests }),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) {
     throw new Error(`Anthropic batch create failed: ${res.status} ${await res.text()}`);
@@ -386,6 +391,7 @@ async function anthropicStatus(apiKey: string, rawBatchId: string): Promise<Batc
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
     },
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) {
     throw new Error(`Anthropic batch status failed: ${res.status} ${await res.text()}`);
@@ -435,6 +441,7 @@ async function anthropicResults(
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
     },
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) {
     throw new Error(`Anthropic batch results failed: ${res.status} ${await res.text()}`);
@@ -502,6 +509,7 @@ async function geminiSubmit(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ requests }),
+      signal: AbortSignal.timeout(60_000),
     },
   );
   if (!res.ok) {
@@ -514,6 +522,7 @@ async function geminiSubmit(
 async function geminiStatus(apiKey: string, rawBatchId: string): Promise<BatchStatus> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/${rawBatchId}?key=${apiKey}`,
+    { signal: AbortSignal.timeout(60_000) },
   );
   if (!res.ok) {
     throw new Error(`Gemini batch status failed: ${res.status} ${await res.text()}`);
@@ -552,6 +561,7 @@ async function geminiResults(
 ): Promise<BatchResult[]> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/${rawBatchId}?key=${apiKey}`,
+    { signal: AbortSignal.timeout(60_000) },
   );
   if (!res.ok) {
     throw new Error(`Gemini batch results failed: ${res.status} ${await res.text()}`);
@@ -645,11 +655,21 @@ export class BatchProcessor {
 
   /**
    * Check the status of a batch job.
+   *
+   * @param batchId - Encoded batch ID
+   * @param apiKey - API key for the provider (must match the key used at submit time)
    */
-  async status(batchId: string): Promise<BatchStatus> {
+  async status(batchId: string, apiKey: string): Promise<BatchStatus> {
     const decoded = decodeBatchId(batchId);
     const metadata = await readMetadata(batchId, this.stateDir);
-    const apiKey = metadata.key;
+
+    // Verify the provided key matches the fingerprint stored at submit time
+    const fp = keyFingerprint(apiKey);
+    if (fp !== metadata.keyFingerprint) {
+      throw new Error(
+        `API key fingerprint mismatch: provided key does not match the key used at submit time`,
+      );
+    }
 
     switch (decoded.provider) {
       case "openai":
@@ -665,11 +685,21 @@ export class BatchProcessor {
 
   /**
    * Retrieve batch results. Deletes metadata after successful retrieval.
+   *
+   * @param batchId - Encoded batch ID
+   * @param apiKey - API key for the provider (must match the key used at submit time)
    */
-  async results(batchId: string): Promise<BatchResult[]> {
+  async results(batchId: string, apiKey: string): Promise<BatchResult[]> {
     const decoded = decodeBatchId(batchId);
     const metadata = await readMetadata(batchId, this.stateDir);
-    const apiKey = metadata.key;
+
+    // Verify the provided key matches the fingerprint stored at submit time
+    const fp = keyFingerprint(apiKey);
+    if (fp !== metadata.keyFingerprint) {
+      throw new Error(
+        `API key fingerprint mismatch: provided key does not match the key used at submit time`,
+      );
+    }
 
     let results: BatchResult[];
     switch (decoded.provider) {

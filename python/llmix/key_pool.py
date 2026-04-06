@@ -25,7 +25,7 @@ class KeyPool:
         cleaned = [k.strip() for k in keys if k.strip()]
         if not cleaned:
             raise ValueError("KeyPool requires at least one non-empty key")
-        self._keys = cleaned
+        self._keys = list(dict.fromkeys(cleaned))
         self._dead: set[str] = set()
         self._idx = 0
         self._lock = threading.Lock()
@@ -58,6 +58,8 @@ class KeyPool:
     def mark_dead(self, key: str) -> None:
         """Mark a key as permanently failed (called on 401/403)."""
         with self._lock:
+            if key not in self._keys:
+                raise ValueError(f"Key not in pool: cannot mark unknown key as dead")
             self._dead.add(key)
 
     def is_exhausted(self) -> bool:

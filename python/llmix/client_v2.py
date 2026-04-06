@@ -199,10 +199,10 @@ class V2CallPipeline:
             self._semaphores[provider] = sem
         return sem
 
-    async def call(self, input: V2CallInput) -> V2CallResponse:
+    async def call(self, call_input: V2CallInput) -> V2CallResponse:
         """Execute the 19-step call flow."""
-        config = input.config
-        messages = input.messages
+        config = call_input.config
+        messages = call_input.messages
         provider: str = config.get("provider", "unknown")
         model: str = config.get("model", "unknown")
         base_url = ""
@@ -221,7 +221,7 @@ class V2CallPipeline:
             cb.check()
 
             # Step 6: Singleflight deduplication
-            sf_key = input.singleflight_key or Singleflight.make_key(
+            sf_key = call_input.singleflight_key or Singleflight.make_key(
                 json.dumps({"provider": provider, "model": model, "messages": messages}, default=str)
             )
 
@@ -273,17 +273,22 @@ class V2CallPipeline:
         provider: str = config.get("provider", "unknown")
         semaphore = self._get_semaphore(provider)
 
-        # Step 7: Cross-process lock acquire
+        # Step 7: Cross-process lock — only wrap state reads, not the API call
         self._file_lock.acquire()
+        try:
+            # Step 9: Key Pool select (under lock)
+            pool = self._key_pools.get(provider)
+            api_key = pool.select() if pool else ""
+
+            # Step 5 (re-check): Circuit breaker check (under lock)
+            cb.check()
+        finally:
+            self._file_lock.release()
 
         # Step 8: AIMD Semaphore acquire
         await semaphore.acquire()
 
         try:
-            # Step 9: Key Pool select
-            pool = self._key_pools.get(provider)
-            api_key = pool.select() if pool else ""
-
             # Step 10: Provider kwargs transform
             common = config.get("common") or {}
             kwargs: dict[str, Any] = {
@@ -338,13 +343,11 @@ class V2CallPipeline:
             if status_code == 429:
                 semaphore.on_rate_limit()
 
-            # Step 14: Key Pool feedback (error)
-            pool = self._key_pools.get(provider)
+            # Step 14: Key Pool feedback (error) — use captured api_key
             if pool and status_code is not None:
                 if status_code in (401, 403):
                     try:
-                        current_key = pool.select()
-                        pool.mark_dead(current_key)
+                        pool.mark_dead(api_key)
                     except Exception:
                         pass
                 elif status_code == 429:
@@ -361,9 +364,6 @@ class V2CallPipeline:
         finally:
             # Step 12: AIMD semaphore release (always)
             semaphore.release()
-
-            # Step 13: Cross-process lock release
-            self._file_lock.release()
 
     @staticmethod
     def _is_retryable_error(exc: BaseException) -> bool:

@@ -46,7 +46,7 @@ class ProviderTransportConfig:
 PROVIDER_TRANSPORT: dict[str, ProviderTransportConfig] = {
     "openai": ProviderTransportConfig(name="openai", http2=True),
     "anthropic": ProviderTransportConfig(name="anthropic", http2=False),
-    "gemini": ProviderTransportConfig(name="gemini", http2=True),
+    "google": ProviderTransportConfig(name="google", http2=True),
     "deepseek": ProviderTransportConfig(name="deepseek", http2=False),
     "openrouter": ProviderTransportConfig(name="openrouter", http2=False),
     "helicone": ProviderTransportConfig(name="helicone", http2=False),

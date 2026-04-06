@@ -391,11 +391,13 @@ class RetryPolicy:
             is_retryable_fn: Optional predicate to determine retryability.
                 Defaults to always-retryable for any exception.
         """
-        last_exception: BaseException | None = None
+        last_exception: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
                 return await fn()
-            except BaseException as exc:
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as exc:
                 last_exception = exc
                 if attempt >= self.max_retries:
                     raise

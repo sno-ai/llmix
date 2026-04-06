@@ -24,7 +24,7 @@ export class KeyPool {
   private idx: number = 0;
 
   constructor(keys: string[]) {
-    const cleaned = keys.map((k) => k.trim()).filter((k) => k.length > 0);
+    const cleaned = [...new Set(keys.map((k) => k.trim()).filter((k) => k.length > 0))];
     if (cleaned.length === 0) {
       throw new Error("KeyPool requires at least one non-empty key");
     }
@@ -57,7 +57,9 @@ export class KeyPool {
 
   /** Mark a key as permanently failed (called on 401/403). */
   markDead(key: string): void {
-    this.dead.add(key);
+    if (this.keys.includes(key)) {
+      this.dead.add(key);
+    }
   }
 
   /** Return true if all keys are dead. */

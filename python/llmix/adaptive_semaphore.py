@@ -30,11 +30,18 @@ class AdaptiveSemaphore:
         initial: int = DEFAULT_INITIAL,
         min_concurrency: int = DEFAULT_MIN_CONCURRENCY,
     ) -> None:
+        if initial < 1:
+            raise ValueError(f"initial must be >= 1, got {initial}")
+        if initial < min_concurrency:
+            raise ValueError(
+                f"initial ({initial}) must be >= min_concurrency ({min_concurrency})"
+            )
         self._max = initial
         self._min = min_concurrency
         self._window = initial
         self._sem = asyncio.Semaphore(initial)
         self._has_header_signal = False
+        self._permits_to_absorb = 0
 
     @property
     def window(self) -> int:
@@ -60,6 +67,9 @@ class AdaptiveSemaphore:
         await self._sem.acquire()
 
     def release(self) -> None:
+        if self._permits_to_absorb > 0:
+            self._permits_to_absorb -= 1
+            return
         self._sem.release()
 
     def on_success(self) -> None:
@@ -108,6 +118,9 @@ class AdaptiveSemaphore:
             for _ in range(shrink):
                 if self._sem._value > 0:  # noqa: SLF001
                     self._sem._value -= 1  # noqa: SLF001
+                else:
+                    # Permit is held by in-flight task; absorb on release
+                    self._permits_to_absorb += 1
         self._window = target
 
 

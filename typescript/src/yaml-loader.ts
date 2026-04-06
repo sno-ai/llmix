@@ -457,9 +457,13 @@ export const TimeoutConfigSchema = z
 export const CachingConfigSchema = z
   .object({
     /** Caching strategy */
-    strategy: z.enum(["native", "gateway", "disabled"]),
+    strategy: z.enum(["native", "gateway", "disabled", "redis", "redis-or-memory", "memory"]),
     /** Cache key (required for native strategy) */
     key: z.string().optional(),
+    /** TTL in seconds for response cache entries */
+    ttl: z.number().positive().optional(),
+    /** Maximum L1 cache entries */
+    maxItems: z.number().int().positive().optional(),
   })
   .strict() satisfies z.ZodType<CachingConfig>;
 

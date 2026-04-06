@@ -40,7 +40,13 @@ class SecurityError(LLMConfigError):
 # CACHING STRATEGY
 # =============================================================================
 
-CachingStrategy = Literal["native", "gateway", "disabled"]
+CachingStrategy = Literal["native", "gateway", "disabled", "redis", "redis-or-memory", "memory"]
+
+ResponseCacheStrategy = Literal["redis", "redis-or-memory", "memory"]
+"""Strategies that activate the two-tier response cache."""
+
+CacheHitTier = Literal["l1", "l2"]
+"""Cache hit tier indicator."""
 
 FallbackTrigger = Literal["timeout", "connection_error", "5xx"]
 
@@ -92,6 +98,12 @@ class CachingConfig(TypedDict, total=False):
     Optional for gateway/disabled strategies.
     Example: "extraction-v1", "search-2024"
     """
+
+    ttl: int
+    """TTL in seconds for response cache entries (default: 3600). Applies to L1 and L2."""
+
+    max_items: int
+    """Maximum L1 cache entries (default: 1000)."""
 
 
 # =============================================================================
@@ -650,6 +662,9 @@ class LLMResponse(TypedDict, total=False):
 
     thinking_content: str
     """Captured thinking content stripped from response (when keep_thinking_output is False)."""
+
+    cache_hit: CacheHitTier
+    """Indicates which cache tier served this response, if any."""
 
 
 # =============================================================================

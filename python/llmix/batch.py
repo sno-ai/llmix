@@ -161,16 +161,16 @@ class BatchResult:
 class BatchMetadata:
     """Metadata written to disk on batch submit."""
 
-    __slots__ = ("key", "provider", "n_prompts", "submitted_at")
+    __slots__ = ("key_fingerprint", "provider", "n_prompts", "submitted_at")
 
     def __init__(
         self,
-        key: str,
+        key_fingerprint: str,
         provider: BatchProvider,
         n_prompts: int,
         submitted_at: str,
     ) -> None:
-        self.key = key
+        self.key_fingerprint = key_fingerprint
         self.provider = provider
         self.n_prompts = n_prompts
         self.submitted_at = submitted_at
@@ -198,7 +198,7 @@ def write_metadata(
     d.mkdir(parents=True, exist_ok=True)
 
     metadata = {
-        "key": api_key,
+        "keyFingerprint": _key_fingerprint(api_key),
         "provider": provider,
         "nPrompts": n_prompts,
         "submittedAt": datetime.now(timezone.utc).isoformat(),
@@ -214,7 +214,7 @@ def read_metadata(batch_id: str, state_dir: Path | None = None) -> BatchMetadata
         _metadata_path(batch_id, state_dir).read_text(encoding="utf-8")
     )
     return BatchMetadata(
-        key=raw["key"],
+        key_fingerprint=raw["keyFingerprint"],
         provider=raw["provider"],
         n_prompts=raw["nPrompts"],
         submitted_at=raw["submittedAt"],
@@ -279,7 +279,7 @@ def _openai_submit(
 
     jsonl_bytes = ("\n".join(lines) + "\n").encode()
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         upload_res = client.post(
             "https://api.openai.com/v1/files",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -308,7 +308,7 @@ def _openai_submit(
 def _openai_status(api_key: str, raw_batch_id: str) -> BatchStatus:
     httpx = _require_httpx()
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         res = client.get(
             f"https://api.openai.com/v1/batches/{raw_batch_id}",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -344,7 +344,7 @@ def _openai_results(
 ) -> list[BatchResult]:
     httpx = _require_httpx()
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         res = client.get(
             f"https://api.openai.com/v1/batches/{raw_batch_id}",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -403,8 +403,8 @@ def _anthropic_submit(
     max_tokens = 4096
     extra_params: dict[str, Any] = {}
     if params:
-        max_tokens = params.pop("max_tokens", max_tokens)
-        extra_params = params
+        max_tokens = params.get("max_tokens", max_tokens)
+        extra_params = {k: v for k, v in params.items() if k != "max_tokens"}
 
     requests = []
     for i, prompt in enumerate(prompts):
@@ -418,7 +418,7 @@ def _anthropic_submit(
         req_params.update(extra_params)
         requests.append({"custom_id": f"req-{i}", "params": req_params})
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         res = client.post(
             "https://api.anthropic.com/v1/messages/batches",
             headers={
@@ -435,7 +435,7 @@ def _anthropic_submit(
 def _anthropic_status(api_key: str, raw_batch_id: str) -> BatchStatus:
     httpx = _require_httpx()
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         res = client.get(
             f"https://api.anthropic.com/v1/messages/batches/{raw_batch_id}",
             headers={
@@ -480,7 +480,7 @@ def _anthropic_results(
 ) -> list[BatchResult]:
     httpx = _require_httpx()
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         res = client.get(
             f"https://api.anthropic.com/v1/messages/batches/{raw_batch_id}/results",
             headers={
@@ -541,7 +541,7 @@ def _gemini_submit(
             req["request"]["system_instruction"] = {"parts": [{"text": system_prompt}]}
         requests.append(req)
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         res = client.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{model}:batchGenerateContent",
             params={"key": api_key},
@@ -555,7 +555,7 @@ def _gemini_submit(
 def _gemini_status(api_key: str, raw_batch_id: str) -> BatchStatus:
     httpx = _require_httpx()
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         res = client.get(
             f"https://generativelanguage.googleapis.com/v1beta/{raw_batch_id}",
             params={"key": api_key},
@@ -593,7 +593,7 @@ def _gemini_results(
 ) -> list[BatchResult]:
     httpx = _require_httpx()
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         res = client.get(
             f"https://generativelanguage.googleapis.com/v1beta/{raw_batch_id}",
             params={"key": api_key},
@@ -670,11 +670,16 @@ class BatchProcessor:
         write_metadata(batch_id, api_key, provider, len(prompts), effective_state_dir)
         return batch_id
 
-    def status(self, batch_id: str) -> BatchStatus:
-        """Check the status of a batch job."""
+    def status(self, batch_id: str, api_key: str) -> BatchStatus:
+        """Check the status of a batch job.
+
+        Args:
+            batch_id: Encoded batch ID.
+            api_key: API key for the provider (must match the key fingerprint in batch ID).
+        """
         decoded = decode_batch_id(batch_id)
-        metadata = read_metadata(batch_id, self._state_dir)
-        api_key = metadata.key
+        if _key_fingerprint(api_key) != decoded.key_fingerprint:
+            raise ValueError("API key fingerprint does not match batch ID")
 
         if decoded.provider == "openai":
             return _openai_status(api_key, decoded.raw_batch_id)
@@ -685,11 +690,16 @@ class BatchProcessor:
         else:
             raise ValueError(f"Unsupported batch provider: {decoded.provider}")
 
-    def results(self, batch_id: str) -> list[BatchResult]:
-        """Retrieve batch results. Deletes metadata after successful retrieval."""
+    def results(self, batch_id: str, api_key: str) -> list[BatchResult]:
+        """Retrieve batch results. Deletes metadata after successful retrieval.
+
+        Args:
+            batch_id: Encoded batch ID.
+            api_key: API key for the provider (must match the key fingerprint in batch ID).
+        """
         decoded = decode_batch_id(batch_id)
-        metadata = read_metadata(batch_id, self._state_dir)
-        api_key = metadata.key
+        if _key_fingerprint(api_key) != decoded.key_fingerprint:
+            raise ValueError("API key fingerprint does not match batch ID")
 
         if decoded.provider == "openai":
             results = _openai_results(api_key, decoded.raw_batch_id, decoded.n_prompts)

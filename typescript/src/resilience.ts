@@ -382,8 +382,12 @@ export async function createFileLock(
     lockfileMod = await import("proper-lockfile") as typeof lockfileMod;
   } catch {
     // Fallback: no-op if proper-lockfile is not installed
+    console.warn(
+      "LLMix: LLM_GLOBAL_CONCURRENCY is set but 'proper-lockfile' is not installed. " +
+      "File locking is disabled. Install with: bun add proper-lockfile",
+    );
     return {
-      enabled: true,
+      enabled: false,
       async acquire() { /* proper-lockfile not available */ },
       async release() { /* proper-lockfile not available */ },
     };

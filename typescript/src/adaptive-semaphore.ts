@@ -38,6 +38,9 @@ export class AdaptiveSemaphore {
     initial: number = DEFAULT_INITIAL,
     minConcurrency: number = DEFAULT_MIN_CONCURRENCY,
   ) {
+    if (initial < 1) throw new Error("initial must be >= 1");
+    if (minConcurrency < 1) throw new Error("minConcurrency must be >= 1");
+    if (minConcurrency > initial) throw new Error("minConcurrency must be <= initial");
     this._max = initial;
     this._min = minConcurrency;
     this._window = initial;
@@ -70,9 +73,10 @@ export class AdaptiveSemaphore {
     if (this._queue.length > 0) {
       const waiter = this._queue.shift()!;
       waiter.resolve();
-    } else {
+    } else if (this._permits < this._window) {
       this._permits++;
     }
+    // else: permit absorbed — window shrank while task was in-flight
   }
 
   onSuccess(): void {
@@ -105,12 +109,7 @@ export class AdaptiveSemaphore {
   }
 
   private _releaseOne(): void {
-    if (this._queue.length > 0) {
-      const waiter = this._queue.shift()!;
-      waiter.resolve();
-    } else {
-      this._permits++;
-    }
+    this.release();
   }
 
   private _adjustWindow(target: number): void {

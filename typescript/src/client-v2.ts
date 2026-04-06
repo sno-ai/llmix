@@ -248,39 +248,42 @@ export class V2CallPipeline {
     const semaphore = this.getSemaphore(provider);
     const lock = await this.getFileLock();
 
-    // Step 7: Cross-process lock acquire
+    // Step 7: Cross-process lock acquire (protects state reads only)
     await lock.acquire();
 
     // Step 8: AIMD Semaphore acquire
     await semaphore.acquire();
 
+    // Step 9: Key Pool select (before try so catch can reference it)
+    const pool = this.keyPools.get(provider);
+    const apiKey = pool ? pool.select() : "";
+
+    // Step 10: Provider kwargs transform
+    let kwargs: Record<string, unknown> = {
+      temperature: config.common?.temperature,
+      top_p: config.common?.topP,
+      max_tokens: config.common?.maxOutputTokens,
+    };
+    const transformFn = this.transformKwargs[provider];
+    if (transformFn) {
+      kwargs = applyTransformKwargs(
+        {
+          model: config.model,
+          provider,
+          messages: messages as unknown[],
+          temperature: config.common?.temperature,
+          topP: config.common?.topP,
+          providerOptions: config.providerOptions as ProviderOptions | undefined,
+        },
+        kwargs,
+        transformFn,
+      );
+    }
+
+    // Release cross-process lock before network call — don't hold it during dispatch
+    await lock.release();
+
     try {
-      // Step 9: Key Pool select
-      const pool = this.keyPools.get(provider);
-      const apiKey = pool ? pool.select() : "";
-
-      // Step 10: Provider kwargs transform
-      let kwargs: Record<string, unknown> = {
-        temperature: config.common?.temperature,
-        top_p: config.common?.topP,
-        max_tokens: config.common?.maxOutputTokens,
-      };
-      const transformFn = this.transformKwargs[provider];
-      if (transformFn) {
-        kwargs = applyTransformKwargs(
-          {
-            model: config.model,
-            provider,
-            messages: messages as unknown[],
-            temperature: config.common?.temperature,
-            topP: config.common?.topP,
-            providerOptions: config.providerOptions as ProviderOptions | undefined,
-          },
-          kwargs,
-          transformFn,
-        );
-      }
-
       // Step 11: Provider dispatch
       const result = await this.dispatch({
         provider,
@@ -319,10 +322,9 @@ export class V2CallPipeline {
       }
 
       // Step 14: Key Pool feedback (error)
-      const pool = this.keyPools.get(config.provider);
       if (pool && statusCode !== undefined) {
         if (statusCode === 401 || statusCode === 403) {
-          pool.markDead(pool.select());
+          pool.markDead(apiKey);
         } else if (statusCode === 429) {
           pool.rotate();
         }
@@ -338,9 +340,6 @@ export class V2CallPipeline {
     } finally {
       // Step 12: AIMD semaphore release (always)
       semaphore.release();
-
-      // Step 13: Cross-process lock release
-      await lock.release();
     }
   }
 
