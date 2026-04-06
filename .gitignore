@@ -21,3 +21,6 @@ test/__pycache__/*
 # Session
 .remember/*
 repo_reference/*
+
+# Test environment secrets
+.env.test
