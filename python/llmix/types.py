@@ -6,14 +6,25 @@ Mirrors TypeScript implementation in package/llmix/src/types.ts.
 """
 
 import re
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict
+from typing import Any, Awaitable, Literal, Protocol, TypedDict
 
-from lib.infra.validation import DANGEROUS_CHARS as DANGEROUS_CHARS
-from lib.infra.validation import VALID_USER_ID_PATTERN as VALID_USER_ID_PATTERN
-from lib.infra.validation import validate_user_id as validate_user_id
+try:
+    from lib.infra.validation import DANGEROUS_CHARS as DANGEROUS_CHARS
+    from lib.infra.validation import VALID_USER_ID_PATTERN as VALID_USER_ID_PATTERN
+    from lib.infra.validation import validate_user_id as validate_user_id
+except ImportError:
+    DANGEROUS_CHARS: list[str] = ["/", "\\", "..", "~", "$", "`"]
+    VALID_USER_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
-if TYPE_CHECKING:
-    from collections.abc import Awaitable
+    def validate_user_id(user_id: str | None) -> bool:
+        """Validate user ID format without the shared infra package."""
+        if user_id is None:
+            return False
+        if len(user_id) > 64:
+            return False
+        if any(char in user_id for char in DANGEROUS_CHARS):
+            return False
+        return bool(VALID_USER_ID_PATTERN.match(user_id))
 
 # =============================================================================
 # EXCEPTIONS

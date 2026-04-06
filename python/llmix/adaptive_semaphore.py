@@ -7,6 +7,7 @@ Adjusts concurrency window dynamically:
 """
 
 import asyncio
+from collections import deque
 
 DEFAULT_INITIAL = 32
 DEFAULT_MIN_CONCURRENCY = 4
@@ -39,7 +40,8 @@ class AdaptiveSemaphore:
         self._max = initial
         self._min = min_concurrency
         self._window = initial
-        self._sem = asyncio.Semaphore(initial)
+        self._available = initial
+        self._waiters: deque[asyncio.Future[None]] = deque()
         self._has_header_signal = False
         self._permits_to_absorb = 0
 
@@ -56,29 +58,42 @@ class AdaptiveSemaphore:
         return self._min
 
     def rebind(self) -> None:
-        """Recreate the inner Semaphore for a new event loop.
-
-        asyncio.Semaphore binds to a loop on first contended acquire().
-        Call this when reusing across asyncio.run() boundaries.
-        """
-        self._sem = asyncio.Semaphore(self._window)
+        """Reset loop-bound waiter state when reusing across asyncio.run() boundaries."""
+        self._available = self._window
+        self._waiters = deque()
+        self._permits_to_absorb = 0
 
     async def acquire(self) -> None:
-        await self._sem.acquire()
+        if self._available > 0:
+            self._available -= 1
+            return
+
+        fut = asyncio.get_running_loop().create_future()
+        self._waiters.append(fut)
+        try:
+            await fut
+        except Exception:
+            if fut in self._waiters:
+                self._waiters.remove(fut)
+            elif fut.done() and not fut.cancelled():
+                self.release()
+            raise
 
     def release(self) -> None:
         if self._permits_to_absorb > 0:
             self._permits_to_absorb -= 1
             return
-        self._sem.release()
+        if self._wake_waiter():
+            return
+        if self._available < self._window:
+            self._available += 1
 
     def on_success(self) -> None:
         """AIMD additive increase -- only when no header signals are flowing."""
         if self._has_header_signal:
             return
         if self._window < self._max:
-            self._window = min(self._window + 1, self._max)
-            self._sem.release()
+            self._adjust_window(self._window + 1)
 
     def on_rate_limit(self) -> None:
         """Hard 429 signal -- always halves, overrides headers."""
@@ -96,8 +111,7 @@ class AdaptiveSemaphore:
         if ratio >= HEADER_BACKOFF_THRESHOLD:
             # Plenty of headroom -- let AIMD grow normally
             if self._window < self._max:
-                self._window = min(self._window + 1, self._max)
-                self._sem.release()
+                self._adjust_window(self._window + 1)
         else:
             # Scarce: scale proportionally within the danger zone
             # ratio=threshold -> full max, ratio=0 -> min_concurrency
@@ -113,17 +127,27 @@ class AdaptiveSemaphore:
             return
         if target > self._window:
             grow = target - self._window
+            absorbed = min(grow, self._permits_to_absorb)
+            self._permits_to_absorb -= absorbed
+            grow -= absorbed
             for _ in range(grow):
-                self._sem.release()
+                if not self._wake_waiter():
+                    self._available += 1
         else:
             shrink = self._window - target
-            for _ in range(shrink):
-                if self._sem._value > 0:  # noqa: SLF001
-                    self._sem._value -= 1  # noqa: SLF001
-                else:
-                    # Permit is held by in-flight task; absorb on release
-                    self._permits_to_absorb += 1
+            immediate = min(shrink, self._available)
+            self._available -= immediate
+            self._permits_to_absorb += shrink - immediate
         self._window = target
+
+    def _wake_waiter(self) -> bool:
+        while self._waiters:
+            waiter = self._waiters.popleft()
+            if waiter.cancelled():
+                continue
+            waiter.set_result(None)
+            return True
+        return False
 
 
 def parse_openai_ratelimit_headers(headers: dict[str, str]) -> dict[str, int] | None:

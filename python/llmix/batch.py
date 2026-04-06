@@ -696,7 +696,10 @@ class BatchProcessor:
             raise ValueError(f"Unsupported batch provider: {decoded.provider}")
 
     def results(self, batch_id: str, api_key: str) -> list[BatchResult]:
-        """Retrieve batch results. Deletes metadata after successful retrieval.
+        """Retrieve batch results.
+
+        Metadata is deleted only once the provider returns terminal results.
+        Pending polls that return an empty list keep the metadata on disk.
 
         Args:
             batch_id: Encoded batch ID.
@@ -715,7 +718,8 @@ class BatchProcessor:
         else:
             raise ValueError(f"Unsupported batch provider: {decoded.provider}")
 
-        delete_metadata(batch_id, self._state_dir)
+        if results:
+            delete_metadata(batch_id, self._state_dir)
         return results
 
 

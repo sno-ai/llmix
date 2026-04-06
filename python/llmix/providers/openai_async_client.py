@@ -13,9 +13,12 @@ Provides comprehensive async OpenAI API support with:
 All features identical to OpenAIClient but with async/await support.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import threading
+from functools import lru_cache
 from typing import Any
 
 from openai import APIConnectionError, APITimeoutError, AsyncOpenAI, InternalServerError, RateLimitError
@@ -36,7 +39,6 @@ from llmix.providers.openai_common import (
     prepare_messages,
     process_output_array,
 )
-from lib.telemetry.helicone import get_helicone_headers, get_helicone_url, is_helicone_enabled
 
 # Hardcoded defaults replacing legacy MeMu config
 _DEFAULT_MAX_OUTPUT_TOKENS = 16384
@@ -47,6 +49,16 @@ logger = logging.getLogger(__name__)
 
 _helicone_logged_once = False
 _helicone_log_lock = threading.Lock()
+
+
+@lru_cache(maxsize=1)
+def _import_helicone_module() -> Any | None:
+    """Import Helicone lazily so OpenAI client works without telemetry extras."""
+    try:
+        from lib.telemetry import helicone as helicone_module
+    except ImportError:
+        return None
+    return helicone_module
 
 
 def _log_helicone_route_once(message: str) -> None:
@@ -152,6 +164,7 @@ class AsyncOpenAIClient(BaseLLMClient):
 
                 base_url: str | None = None
                 default_headers: dict[str, str] = {}
+                helicone_lib = _import_helicone_module()
 
                 # Priority 1: Custom headers provided (LLMix path with pre-configured Helicone)
                 if self._default_headers is not None:
@@ -160,9 +173,9 @@ class AsyncOpenAIClient(BaseLLMClient):
                     if base_url:
                         _log_helicone_route_once(f"Using pre-configured headers, routing through {base_url}")
                 # Priority 2: Auto-detect Helicone (requires helicone_api_key to be passed)
-                elif is_helicone_enabled(self._helicone_api_key):
-                    base_url = get_helicone_url('openai')
-                    default_headers = get_helicone_headers(
+                elif helicone_lib is not None and helicone_lib.is_helicone_enabled(self._helicone_api_key):
+                    base_url = helicone_lib.get_helicone_url('openai')
+                    default_headers = helicone_lib.get_helicone_headers(
                         app='sno-cortex', module='umi-async', environment=self._environment, api_key=self._helicone_api_key
                     )
                     if self._helicone_cache_enabled:

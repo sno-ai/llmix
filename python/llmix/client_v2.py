@@ -208,6 +208,17 @@ class V2CallPipeline:
             self._semaphores[provider] = sem
         return sem
 
+    def _select_api_key_locked(self, provider: str) -> str:
+        """Read key-pool state under the cross-process lock in one blocking call."""
+        with self._file_lock:
+            pool = self._key_pools.get(provider)
+            if not pool:
+                raise ValueError(
+                    f'No API key pool for provider "{provider}". '
+                    f"Set {provider.upper()}_API_KEY or {provider.upper()}_KEYS."
+                )
+            return pool.select()
+
     async def call(self, call_input: V2CallInput) -> V2CallResponse:
         """Execute the 19-step call flow."""
         config = call_input.config
@@ -345,18 +356,7 @@ class V2CallPipeline:
         await semaphore.acquire()
 
         # Step 7: Cross-process lock — only wrap state reads, not the API call
-        await asyncio.to_thread(self._file_lock.acquire)
-        try:
-            # Step 9: Key Pool select (under lock)
-            pool = self._key_pools.get(provider)
-            if not pool:
-                raise ValueError(
-                    f'No API key pool for provider "{provider}". '
-                    f"Set {provider.upper()}_API_KEY or {provider.upper()}_KEYS."
-                )
-            api_key = pool.select()
-        finally:
-            await asyncio.to_thread(self._file_lock.release)
+        api_key = await asyncio.to_thread(self._select_api_key_locked, provider)
 
         try:
             # Step 10: Provider kwargs transform
