@@ -55,6 +55,21 @@ export { resolveConfigDir, type LLMixPathConfig, type ResolvedConfigDir } from "
 export { createLLMConfigLoader, LLMConfigLoader } from "./config-loader";
 
 // =============================================================================
+// V2 CALL PIPELINE
+// =============================================================================
+
+export {
+  V2CallPipeline,
+  type DispatchContext,
+  type ProviderDispatchFn,
+  type ProviderError,
+  type ProviderResult,
+  type V2CallInput,
+  type V2CallResponse,
+  type V2PipelineConfig,
+} from "./client-v2";
+
+// =============================================================================
 // TYPES
 // =============================================================================
 
@@ -67,6 +82,7 @@ export type {
   AnthropicCacheControl,
   AnthropicProviderOptions,
   AnthropicThinkingConfig,
+  CacheHitTier,
   CacheStats,
   CachingConfig,
   CachingStrategy,
@@ -92,9 +108,11 @@ export type {
   Provider,
   ProviderOptions,
   ProviderOrUnknown,
+  ResponseCacheStrategy,
   ResolvedConfigResult,
   ResolvedLLMConfig,
   RuntimeOverrides,
+  SnogpuProviderOptions,
   TelemetryContext,
   TimeoutConfig,
 } from "./types";
@@ -138,10 +156,90 @@ export {
 } from "./model-capabilities";
 
 // =============================================================================
+// V2 FEATURE MODULES
+// =============================================================================
+
+export {
+  AdaptiveSemaphore,
+  parseOpenAIRatelimitHeaders,
+} from "./adaptive-semaphore";
+
+export {
+  KeyPool,
+  KeyPoolExhaustedError,
+  loadKeysFromEnv,
+} from "./key-pool";
+
+export {
+  CircuitBreaker,
+  CircuitOpenError,
+  CircuitState,
+  KillSwitch,
+  KillSwitchActiveError,
+  RetryPolicy,
+  Singleflight,
+  calculateDelay,
+  createFileLock,
+  isRetryable,
+  parseRetryAfter,
+  type CircuitBreakerOptions,
+  type FileLockLike,
+  type RetryPolicyOptions,
+} from "./resilience";
+
+export {
+  stripThinking,
+  type StripThinkingResult,
+} from "./thinking";
+
+export {
+  applyTransformKwargs,
+  geminiTransformKwargs,
+  openaiTransformKwargs,
+  openrouterTransformKwargs,
+  snogpuTransformKwargs,
+  PROVIDER_KWARGS_REGISTRY,
+  type TransformKwargsCallback,
+  type TransformKwargsContext,
+} from "./provider-kwargs";
+
+export {
+  getProviderTransport,
+  createOpenAITransport,
+  PROVIDER_TRANSPORT,
+  type ProviderTransportConfig,
+} from "./http2";
+
+export {
+  BatchProcessor,
+  encodeBatchId,
+  decodeBatchId,
+  writeMetadata as writeBatchMetadata,
+  readMetadata as readBatchMetadata,
+  deleteMetadata as deleteBatchMetadata,
+  type BatchProvider,
+  type BatchState,
+  type BatchStatus,
+  type BatchResult,
+  type BatchMetadata,
+  type BatchSubmitOptions,
+  type DecodedBatchId,
+} from "./batch";
+
+// =============================================================================
 // INTERNAL UTILITIES (for advanced use cases)
 // =============================================================================
 
 export { LRUCache } from "./lru-cache";
+
+export {
+  TwoTierCache,
+  generateCacheKey,
+  resolveResponseCacheStrategy,
+  isResponseCacheStrategy,
+  type TwoTierCacheConfig,
+  type ResponseCacheStats,
+} from "./response-cache";
 
 export {
   AnthropicProviderOptionsSchema,
@@ -155,6 +253,7 @@ export {
   loadConfigFromFile,
   OpenAIProviderOptionsSchema,
   ProviderOptionsSchema,
+  SnogpuProviderOptionsSchema,
   validateModule,
   validatePreset,
   validateScope,
