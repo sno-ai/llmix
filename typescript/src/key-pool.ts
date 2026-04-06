@@ -42,6 +42,8 @@ export class KeyPool {
     for (let i = 0; i < this.keys.length; i++) {
       const key = this.keys[this.idx % this.keys.length];
       if (!this.dead.has(key)) {
+        // Advance index for true round-robin — next select() starts at the next key
+        this.idx = (this.idx + 1) % this.keys.length;
         return key;
       }
       this.idx = (this.idx + 1) % this.keys.length;

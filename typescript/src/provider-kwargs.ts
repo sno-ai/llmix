@@ -24,6 +24,7 @@ export interface TransformKwargsContext {
   topP?: number;
   providerOptions?: ProviderOptions;
   baseUrl?: string;
+  enableThinking?: boolean;
 }
 
 export type TransformKwargsCallback = (
@@ -72,6 +73,13 @@ export function openaiTransformKwargs(
   const result = { ...kwargs };
   delete result.temperature;
   delete result.top_p;
+
+  // Reasoning models use max_completion_tokens, not max_tokens
+  if (result.max_tokens !== undefined && result.max_completion_tokens === undefined) {
+    result.max_completion_tokens = result.max_tokens;
+    delete result.max_tokens;
+  }
+
   return result;
 }
 
@@ -90,7 +98,11 @@ export function openrouterTransformKwargs(
   kwargs: Record<string, unknown>
 ): Record<string, unknown> {
   const result = { ...kwargs };
-  const extraBody = (result.extra_body as Record<string, unknown>) ?? {};
+  const raw = result.extra_body;
+  const extraBody: Record<string, unknown> =
+    typeof raw === "object" && raw !== null && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
   if (!("provider" in extraBody)) {
     result.extra_body = { ...extraBody, provider: OPENROUTER_DEFAULT_PROVIDER };
   }
@@ -104,8 +116,9 @@ export function openrouterTransformKwargs(
 /**
  * Set default ThinkingConfig(thinkingBudget=0), override from providerOptions.
  *
- * Disables thinking by default. If providerOptions.google.thinkingBudget is
- * set, uses that value instead.
+ * Disables thinking by default. When ctx.enableThinking is true and no explicit
+ * budget is provided, skips injecting a budget so the provider uses its own default.
+ * If providerOptions.google.thinkingConfig.thinkingBudget is set, uses that value.
  */
 export function geminiTransformKwargs(
   ctx: TransformKwargsContext,
@@ -114,10 +127,17 @@ export function geminiTransformKwargs(
   const result = { ...kwargs };
 
   const googleOpts = ctx.providerOptions?.google;
-  const thinkingBudget: number = googleOpts?.thinkingConfig?.thinkingBudget ?? 0;
+  const explicitBudget = googleOpts?.thinkingConfig?.thinkingBudget;
+  // When enableThinking is true and no explicit budget, let the provider decide
+  const thinkingBudget: number | undefined =
+    explicitBudget ?? (ctx.enableThinking ? undefined : 0);
 
-  const thinkingConfig = (result.thinkingConfig as Record<string, unknown>) ?? {};
-  if (!("thinkingBudget" in thinkingConfig)) {
+  const rawTc = result.thinkingConfig;
+  const thinkingConfig: Record<string, unknown> =
+    typeof rawTc === "object" && rawTc !== null && !Array.isArray(rawTc)
+      ? (rawTc as Record<string, unknown>)
+      : {};
+  if (!("thinkingBudget" in thinkingConfig) && thinkingBudget !== undefined) {
     result.thinkingConfig = { ...thinkingConfig, thinkingBudget };
   }
 
@@ -140,22 +160,23 @@ export function snogpuTransformKwargs(
 ): Record<string, unknown> {
   const result = { ...kwargs };
 
-  // ProviderOptions type doesn't include snogpu in TS yet — access dynamically
-  const providerOptions = ctx.providerOptions as Record<string, unknown> | undefined;
-  const snogpuOpts = (providerOptions?.snogpu as Record<string, unknown>) ?? {};
-  const gpuPath = snogpuOpts.gpuPath as string | undefined;
+  const snogpuOpts = ctx.providerOptions?.snogpu;
+  const gpuPath = snogpuOpts?.gpuPath;
 
   let base = (ctx.baseUrl ?? "").replace(/\/+$/, "");
   if (base.endsWith("/v1")) {
     base = base.slice(0, -3);
   }
 
-  // Skip URL modification if base is empty — would produce a relative path, not a valid URL
   if (!base) {
-    return result;
+    throw new Error("snogpu provider requires a non-empty baseUrl");
   }
 
   if (gpuPath) {
+    // Validate gpuPath: no traversal, alphanumeric + hyphens/underscores/slashes only
+    if (gpuPath.includes("..") || !/^[a-zA-Z0-9_/-]+$/.test(gpuPath)) {
+      throw new Error(`Invalid gpuPath: "${gpuPath}"`);
+    }
     result.baseUrl = `${base}/${gpuPath}/v1`;
   } else {
     result.baseUrl = `${base}/v1`;
@@ -172,5 +193,6 @@ export const PROVIDER_KWARGS_REGISTRY: Record<string, TransformKwargsCallback> =
   openai: openaiTransformKwargs,
   deepseek: openrouterTransformKwargs,
   google: geminiTransformKwargs,
+  gemini: geminiTransformKwargs,
   snogpu: snogpuTransformKwargs,
 };

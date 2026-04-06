@@ -52,13 +52,16 @@ const SKIP_STRATEGIES: ReadonlySet<string> = new Set([
 /** Fields included in cache key generation, in canonical order. */
 const CACHE_KEY_FIELDS = [
   "baseUrl",
+  "enableThinking",
   "maxOutputTokens",
   "messages",
   "model",
   "provider",
   "providerOptions",
   "responseFormat",
+  "seed",
   "temperature",
+  "topP",
 ] as const;
 
 // =============================================================================
@@ -97,15 +100,25 @@ export interface CacheKeyParams {
   model: string;
   messages: unknown[];
   baseUrl?: string | null;
+  enableThinking?: boolean | null;
   temperature?: number | null;
   maxOutputTokens?: number | null;
   responseFormat?: unknown | null;
   providerOptions?: Record<string, unknown> | null;
+  seed?: number | null;
+  topP?: number | null;
 }
 
 interface CachedValue {
   data: string;
+  /** Stored as "cached_at" in Redis for cross-language (Python) parity. */
   cachedAt: number;
+}
+
+/** Redis payload uses snake_case keys for cross-language parity with Python. */
+interface RedisPayload {
+  data: string;
+  cached_at: number;
 }
 
 // =============================================================================
@@ -169,9 +182,11 @@ export function generateCacheKey(params: CacheKeyParams): string {
 
   for (const field of CACHE_KEY_FIELDS) {
     const value = params[field as keyof CacheKeyParams];
-    if (value !== undefined && value !== null) {
-      canonical[field] = value;
-    }
+    if (value === undefined || value === null) continue;
+    // Skip non-finite numbers (NaN, Infinity) — JSON.stringify maps them to null,
+    // which differs from Python's behavior and breaks cross-language cache key parity.
+    if (typeof value === "number" && !Number.isFinite(value)) continue;
+    canonical[field] = value;
   }
 
   const json = JSON.stringify(canonical, sortReplacer);
@@ -181,8 +196,14 @@ export function generateCacheKey(params: CacheKeyParams): string {
 
 /**
  * JSON replacer that sorts object keys at every level for deterministic serialization.
+ * Also normalizes non-finite numbers to null for cross-language parity with Python.
  */
 function sortReplacer(_key: string, value: unknown): unknown {
+  // Normalize NaN/Infinity to null — JS JSON.stringify does this implicitly,
+  // but Python raises or serializes differently. Explicit null ensures parity.
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return null;
+  }
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
     const sorted: Record<string, unknown> = {};
     for (const k of Object.keys(value as Record<string, unknown>).sort()) {
@@ -205,13 +226,22 @@ export class TwoTierCache {
 
   // L2 state
   private redisClient: InstanceType<typeof import("ioredis").default> | null = null;
+  private redisConnecting: Promise<boolean> | null = null;
   private l2Enabled: boolean;
   private l2Healthy = true;
   private l2ConsecutiveWriteFailures = 0;
+  private lastConnectAttempt = 0;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private redisUrl: string | undefined;
 
   constructor(strategy: ResponseCacheStrategy, config: TwoTierCacheConfig = {}) {
+    // Enforce: "redis" strategy requires a Redis URL (fail fast)
+    if (strategy === "redis" && !config.redisUrl) {
+      throw new Error(
+        'TwoTierCache strategy "redis" requires config.redisUrl to be set.',
+      );
+    }
+
     this.strategy = strategy;
     this.ttlSeconds = config.ttlSeconds ?? DEFAULT_TTL_SECONDS;
     this.log = config.logger ?? {
@@ -233,27 +263,48 @@ export class TwoTierCache {
     this.l2Enabled = strategy !== "memory" && !!config.redisUrl;
   }
 
-  /** Lazily connect to Redis on first L2 operation. */
-  private async ensureRedis(): Promise<boolean> {
-    if (!this.l2Enabled) return false;
-    if (this.redisClient) return this.l2Healthy;
+  /** Lazily connect to Redis on first L2 operation (deduplicates concurrent calls). */
+  private ensureRedis(): Promise<boolean> {
+    if (!this.l2Enabled) return Promise.resolve(false);
+    if (this.redisClient) return Promise.resolve(this.l2Healthy);
 
+    // If unhealthy with no client, we're in a failed-connect state.
+    // Short-circuit until the health ping interval elapses.
+    if (!this.l2Healthy && !this.redisConnecting) {
+      const elapsed = Date.now() - this.lastConnectAttempt;
+      if (elapsed < HEALTH_PING_INTERVAL_MS) {
+        return Promise.resolve(false);
+      }
+    }
+
+    if (!this.redisConnecting) {
+      this.redisConnecting = this.connectRedis();
+    }
+    return this.redisConnecting;
+  }
+
+  private async connectRedis(): Promise<boolean> {
+    this.lastConnectAttempt = Date.now();
     try {
       const ioredisModule = await getIoredis();
       const Redis = ioredisModule.default;
-      this.redisClient = new Redis(this.redisUrl!, {
+      const client = new Redis(this.redisUrl!, {
         lazyConnect: true,
         maxRetriesPerRequest: 1,
         connectTimeout: 5000,
         commandTimeout: 3000,
       });
-      await this.redisClient.connect();
+      await client.connect();
+      this.redisClient = client;
+      this.l2Healthy = true;
+      this.l2ConsecutiveWriteFailures = 0;
       this.startHealthMonitor();
       this.log.info("Redis L2 connected for response cache.");
       return true;
     } catch (err) {
       this.log.warn("Failed to connect Redis L2, operating L1-only.", err);
       this.l2Healthy = false;
+      this.redisConnecting = null; // allow retry after backoff
       return false;
     }
   }
@@ -269,8 +320,9 @@ export class TwoTierCache {
       return { value: l1Entry.data, tier: "l1" };
     }
 
-    // L2 lookup
-    if (!this.l2Enabled || !this.l2Healthy) return null;
+    // L2 lookup — skip only if L2 is structurally disabled.
+    // Don't skip on !l2Healthy alone: ensureRedis() retries after connect failure.
+    if (!this.l2Enabled) return null;
 
     try {
       const connected = await this.ensureRedis();
@@ -279,11 +331,26 @@ export class TwoTierCache {
       const raw = await this.redisClient.get(key);
       if (!raw) return null;
 
-      // Backfill L1
-      const parsed: CachedValue = JSON.parse(raw);
-      this.l1.set(key, parsed);
+      // Backfill L1 (validate shape from Redis, accept both camelCase and snake_case for cross-language parity)
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof parsed?.data !== "string") {
+        this.log.warn("L2 returned malformed cache entry, ignoring.");
+        return null;
+      }
+      const cachedAt = typeof parsed.cached_at === "number"
+        ? parsed.cached_at
+        : typeof parsed.cachedAt === "number"
+          ? parsed.cachedAt
+          : Date.now();
+      const entry: CachedValue = { data: parsed.data as string, cachedAt };
 
-      return { value: parsed.data, tier: "l2" };
+      // Backfill L1 with remaining TTL so entries don't outlive their Redis lifetime
+      const ageMs = Date.now() - cachedAt;
+      const remainingMs = Math.max(0, this.ttlSeconds * 1000 - ageMs);
+      if (remainingMs <= 0) return null; // already expired
+      this.l1.set(key, entry, { ttl: remainingMs });
+
+      return { value: entry.data, tier: "l2" };
     } catch (err) {
       this.log.warn("L2 GET failed, treating as cache miss.", err);
       return null;
@@ -300,8 +367,8 @@ export class TwoTierCache {
     // L1 write (synchronous)
     this.l1.set(key, entry);
 
-    // L2 write (fire-and-forget)
-    if (this.l2Enabled && this.l2Healthy) {
+    // L2 write (fire-and-forget) — don't gate on l2Healthy; ensureRedis handles retries
+    if (this.l2Enabled) {
       this.writeL2(key, entry).catch((err) => {
         this.log.warn("L2 SET failed (fire-and-forget).", err);
       });
@@ -313,7 +380,9 @@ export class TwoTierCache {
     if (!connected || !this.redisClient) return;
 
     try {
-      const serialized = JSON.stringify(entry);
+      // Write snake_case keys for cross-language (Python) parity
+      const payload: RedisPayload = { data: entry.data, cached_at: entry.cachedAt };
+      const serialized = JSON.stringify(payload);
       const ttl = this.ttlSeconds > 0 ? this.ttlSeconds : DEFAULT_L2_TTL_SECONDS;
       await this.redisClient.setex(key, ttl, serialized);
       this.l2ConsecutiveWriteFailures = 0;

@@ -29,7 +29,7 @@ const KILLSWITCH_SUBDIR = "llmix2";
 // ---------------------------------------------------------------------------
 
 function isRetryableStatus(statusCode: number): boolean {
-  return statusCode === 429 || (statusCode >= 500 && statusCode <= 599);
+  return statusCode === 408 || statusCode === 429 || (statusCode >= 500 && statusCode <= 599);
 }
 
 function resolveStateDir(): string {
@@ -109,9 +109,9 @@ export class CircuitBreaker {
 
   get state(): CircuitState {
     if (this._state === CircuitState.OPEN) {
-      const elapsed = Date.now() - this._openedAt;
+      const elapsed = performance.now() - this._openedAt;
       if (elapsed >= this.cooldownMs) {
-        this._state = CircuitState.HALF_OPEN;  // sync backing field
+        this._state = CircuitState.HALF_OPEN;
         return CircuitState.HALF_OPEN;
       }
     }
@@ -142,27 +142,59 @@ export class CircuitBreaker {
   }
 
   onFailure(statusCode?: number, networkError = false): void {
+    const current = this.state;
+
     let retryable = networkError;
     if (statusCode !== undefined) {
-      // Auth errors do NOT trip the breaker
-      if (statusCode === 401 || statusCode === 403) return;
       retryable = retryable || isRetryableStatus(statusCode);
     }
 
-    if (!retryable) return;
-
-    const current = this.state;
+    // HALF_OPEN probe must always be finalized regardless of retryability.
     if (current === CircuitState.HALF_OPEN) {
-      this._state = CircuitState.OPEN;
-      this._openedAt = Date.now();
+      if (retryable || networkError) {
+        // Transient failure — re-open the circuit
+        this._state = CircuitState.OPEN;
+        this._openedAt = performance.now();
+      } else {
+        // Non-retryable error (400, 401, 404, etc.) means the server is
+        // reachable — close the circuit.
+        this._state = CircuitState.CLOSED;
+        this._consecutiveFailures = 0;
+      }
       this._halfOpenProbeInFlight = false;
+      return;
+    }
+
+    // Auth errors do NOT trip the breaker in CLOSED state.
+    // Server is reachable → reset the consecutive failure counter.
+    if (statusCode !== undefined && (statusCode === 401 || statusCode === 403)) {
+      this._consecutiveFailures = 0;
+      return;
+    }
+
+    if (!retryable) {
+      // Non-retryable error proves server is reachable — reset counter
+      this._consecutiveFailures = 0;
       return;
     }
 
     this._consecutiveFailures++;
     if (this._consecutiveFailures >= this.failureThreshold) {
       this._state = CircuitState.OPEN;
-      this._openedAt = Date.now();
+      this._openedAt = performance.now();
+    }
+  }
+
+  /**
+   * Cancel an in-flight HALF_OPEN probe without recording success or failure.
+   * Re-opens the circuit so the next cooldown expiry triggers a fresh probe.
+   * Use this in a finally/catch when the caller cannot reach onSuccess/onFailure.
+   */
+  cancelProbe(): void {
+    if (this._halfOpenProbeInFlight) {
+      this._state = CircuitState.OPEN;
+      this._openedAt = performance.now();
+      this._halfOpenProbeInFlight = false;
     }
   }
 
@@ -192,7 +224,8 @@ export class KillSwitch {
       throw new KillSwitchActiveError(this.path);
     } catch (err: unknown) {
       if (err instanceof KillSwitchActiveError) throw err;
-      // File doesn't exist — all clear
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw err; // EACCES, EPERM, etc. — don't silently swallow
     }
   }
 
@@ -200,8 +233,9 @@ export class KillSwitch {
     try {
       statSync(this.path);
       return true;
-    } catch {
-      return false;
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw err;
     }
   }
 
@@ -212,7 +246,8 @@ export class KillSwitch {
       throw new KillSwitchActiveError(this.path);
     } catch (err: unknown) {
       if (err instanceof KillSwitchActiveError) throw err;
-      // File doesn't exist — all clear
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw err;
     }
   }
 
@@ -221,8 +256,9 @@ export class KillSwitch {
     try {
       await stat(this.path);
       return true;
-    } catch {
-      return false;
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw err;
     }
   }
 }
@@ -309,8 +345,9 @@ export function parseRetryAfter(
   maxMs = DEFAULT_MAX_RETRY_AFTER_MS,
 ): number | null {
   if (headerValue == null) return null;
-  const seconds = parseInt(headerValue, 10);
-  if (!isNaN(seconds) && seconds >= 0) {
+  const trimmed = headerValue.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = parseInt(trimmed, 10);
     return Math.min(seconds * 1000, maxMs);
   }
 
@@ -349,6 +386,22 @@ export class RetryPolicy {
     this.maxDelayMs = options?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
     this.jitterMs = options?.jitterMs ?? DEFAULT_JITTER_MS;
     this.maxRetryAfterMs = options?.maxRetryAfterMs ?? DEFAULT_MAX_RETRY_AFTER_MS;
+
+    if (!Number.isInteger(this.maxRetries) || this.maxRetries < 0) {
+      throw new RangeError(`maxRetries must be a non-negative integer, got ${this.maxRetries}`);
+    }
+    if (!Number.isFinite(this.baseMs) || this.baseMs < 0) {
+      throw new RangeError(`baseMs must be a non-negative finite number, got ${this.baseMs}`);
+    }
+    if (!Number.isFinite(this.maxDelayMs) || this.maxDelayMs < 0) {
+      throw new RangeError(`maxDelayMs must be a non-negative finite number, got ${this.maxDelayMs}`);
+    }
+    if (!Number.isFinite(this.jitterMs) || this.jitterMs < 0) {
+      throw new RangeError(`jitterMs must be a non-negative finite number, got ${this.jitterMs}`);
+    }
+    if (!Number.isFinite(this.maxRetryAfterMs) || this.maxRetryAfterMs < 0) {
+      throw new RangeError(`maxRetryAfterMs must be a non-negative finite number, got ${this.maxRetryAfterMs}`);
+    }
   }
 
   getDelayMs(attempt: number, retryAfterHeader?: string | null): number {
@@ -374,7 +427,8 @@ export class RetryPolicy {
         lastError = err;
         if (attempt >= this.maxRetries) throw err;
         if (isRetryableFn && !isRetryableFn(err)) throw err;
-        const delayMs = this.getDelayMs(attempt);
+        const retryAfterHeader = (err as { headers?: Record<string, string> }).headers?.["retry-after"] ?? null;
+        const delayMs = this.getDelayMs(attempt, retryAfterHeader);
         await new Promise((r) => setTimeout(r, delayMs));
       }
     }
@@ -401,6 +455,12 @@ export async function createFileLock(
   const concurrency = process.env["LLM_GLOBAL_CONCURRENCY"];
   const enabled = concurrency !== undefined && concurrency.trim() !== "";
 
+  if (enabled && (!/^\d+$/.test(concurrency.trim()) || parseInt(concurrency.trim(), 10) < 1)) {
+    throw new RangeError(
+      `LLM_GLOBAL_CONCURRENCY must be a positive integer, got "${concurrency}"`,
+    );
+  }
+
   if (!enabled) {
     return {
       enabled: false,
@@ -416,17 +476,12 @@ export async function createFileLock(
   let lockfileMod: { lock: (path: string, options?: Record<string, unknown>) => Promise<() => Promise<void>> };
   try {
     lockfileMod = await import("proper-lockfile") as typeof lockfileMod;
-  } catch {
-    // Fallback: no-op if proper-lockfile is not installed
-    console.warn(
-      "LLMix: LLM_GLOBAL_CONCURRENCY is set but 'proper-lockfile' is not installed. " +
-      "File locking is disabled. Install with: bun add proper-lockfile",
+  } catch (cause: unknown) {
+    throw new Error(
+      "LLMix: LLM_GLOBAL_CONCURRENCY is set but 'proper-lockfile' could not be loaded. " +
+      "Install with: bun add proper-lockfile",
+      { cause },
     );
-    return {
-      enabled: false,
-      async acquire() { /* proper-lockfile not available */ },
-      async release() { /* proper-lockfile not available */ },
-    };
   }
 
   let releaseFn: (() => Promise<void>) | null = null;
@@ -441,8 +496,8 @@ export async function createFileLock(
       // proper-lockfile needs the file to exist
       try {
         await writeFile(resolvedPath, "", { flag: "wx" });
-      } catch {
-        // File already exists, that's fine
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       }
       releaseFn = await lockfileMod.lock(resolvedPath, { retries: { retries: 10, minTimeout: 100 } });
     },

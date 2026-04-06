@@ -12,9 +12,23 @@
  * - Provider options passthrough to AI SDK
  */
 
-import { createAnthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel } from "ai";
 import type { AnthropicProviderOptions, CachingStrategy } from "../types";
+
+let _anthropicPromise: Promise<typeof import("@ai-sdk/anthropic")> | null = null;
+
+function getAnthropicSdk(): Promise<typeof import("@ai-sdk/anthropic")> {
+  if (!_anthropicPromise) {
+    _anthropicPromise = import("@ai-sdk/anthropic").catch((cause: unknown) => {
+      _anthropicPromise = null; // allow retry on failure
+      throw new Error(
+        "Anthropic provider requires '@ai-sdk/anthropic'. Install with: bun add @ai-sdk/anthropic",
+        { cause },
+      );
+    });
+  }
+  return _anthropicPromise;
+}
 
 /** Options for creating an Anthropic model instance */
 export interface AnthropicModelOptions {
@@ -51,23 +65,20 @@ export interface AnthropicModelOptions {
  * const result = await generateText({ model, messages: [...] });
  * ```
  */
-export function createAnthropicModel(
+export async function createAnthropicModel(
   modelId: string,
   options?: AnthropicModelOptions
-): LanguageModel {
+): Promise<LanguageModel> {
   const { apiKey, baseURL, headers } = options ?? {};
 
+  const { createAnthropic } = await getAnthropicSdk();
   const anthropic = createAnthropic({
     apiKey,
     baseURL,
     headers,
   });
 
-  // Double cast needed: @ai-sdk/anthropic returns its own LanguageModel type
-  // which is structurally compatible but nominally different from the `ai`
-  // package's LanguageModel when peer dependency versions diverge. This is a
-  // known AI SDK version mismatch issue — the cast is safe at runtime.
-  return anthropic(modelId) as unknown as LanguageModel;
+  return anthropic(modelId) as LanguageModel;
 }
 
 /**

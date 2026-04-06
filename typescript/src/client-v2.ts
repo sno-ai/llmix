@@ -13,7 +13,7 @@
 import { type StripThinkingResult, stripThinking } from "./thinking";
 import { type TransformKwargsCallback, applyTransformKwargs, PROVIDER_KWARGS_REGISTRY } from "./provider-kwargs";
 import { AdaptiveSemaphore, parseOpenAIRatelimitHeaders } from "./adaptive-semaphore";
-import { KeyPool } from "./key-pool";
+import { KeyPool, KeyPoolExhaustedError } from "./key-pool";
 import {
   CircuitBreaker,
   CircuitOpenError,
@@ -25,10 +25,12 @@ import {
   isRetryable,
 } from "./resilience";
 import type {
+  CacheHitTier,
   LLMConfig,
   LLMUsage,
   ProviderOptions,
 } from "./types";
+import { TwoTierCache, generateCacheKey, shouldSkipCache } from "./response-cache";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,6 +79,7 @@ export interface V2CallResponse {
   success: boolean;
   error?: string;
   thinkingContent?: string;
+  cacheHit?: CacheHitTier;
 }
 
 /** Configuration for the v2 pipeline. */
@@ -91,6 +94,7 @@ export interface V2PipelineConfig {
   semaphoreMin?: number;
   killSwitchStateDir?: string;
   transformKwargsOverrides?: Record<string, TransformKwargsCallback>;
+  responseCache?: TwoTierCache;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +118,7 @@ export class V2CallPipeline {
   private readonly semMin: number;
 
   private fileLock: FileLockLike | null = null;
+  private readonly responseCache: TwoTierCache | undefined;
 
   constructor(config: V2PipelineConfig) {
     this.dispatch = config.dispatch;
@@ -131,6 +136,7 @@ export class V2CallPipeline {
       ...PROVIDER_KWARGS_REGISTRY,
       ...(config.transformKwargsOverrides ?? {}),
     };
+    this.responseCache = config.responseCache;
   }
 
   /** Register a key pool for a provider. */
@@ -177,7 +183,11 @@ export class V2CallPipeline {
     const { config, messages } = input;
     const provider = config.provider;
     const model = config.model;
-    const baseUrl = ""; // base URL resolved at provider level
+    // Circuit breaker is per-provider (not per-baseUrl). The baseUrl is only
+    // known after kwargs transform (step 10, inside retry loop), which runs
+    // after the circuit breaker check (step 5). Provider-level scope is correct:
+    // a failing provider typically affects all its endpoints.
+    const baseUrl = "";
 
     try {
       // Step 1: Kill Switch
@@ -185,25 +195,77 @@ export class V2CallPipeline {
 
       // Step 2: Config — already resolved by caller (input.config)
 
-      // Steps 3-4: Cache lookup (L1/L2) — placeholder for future integration
-      // TODO: integrate LRU + Redis cache check
+      // Steps 3-4: Cache lookup (L1/L2)
+      const cachingStrategy = config.caching?.strategy ?? "disabled";
+      let cacheKey: string | undefined;
+      if (this.responseCache && !shouldSkipCache(cachingStrategy)) {
+        cacheKey = generateCacheKey({
+          provider,
+          model,
+          messages,
+          baseUrl: baseUrl || undefined,
+          enableThinking: config.common?.enableThinking,
+          temperature: config.common?.temperature,
+          maxOutputTokens: config.common?.maxOutputTokens,
+          responseFormat: (config as unknown as Record<string, unknown>).responseFormat,
+          seed: config.common?.seed,
+          topP: config.common?.topP,
+          providerOptions: config.providerOptions as Record<string, unknown> | undefined,
+        });
+        const hit = await this.responseCache.get(cacheKey);
+        if (hit) {
+          const { content, thinkingContent } = this.applyThinkingStrip(hit.value, config);
+          return {
+            content,
+            model,
+            provider,
+            usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+            success: true,
+            thinkingContent: thinkingContent ?? undefined,
+            cacheHit: hit.tier,
+          };
+        }
+      }
 
       // Step 5: Circuit Breaker check
       const cb = this.getCircuitBreaker(provider, baseUrl);
       cb.check();
 
-      // Step 6: Singleflight deduplication
-      const sfKey = input.singleflightKey ?? Singleflight.makeKey(
-        JSON.stringify({ provider, model, messages }),
-      );
+      let result: ProviderResult;
+      try {
+        // Step 6: Singleflight deduplication
+        // Default key includes all request-shaping params to prevent cross-config
+        // result sharing (same identity as cache key).
+        const sfKey = input.singleflightKey ?? (cacheKey || Singleflight.makeKey(
+          JSON.stringify({
+            provider,
+            model,
+            messages,
+            enableThinking: config.common?.enableThinking,
+            temperature: config.common?.temperature,
+            maxOutputTokens: config.common?.maxOutputTokens,
+            responseFormat: (config as unknown as Record<string, unknown>).responseFormat,
+            seed: config.common?.seed,
+            topP: config.common?.topP,
+            providerOptions: config.providerOptions,
+          }),
+        ));
 
-      const result = await this.singleflight.do(sfKey, async () => {
-        // Steps 7-16: Retry loop
-        return this.retryPolicy.execute(
-          () => this.executeRetryBody(config, messages, cb),
-          (err) => this.isRetryableError(err),
-        );
-      });
+        result = await this.singleflight.do(sfKey, async () => {
+          // Steps 7-16: Retry loop
+          return this.retryPolicy.execute(
+            () => this.executeRetryBody(config, messages, cb),
+            (err) => this.isRetryableError(err),
+          );
+        });
+      } catch (err: unknown) {
+        // If a HALF_OPEN probe was started by check() but never finalized by
+        // onSuccess/onFailure (e.g. singleflight key computation threw, or
+        // getFileLock/semaphore.acquire failed before reaching the retry body),
+        // cancel the probe so the breaker doesn't get stuck forever.
+        cb.cancelProbe();
+        throw err;
+      }
 
       // Step 17: Thinking stripping
       const { content, thinkingContent } = this.applyThinkingStrip(
@@ -211,11 +273,12 @@ export class V2CallPipeline {
         config,
       );
 
-      // Step 18: Cache write — placeholder
-      // TODO: write raw result to L1/L2 cache
+      // Step 18: Cache write (raw content, pre-strip)
+      if (this.responseCache && cacheKey) {
+        await this.responseCache.set(cacheKey, result.content);
+      }
 
       // Step 19: Telemetry — placeholder
-      // TODO: emit telemetry event
 
       return {
         content,
@@ -250,11 +313,11 @@ export class V2CallPipeline {
 
     // Step 8: AIMD Semaphore acquire (before lock to avoid convoy/deadlock)
     await semaphore.acquire();
+    let apiKey: string | undefined;
     try {
       // Step 7: Cross-process lock acquire (protects state reads only)
       await lock.acquire();
 
-      let apiKey: string;
       let kwargs: Record<string, unknown>;
       const pool = this.keyPools.get(provider);
 
@@ -267,14 +330,13 @@ export class V2CallPipeline {
         }
         apiKey = pool.select();
 
-        // Step 5 (re-check): Circuit breaker check (under lock)
-        cb.check();
-
         // Step 10: Provider kwargs transform
         kwargs = {
           temperature: config.common?.temperature,
           top_p: config.common?.topP,
           max_tokens: config.common?.maxOutputTokens,
+          seed: config.common?.seed,
+          response_format: (config as unknown as Record<string, unknown>).responseFormat,
         };
         const transformFn = this.transformKwargs[provider];
         if (transformFn) {
@@ -286,6 +348,8 @@ export class V2CallPipeline {
               temperature: config.common?.temperature,
               topP: config.common?.topP,
               providerOptions: config.providerOptions as ProviderOptions | undefined,
+              baseUrl: (config as unknown as Record<string, unknown>).baseUrl as string | undefined,
+              enableThinking: config.common?.enableThinking,
             },
             kwargs,
             transformFn,
@@ -300,7 +364,7 @@ export class V2CallPipeline {
       const result = await this.dispatch({
         provider,
         model: config.model,
-        apiKey,
+        apiKey: apiKey!,
         messages,
         kwargs,
         config,
@@ -334,24 +398,25 @@ export class V2CallPipeline {
       }
 
       // Step 14: Key Pool feedback (error)
+      // Note: no explicit rotate() on 429 — select() auto-advances (round-robin),
+      // so the next retry naturally picks the next key.
       const pool = this.keyPools.get(provider);
-      if (pool && statusCode !== undefined) {
-        // apiKey may not be defined if error occurred before pool.select()
-        const errApiKey = (err as { _llmixApiKey?: string })._llmixApiKey;
-        if (errApiKey) {
-          if (statusCode === 401 || statusCode === 403) {
-            pool.markDead(errApiKey);
-          } else if (statusCode === 429) {
-            pool.rotate();
-          }
+      if (pool && apiKey && statusCode !== undefined) {
+        if (statusCode === 401 || statusCode === 403) {
+          pool.markDead(apiKey);
         }
       }
 
       // Step 15: Circuit Breaker feedback (error)
-      cb.onFailure(
-        statusCode,
-        !(err instanceof CircuitOpenError) && statusCode === undefined,
-      );
+      // Skip breaker feedback for local/config errors — the provider was never
+      // contacted, so counting these as failures would falsely open the breaker.
+      const isLocalError = this.isLocalError(err);
+      if (!isLocalError) {
+        cb.onFailure(
+          statusCode,
+          !(err instanceof CircuitOpenError) && statusCode === undefined,
+        );
+      }
 
       throw err;
     } finally {
@@ -360,12 +425,39 @@ export class V2CallPipeline {
     }
   }
 
+  /** Check if an error is a local/config error that never contacted the provider. */
+  private isLocalError(err: unknown): boolean {
+    if (err instanceof KeyPoolExhaustedError) return true;
+    if (
+      err instanceof TypeError ||
+      err instanceof RangeError ||
+      err instanceof SyntaxError
+    ) {
+      return true;
+    }
+    if (err instanceof Error && err.message.startsWith("No API key pool")) {
+      return true;
+    }
+    // Transform errors (e.g. snogpu missing baseUrl, invalid gpuPath)
+    // and infrastructure errors (semaphore closed, lock setup)
+    if (
+      err instanceof Error &&
+      (err.message.startsWith("Invalid gpuPath") ||
+        err.message.includes("requires a non-empty baseUrl") ||
+        err.message === "AdaptiveSemaphore is closed")
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   /** Step 16: Determine if an error is retryable. */
   private isRetryableError(err: unknown): boolean {
     if (err instanceof CircuitOpenError) return false;
+    if (this.isLocalError(err)) return false;
     const statusCode = (err as ProviderError).statusCode;
     if (statusCode !== undefined) return isRetryable(statusCode);
-    // Network errors are retryable
+    // Remaining errors without statusCode are likely network errors — retryable
     return true;
   }
 
