@@ -234,6 +234,9 @@ export class Singleflight {
       reject = rej;
     });
 
+    // Prevent unhandled rejection when no second caller awaits this promise
+    promise.catch(() => {});
+
     const entry: FlightEntry<T> = { promise, resolve, reject };
     this._inFlight.set(key, entry as FlightEntry<unknown>);
 

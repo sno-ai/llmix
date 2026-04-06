@@ -32,6 +32,7 @@ import {
   type Provider,
   type ProviderOptions,
   SecurityError,
+  type SnogpuProviderOptions,
   type TimeoutConfig,
   VALID_MODULE_PATTERN,
   VALID_PRESET_PATTERN,
@@ -288,6 +289,8 @@ export const CommonParamsSchema = z
     stopSequences: z.array(z.string()).optional(),
     seed: z.number().int().optional(),
     maxRetries: z.number().int().nonnegative().optional(),
+    enableThinking: z.boolean().optional(),
+    keepThinkingOutput: z.boolean().optional(),
   })
   .strict() satisfies z.ZodType<CommonParams>;
 
@@ -403,6 +406,17 @@ export const DeepSeekProviderOptionsSchema = z
   .strict() satisfies z.ZodType<DeepSeekProviderOptions>;
 
 /**
+ * Sno GPU provider options schema
+ */
+export const SnogpuProviderOptionsSchema = z
+  .object({
+    enableThinking: z.boolean().optional(),
+    thinkingBudget: z.number().int().positive().optional(),
+    gpuPath: z.string().optional(),
+  })
+  .strict() satisfies z.ZodType<SnogpuProviderOptions>;
+
+/**
  * Combined provider options schema
  */
 export const ProviderOptionsSchema = z
@@ -411,6 +425,7 @@ export const ProviderOptionsSchema = z
     anthropic: AnthropicProviderOptionsSchema.optional(),
     google: GoogleProviderOptionsSchema.optional(),
     deepseek: DeepSeekProviderOptionsSchema.optional(),
+    snogpu: SnogpuProviderOptionsSchema.optional(),
   })
   .strict() satisfies z.ZodType<ProviderOptions>;
 

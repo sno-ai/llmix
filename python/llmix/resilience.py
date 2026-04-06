@@ -270,6 +270,8 @@ class Singleflight:
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[T] = loop.create_future()
+        # Prevent "Future exception was never retrieved" when no second caller awaits
+        future.add_done_callback(lambda f: f.exception() if f.done() and not f.cancelled() else None)
         self._in_flight[key] = future
 
         try:

@@ -29,7 +29,19 @@
  *   - Always fresh calls
  *   - Useful for real-time or non-repeatable prompts
  */
-export type CachingStrategy = "native" | "gateway" | "disabled";
+export type CachingStrategy =
+  | "native"
+  | "gateway"
+  | "disabled"
+  | "redis"
+  | "redis-or-memory"
+  | "memory";
+
+/** Strategies that activate the two-tier response cache. */
+export type ResponseCacheStrategy = "redis" | "redis-or-memory" | "memory";
+
+/** Cache hit tier indicator. */
+export type CacheHitTier = "l1" | "l2";
 
 /**
  * Caching configuration
@@ -47,6 +59,12 @@ export interface CachingConfig {
    * Example: "extraction-v1", "search-2024"
    */
   key?: string;
+
+  /** TTL in seconds for response cache entries (default: 3600). Applies to L1 and L2. */
+  ttl?: number;
+
+  /** Maximum L1 cache entries (default: 1000). */
+  maxItems?: number;
 }
 
 // =============================================================================
@@ -196,6 +214,9 @@ export interface CommonParams {
 
   /** Retry attempts (default: 2) */
   maxRetries?: number;
+
+  /** Enable/disable thinking mode (provider-specific, e.g. Qwen3 on DeepInfra) */
+  enableThinking?: boolean;
 
   /**
    * Preserve <think>...</think> blocks in response content.
@@ -380,6 +401,20 @@ export interface DeepSeekProviderOptions {
 }
 
 /**
+ * Sno on-prem GPU-specific provider options
+ */
+export interface SnogpuProviderOptions {
+  /** Enable thinking mode for Qwen3.5. Default: false. */
+  enableThinking?: boolean;
+
+  /** Token budget for thinking/reasoning. Only applies when enableThinking is true. */
+  thinkingBudget?: number;
+
+  /** GPU routing path: 'extract' (GPU 0, SMR) or 'reason' (GPU 1, EKG). Omit for legacy /v1. */
+  gpuPath?: string;
+}
+
+/**
  * Union type for all provider options
  *
  * Keys match AI SDK v6 providerOptions structure.
@@ -389,6 +424,7 @@ export interface ProviderOptions {
   anthropic?: AnthropicProviderOptions;
   google?: GoogleProviderOptions;
   deepseek?: DeepSeekProviderOptions;
+  snogpu?: SnogpuProviderOptions;
 }
 
 /**
@@ -798,6 +834,9 @@ export interface LLMResponse {
 
   /** Captured thinking content stripped from response (when keepThinkingOutput is false) */
   thinkingContent?: string;
+
+  /** Indicates which cache tier served this response, if any. */
+  cacheHit?: CacheHitTier;
 }
 
 /**
