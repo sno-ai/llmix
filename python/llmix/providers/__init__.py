@@ -18,18 +18,23 @@ actually used at runtime needs its dependencies present.
 
 # Eagerly import only the universal base types (no optional deps).
 from llmix.providers.base import BaseLLMClient, LLMResponse
-from llmix.providers.client_factory import get_async_openai_client, reset_async_openai_client
 
-# Lazy-loaded provider classes — imported on first access via __getattr__.
+# Lazy-loaded provider classes and factory functions — imported on first access via __getattr__.
 _LAZY_IMPORTS: dict[str, str] = {
+    'AsyncAnthropicClient': 'llmix.providers.anthropic_client',
     'AsyncGeminiClient': 'llmix.providers.gemini_async_client',
     'AsyncOpenAIClient': 'llmix.providers.openai_async_client',
     'GpuClient': 'llmix.providers.onprem_gpu_client',
     'NovitaClient': 'llmix.providers.novita_client',
     'TogetherClient': 'llmix.providers.together_client',
+    'get_async_openai_client': 'llmix.providers.client_factory',
+    'reset_async_openai_client': 'llmix.providers.client_factory',
 }
 
 if TYPE_CHECKING:
+    from llmix.providers.anthropic_client import AsyncAnthropicClient as AsyncAnthropicClient
+    from llmix.providers.client_factory import get_async_openai_client as get_async_openai_client
+    from llmix.providers.client_factory import reset_async_openai_client as reset_async_openai_client
     from llmix.providers.gemini_async_client import AsyncGeminiClient as AsyncGeminiClient
     from llmix.providers.novita_client import NovitaClient as NovitaClient
     from llmix.providers.onprem_gpu_client import GpuClient as GpuClient
@@ -42,13 +47,14 @@ def __getattr__(name: str):
         import importlib
 
         module = importlib.import_module(_LAZY_IMPORTS[name])
-        cls = getattr(module, name)
-        globals()[name] = cls  # Cache for subsequent access
-        return cls
+        attr = getattr(module, name)
+        globals()[name] = attr  # Cache for subsequent access
+        return attr
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
 
 
 __all__ = [
+    'AsyncAnthropicClient',
     'AsyncGeminiClient',
     'AsyncOpenAIClient',
     'BaseLLMClient',

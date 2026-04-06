@@ -32,16 +32,24 @@
     "zod": "^3.24.0"
   },
   "peerDependencies": {
+    "@ai-sdk/anthropic": ">=3.0.0",
     "@ai-sdk/google": ">=3.0.0",
     "@ai-sdk/openai": ">=3.0.0",
+    "@anthropic-ai/sdk": ">=0.80.0",
     "ai": ">=6.0.0",
     "ioredis": ">=5.0.0"
   },
   "peerDependenciesMeta": {
+    "@ai-sdk/anthropic": {
+      "optional": true
+    },
     "@ai-sdk/google": {
       "optional": true
     },
     "@ai-sdk/openai": {
+      "optional": true
+    },
+    "@anthropic-ai/sdk": {
       "optional": true
     },
     "ai": {
@@ -55,6 +63,7 @@
     "@ai-sdk/anthropic": "^3.0.66",
     "@ai-sdk/google": "^3.0.0",
     "@ai-sdk/openai": "^3.0.0",
+    "@anthropic-ai/sdk": "^0.82.0",
     "@types/node": "^22.0.0",
     "@types/proper-lockfile": "^4.1.4",
     "ai": "^6.0.0",
