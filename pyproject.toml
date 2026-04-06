@@ -1,0 +1,33 @@
+[project]
+name = "llmix"
+version = "1.0.0"
+description = "Config-driven LLM client for Python — dual-language parity with TypeScript"
+requires-python = ">=3.11"
+dependencies = [
+  "openai>=2.0.0",
+  "anthropic>=0.40.0",
+  "google-genai>=1.18.0,<2",
+  "httpx[http2]>=0.28.1,<0.29",
+  "cachetools>=5.5.0,<6",
+  "pyyaml>=6.0.2,<7",
+  "json-repair>=0.58.0,<1",
+]
+
+[project.optional-dependencies]
+redis = ["redis>=6.4.0,<8"]
+dev = [
+  "pyright>=1.1.0",
+  "pytest>=8.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["python"]
+
+[build-system]
+requires = ["setuptools>=75.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+include = ["python/llmix"]

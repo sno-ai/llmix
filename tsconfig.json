@@ -4,12 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022"],
-    "outDir": "./dist",
-    "baseUrl": "../..",
-    "paths": {
-      "@/utils/*": ["lib/utils/*"],
-      "@/config/*": ["config/*"]
-    },
+    "rootDir": ".",
+    "outDir": "./typescript/dist",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
@@ -25,6 +21,6 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*", "test/pricing.test.ts"],
-  "exclude": ["node_modules", "dist", "src/pricing/generate-llm-pricing.ts"]
+  "include": ["typescript/src/**/*", "tests/typescript/**/*"],
+  "exclude": ["node_modules", "typescript/dist"]
 }

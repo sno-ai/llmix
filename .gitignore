@@ -1,9 +1,23 @@
 node_modules/
+typescript/dist/
 dist/
 *.log
 .DS_Store
 .npmrc
+
+# Python
+python/llmix/__pycache__/
+python/llmix/providers/__pycache__/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Old paths (until fully cleaned)
 src/pricing/__pycache__/*
 test/__pycache__/*
+
+# Session
 .remember/*
 repo_reference/*

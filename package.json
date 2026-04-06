@@ -6,23 +6,24 @@
     "access": "public"
   },
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./typescript/dist/typescript/src/index.js",
+  "types": "./typescript/dist/typescript/src/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": "./typescript/dist/typescript/src/index.js",
+      "types": "./typescript/dist/typescript/src/index.d.ts"
     }
   },
   "files": [
-    "dist",
-    "src"
+    "typescript/dist",
+    "typescript/src",
+    "shared"
   ],
   "scripts": {
     "build": "bun run tsc",
     "dev": "bun run tsc --watch",
     "check": "bun run tsc --noEmit",
-    "clean": "rm -rf dist",
+    "clean": "rm -rf typescript/dist",
     "test": "bun test"
   },
   "dependencies": {
@@ -50,6 +51,7 @@
     }
   },
   "devDependencies": {
+    "@ai-sdk/anthropic": "^3.0.66",
     "@ai-sdk/google": "^3.0.0",
     "@ai-sdk/openai": "^3.0.0",
     "@types/node": "^22.0.0",
