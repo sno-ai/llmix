@@ -48,7 +48,9 @@ HEALTH_PING_INTERVAL_SECONDS = 30
 RESPONSE_CACHE_STRATEGIES: frozenset[str] = frozenset({"redis", "redis-or-memory", "memory"})
 SKIP_STRATEGIES: frozenset[str] = frozenset({"native", "gateway", "disabled"})
 
-# Fields included in cache key generation (alphabetical = canonical order)
+# Fields included in cache key generation (alphabetical = canonical order).
+# camelCase names are intentional -- they match the TypeScript cache key format
+# for cross-language cache key parity. These are hash inputs, not field lookups.
 CACHE_KEY_FIELDS = (
     "baseUrl",
     "maxOutputTokens",
@@ -57,7 +59,9 @@ CACHE_KEY_FIELDS = (
     "provider",
     "providerOptions",
     "responseFormat",
+    "seed",
     "temperature",
+    "topP",
 )
 
 
@@ -182,6 +186,8 @@ class TwoTierCache:
         self._l2_healthy = True
         self._redis_client: redis_types.Redis | None = None  # type: ignore[type-arg]
         self._last_ping_time: float = 0.0
+        self._l2_last_fail_time: float = 0.0
+        self._l2_retry_interval: float = 30.0  # seconds before retrying after connect failure
 
     def _ensure_redis(self) -> bool:
         """Lazily connect to Redis on first L2 operation."""
@@ -206,6 +212,7 @@ class TwoTierCache:
         except Exception:
             logger.warning("Failed to connect Redis L2, operating L1-only.", exc_info=True)
             self._l2_healthy = False
+            self._l2_last_fail_time = time.monotonic()
             return False
 
     def _check_health(self) -> None:
@@ -240,8 +247,15 @@ class TwoTierCache:
             return CacheResult(value=l1_entry.data, tier="l1")
 
         # L2 lookup
-        if not self._l2_enabled or not self._l2_healthy:
+        if not self._l2_enabled:
             return None
+        if not self._l2_healthy:
+            # Retry connection after backoff period
+            if time.monotonic() - self._l2_last_fail_time < self._l2_retry_interval:
+                return None
+            # Enough time has passed -- attempt reconnect
+            self._l2_healthy = True
+            self._redis_client = None
 
         try:
             connected = self._ensure_redis()
@@ -259,7 +273,9 @@ class TwoTierCache:
             parsed = json.loads(str(raw))
             cached = CachedValue(data=parsed["data"], cached_at=parsed["cached_at"])
 
-            # Backfill L1
+            # Backfill L1 with a fresh TTL. This is an accepted tradeoff:
+            # L1 entries are evicted by LRU anyway, and backfill exists to
+            # prevent repeated L2 lookups -- a fresh TTL is fine here.
             self._l1[key] = cached
 
             return CacheResult(value=cached.data, tier="l2")

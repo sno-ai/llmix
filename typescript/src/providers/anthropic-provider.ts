@@ -63,6 +63,10 @@ export function createAnthropicModel(
     headers,
   });
 
+  // Double cast needed: @ai-sdk/anthropic returns its own LanguageModel type
+  // which is structurally compatible but nominally different from the `ai`
+  // package's LanguageModel when peer dependency versions diverge. This is a
+  // known AI SDK version mismatch issue — the cast is safe at runtime.
   return anthropic(modelId) as unknown as LanguageModel;
 }
 

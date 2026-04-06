@@ -22,6 +22,7 @@ from llmix.providers.base import BaseLLMClient, LLMResponse
 # Lazy-loaded provider classes and factory functions — imported on first access via __getattr__.
 _LAZY_IMPORTS: dict[str, str] = {
     'AsyncAnthropicClient': 'llmix.providers.anthropic_client',
+    'DeepInfraClient': 'llmix.providers.deepinfra_client',
     'AsyncGeminiClient': 'llmix.providers.gemini_async_client',
     'AsyncOpenAIClient': 'llmix.providers.openai_async_client',
     'GpuClient': 'llmix.providers.onprem_gpu_client',
@@ -33,6 +34,7 @@ _LAZY_IMPORTS: dict[str, str] = {
 
 if TYPE_CHECKING:
     from llmix.providers.anthropic_client import AsyncAnthropicClient as AsyncAnthropicClient
+    from llmix.providers.deepinfra_client import DeepInfraClient as DeepInfraClient
     from llmix.providers.client_factory import get_async_openai_client as get_async_openai_client
     from llmix.providers.client_factory import reset_async_openai_client as reset_async_openai_client
     from llmix.providers.gemini_async_client import AsyncGeminiClient as AsyncGeminiClient
@@ -58,6 +60,7 @@ __all__ = [
     'AsyncGeminiClient',
     'AsyncOpenAIClient',
     'BaseLLMClient',
+    'DeepInfraClient',
     'GpuClient',
     'LLMResponse',
     'NovitaClient',

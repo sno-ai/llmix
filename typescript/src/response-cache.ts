@@ -207,6 +207,7 @@ export class TwoTierCache {
   private redisClient: InstanceType<typeof import("ioredis").default> | null = null;
   private l2Enabled: boolean;
   private l2Healthy = true;
+  private l2ConsecutiveWriteFailures = 0;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private redisUrl: string | undefined;
 
@@ -311,9 +312,19 @@ export class TwoTierCache {
     const connected = await this.ensureRedis();
     if (!connected || !this.redisClient) return;
 
-    const serialized = JSON.stringify(entry);
-    const ttl = this.ttlSeconds > 0 ? this.ttlSeconds : DEFAULT_L2_TTL_SECONDS;
-    await this.redisClient.setex(key, ttl, serialized);
+    try {
+      const serialized = JSON.stringify(entry);
+      const ttl = this.ttlSeconds > 0 ? this.ttlSeconds : DEFAULT_L2_TTL_SECONDS;
+      await this.redisClient.setex(key, ttl, serialized);
+      this.l2ConsecutiveWriteFailures = 0;
+    } catch (err) {
+      this.l2ConsecutiveWriteFailures++;
+      if (this.l2ConsecutiveWriteFailures >= 3) {
+        this.l2Healthy = false;
+        this.log.warn("L2 marked unhealthy after 3 consecutive write failures.");
+      }
+      throw err;
+    }
   }
 
   // ---------------------------------------------------------------------------

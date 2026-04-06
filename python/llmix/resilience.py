@@ -266,7 +266,8 @@ class Singleflight:
             Any exception raised by fn is propagated to all waiters.
         """
         if key in self._in_flight:
-            return await self._in_flight[key]
+            # Shield so a cancelled follower doesn't poison the shared Future
+            return await asyncio.shield(self._in_flight[key])
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[T] = loop.create_future()

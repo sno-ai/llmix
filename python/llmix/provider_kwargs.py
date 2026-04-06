@@ -102,7 +102,7 @@ def openrouter_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, A
     kwargs = dict(kwargs)
     extra_body: dict[str, Any] = kwargs.get("extra_body") or {}
     if "provider" not in extra_body:
-        extra_body = {**extra_body, "provider": _OPENROUTER_DEFAULT_PROVIDER}
+        extra_body = {**extra_body, "provider": {**_OPENROUTER_DEFAULT_PROVIDER}}
         kwargs["extra_body"] = extra_body
     return kwargs
 
@@ -155,6 +155,11 @@ def snogpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any])
     base = base_url.rstrip("/")
     if base.endswith("/v1"):
         base = base[:-3]
+
+    if not base.strip():
+        raise ValueError(
+            "snogpu provider requires a non-empty base_url in config"
+        )
 
     if gpu_path:
         kwargs["base_url"] = f"{base}/{gpu_path}/v1"

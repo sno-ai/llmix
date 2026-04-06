@@ -307,10 +307,6 @@ class AsyncAnthropicClient(BaseLLMClient):
             # Anthropic requires temperature=1 for extended thinking
             api_kwargs["temperature"] = 1.0
 
-        # Provider options passthrough
-        if "max_tokens" in kwargs:
-            api_kwargs["max_tokens"] = kwargs["max_tokens"]
-
         return await self._execute_with_retry(api_kwargs, model)
 
     async def call(
@@ -395,15 +391,27 @@ class AsyncAnthropicClient(BaseLLMClient):
 
         Maps OpenAI-style response_completion to Anthropic Messages API.
         """
+        if tools is not None:
+            raise NotImplementedError("tools parameter not yet supported in Anthropic v2 provider")
+        if tool_choice is not None:
+            raise NotImplementedError("tool_choice parameter not yet supported in Anthropic v2 provider")
+        if parallel_tool_calls is not None:
+            raise NotImplementedError("parallel_tool_calls parameter not yet supported in Anthropic v2 provider")
+        if allowed_tools is not None:
+            raise NotImplementedError("allowed_tools parameter not yet supported in Anthropic v2 provider")
+
         model = self.get_model(model)
         resolved_temperature = temperature if temperature is not None else self.default_temperature
         max_tokens = max_output_tokens or _DEFAULT_MAX_OUTPUT_TOKENS
 
-        # Build messages from input
+        # Build messages from input, prepending instructions as system message
         if isinstance(input, str):
             messages: list[dict[str, str]] = [{"role": "user", "content": input}]
         else:
-            messages = input
+            messages = list(input)
+
+        if instructions is not None:
+            messages.insert(0, {"role": "system", "content": instructions})
 
         return await self.chat_completion(
             messages=messages,

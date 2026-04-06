@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { resolveStateDir } from "./resilience";
@@ -157,7 +157,11 @@ export async function writeMetadata(
     submittedAt: new Date().toISOString(),
   };
 
-  await writeFile(metadataPath(batchId, stateDir), JSON.stringify(metadata), "utf-8");
+  // Atomic write: write to temp file then rename to avoid corruption on crash
+  const finalPath = metadataPath(batchId, stateDir);
+  const tmpPath = finalPath + ".tmp";
+  await writeFile(tmpPath, JSON.stringify(metadata), "utf-8");
+  await rename(tmpPath, finalPath);
 }
 
 export async function readMetadata(
@@ -323,12 +327,18 @@ async function openaiResults(
     if (!line) continue;
     const entry = JSON.parse(line) as {
       custom_id: string;
-      response: { status_code: number; body: { choices: Array<{ message: { content: string } }> } };
+      response?: { status_code: number; body: { choices: Array<{ message: { content: string } }> } };
       error?: { message: string };
     };
     const idx = parseInt(entry.custom_id.replace("req-", ""), 10);
     if (entry.error) {
       resultMap.set(idx, { index: idx, success: false, error: entry.error.message });
+    } else if (entry.response?.status_code !== 200) {
+      resultMap.set(idx, {
+        index: idx,
+        success: false,
+        error: `OpenAI batch entry returned status ${entry.response?.status_code ?? "unknown"}`,
+      });
     } else {
       const content = entry.response.body.choices
         .map((c) => c.message.content || "")
@@ -345,6 +355,9 @@ async function openaiResults(
 }
 
 // --- Anthropic (Task 108) ---
+// TODO: This raw-fetch Anthropic batch implementation duplicates logic in
+// providers/anthropic-batch.ts (SDK-based). The SDK adapter should be the
+// canonical implementation — refactor this to delegate to it.
 
 async function anthropicSubmit(
   apiKey: string,
@@ -408,6 +421,8 @@ async function anthropicStatus(apiKey: string, rawBatchId: string): Promise<Batc
     };
   };
 
+  // Anthropic batches don't have a "pending" state — they transition directly
+  // to "in_progress" on creation, so all non-"ended" states map to "in_progress".
   let state: BatchState;
   if (batch.processing_status === "ended") {
     state = "completed";

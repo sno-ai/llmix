@@ -110,6 +110,7 @@ export class CircuitBreaker {
     if (this._state === CircuitState.OPEN) {
       const elapsed = Date.now() - this._openedAt;
       if (elapsed >= this.cooldownMs) {
+        this._state = CircuitState.HALF_OPEN;  // sync backing field
         return CircuitState.HALF_OPEN;
       }
     }
@@ -224,6 +225,9 @@ export class Singleflight {
   async do<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const existing = this._inFlight.get(key);
     if (existing) {
+      // Safety: FlightEntry is stored as <unknown> because the Map can't be
+      // generic per-key.  The cast is safe because callers sharing the same key
+      // always produce the same T — the singleflight contract guarantees it.
       return existing.promise as Promise<T>;
     }
 
@@ -284,8 +288,18 @@ export function parseRetryAfter(
 ): number | null {
   if (headerValue == null) return null;
   const seconds = parseInt(headerValue, 10);
-  if (isNaN(seconds) || seconds < 0) return null;
-  return Math.min(seconds * 1000, maxMs);
+  if (!isNaN(seconds) && seconds >= 0) {
+    return Math.min(seconds * 1000, maxMs);
+  }
+
+  // Fallback: try HTTP-date format (RFC 7231 §7.1.1.1)
+  const date = new Date(headerValue);
+  if (!isNaN(date.getTime())) {
+    const deltaMs = date.getTime() - Date.now();
+    if (deltaMs > 0) return Math.min(deltaMs, maxMs);
+  }
+
+  return null;
 }
 
 export function isRetryable(statusCode: number): boolean {

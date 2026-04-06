@@ -150,6 +150,11 @@ export function snogpuTransformKwargs(
     base = base.slice(0, -3);
   }
 
+  // Skip URL modification if base is empty — would produce a relative path, not a valid URL
+  if (!base) {
+    return result;
+  }
+
   if (gpuPath) {
     result.baseUrl = `${base}/${gpuPath}/v1`;
   } else {

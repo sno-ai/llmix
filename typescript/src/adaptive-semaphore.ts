@@ -13,6 +13,7 @@ const HEADER_BACKOFF_THRESHOLD = 0.10;
 
 interface Waiter {
   resolve: () => void;
+  reject: (reason: unknown) => void;
 }
 
 /**
@@ -33,6 +34,7 @@ export class AdaptiveSemaphore {
   private _permits: number;
   private _queue: Waiter[] = [];
   private _hasHeaderSignal = false;
+  private _closed = false;
 
   constructor(
     initial: number = DEFAULT_INITIAL,
@@ -60,13 +62,32 @@ export class AdaptiveSemaphore {
   }
 
   async acquire(): Promise<void> {
+    if (this._closed) {
+      throw new Error("AdaptiveSemaphore is closed");
+    }
     if (this._permits > 0) {
       this._permits--;
       return;
     }
-    return new Promise<void>((resolve) => {
-      this._queue.push({ resolve });
+    return new Promise<void>((resolve, reject) => {
+      this._queue.push({ resolve, reject });
     });
+  }
+
+  /**
+   * Close the semaphore, rejecting all pending waiters.
+   * After close(), acquire() throws immediately.
+   */
+  close(): void {
+    this._closed = true;
+    const waiters = this._queue.splice(0);
+    for (const w of waiters) {
+      w.reject(new Error("AdaptiveSemaphore is closed"));
+    }
+  }
+
+  get closed(): boolean {
+    return this._closed;
   }
 
   release(): void {

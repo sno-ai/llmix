@@ -84,6 +84,8 @@ class AdaptiveSemaphore:
         """Hard 429 signal -- always halves, overrides headers."""
         new = max(self._window // 2, self._min)
         self._adjust_window(new)
+        # Reset header latch so AIMD success growth resumes after the 429 storm passes
+        self._has_header_signal = False
 
     def on_header_feedback(self, remaining: int, limit: int) -> None:
         """Header-based early warning. Backs off when remaining is scarce."""

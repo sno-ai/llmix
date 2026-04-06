@@ -26,6 +26,12 @@ def strip_thinking(content: str) -> tuple[str, str | None]:
         Tuple of (stripped_content, thinking_content_or_none).
         thinking_content is None if no thinking blocks were found.
         Multiple thinking blocks are joined with newlines.
+
+    Note:
+        This will match ``<think>`` tags anywhere in the content, including
+        inside code blocks or XML output. If this is a concern, set
+        ``common.keep_thinking_output: true`` in the YAML config to bypass
+        stripping entirely and preserve the raw content.
     """
     # Fast guard: skip regex if no thinking tags present
     if "<think>" not in content:

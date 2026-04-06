@@ -60,12 +60,15 @@ class _LazyModule:
             module_name: str = object.__getattribute__(self, "_module_name")
             package_name: str = object.__getattribute__(self, "_package_name")
             install_cmd: str = object.__getattribute__(self, "_install_cmd")
-            try:
-                mod = importlib.import_module(module_name)
-            except ImportError as exc:
+            # Distinguish "not installed" from "installed but broken import"
+            spec = importlib.util.find_spec(module_name)
+            if spec is None:
                 raise ImportError(
                     f'"{package_name}" is required. Install with: {install_cmd}'
-                ) from exc
+                )
+            # Package is installed; if import fails, re-raise the original error
+            # so nested ImportErrors (e.g. missing C extensions) aren't swallowed
+            mod = importlib.import_module(module_name)
             object.__setattr__(self, "_module", mod)
             return mod
 
