@@ -14,13 +14,11 @@ __pycache__/
 .venv/
 *.egg-info/
 
-# Old paths (until fully cleaned)
-src/pricing/__pycache__/*
-test/__pycache__/*
-
 # Session
 .remember/*
-repo_reference/*
+
+# Pytest
+.pytest_cache/
 
 # Test environment secrets
 .env.test

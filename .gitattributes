@@ -1,0 +1,9 @@
+# Exclude from git archive (package distribution)
+internal/           export-ignore
+tests/              export-ignore
+openspec/           export-ignore
+ai-doc/             export-ignore
+.claude/            export-ignore
+.codex/             export-ignore
+.env.test           export-ignore
+CLAUDE.md           export-ignore
