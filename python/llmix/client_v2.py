@@ -12,9 +12,13 @@ This module is pure orchestration -- no direct LLM SDK dependency.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
+
+logger = logging.getLogger(__name__)
 
 from llmix.adaptive_semaphore import AdaptiveSemaphore, parse_openai_ratelimit_headers
 from llmix.key_pool import KeyPool
@@ -254,6 +258,7 @@ class V2CallPipeline:
             )
 
         except Exception as exc:
+            logger.exception("V2 pipeline call failed")
             return V2CallResponse(
                 content="",
                 model=model,
@@ -274,7 +279,7 @@ class V2CallPipeline:
         semaphore = self._get_semaphore(provider)
 
         # Step 7: Cross-process lock — only wrap state reads, not the API call
-        self._file_lock.acquire()
+        await asyncio.to_thread(self._file_lock.acquire)
         try:
             # Step 9: Key Pool select (under lock)
             pool = self._key_pools.get(provider)
@@ -283,7 +288,7 @@ class V2CallPipeline:
             # Step 5 (re-check): Circuit breaker check (under lock)
             cb.check()
         finally:
-            self._file_lock.release()
+            await asyncio.to_thread(self._file_lock.release)
 
         # Step 8: AIMD Semaphore acquire
         await semaphore.acquire()

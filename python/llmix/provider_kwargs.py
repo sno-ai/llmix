@@ -10,6 +10,7 @@ Ported from repo-reference/llm-provider/src/llm_provider/providers/_registry.py
 
 from __future__ import annotations
 
+import re
 from typing import Any, Protocol, TypedDict
 
 # =============================================================================
@@ -68,7 +69,7 @@ def _is_reasoning_model(model_id: str) -> bool:
     lower = model_id.lower()
     if lower.startswith("gpt-5-chat"):
         return False
-    return lower.startswith(("o", "gpt-5", "codex-", "computer-use"))
+    return lower.startswith(("o1", "o3", "o4", "gpt-5", "codex-", "computer-use"))
 
 
 def openai_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -162,6 +163,8 @@ def snogpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any])
         )
 
     if gpu_path:
+        if '..' in gpu_path or not re.match(r'^[a-zA-Z0-9_/-]+$', gpu_path):
+            raise ValueError(f"Invalid gpu_path: {gpu_path!r}")
         kwargs["base_url"] = f"{base}/{gpu_path}/v1"
     else:
         kwargs["base_url"] = f"{base}/v1"

@@ -446,15 +446,18 @@ def _anthropic_status(api_key: str, raw_batch_id: str) -> BatchStatus:
         res.raise_for_status()
         batch = res.json()
 
+    counts = batch.get("request_counts", {})
+
     state: BatchState
     if batch["processing_status"] == "ended":
-        state = "completed"
+        if counts.get("succeeded", 0) == 0 and counts.get("errored", 0) > 0:
+            state = "failed"
+        else:
+            state = "completed"
     elif batch["processing_status"] == "canceling":
         state = "in_progress"
     else:
         state = "in_progress"
-
-    counts = batch.get("request_counts", {})
     total = sum(
         counts.get(k, 0)
         for k in ("processing", "succeeded", "errored", "canceled", "expired")
@@ -655,6 +658,8 @@ class BatchProcessor:
         state_dir: Path | None = None,
     ) -> str:
         """Submit a batch of prompts. Returns an encoded batch ID."""
+        if not prompts:
+            raise ValueError("prompts must be non-empty")
         effective_state_dir = state_dir or self._state_dir
 
         if provider == "openai":

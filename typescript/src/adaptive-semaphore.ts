@@ -101,6 +101,7 @@ export class AdaptiveSemaphore {
   }
 
   onSuccess(): void {
+    if (this._closed) return;
     if (this._hasHeaderSignal) return;
     if (this._window < this._max) {
       this._window = Math.min(this._window + 1, this._max);
@@ -109,11 +110,13 @@ export class AdaptiveSemaphore {
   }
 
   onRateLimit(): void {
+    if (this._closed) return;
     const target = Math.max(Math.floor(this._window / 2), this._min);
     this._adjustWindow(target);
   }
 
   onHeaderFeedback(remaining: number, limit: number): void {
+    if (this._closed) return;
     if (limit <= 0) return;
     this._hasHeaderSignal = true;
     const ratio = remaining / limit;
@@ -134,6 +137,7 @@ export class AdaptiveSemaphore {
   }
 
   private _adjustWindow(target: number): void {
+    if (this._closed) return;
     target = Math.max(target, this._min);
     target = Math.min(target, this._max);
     if (target === this._window) return;

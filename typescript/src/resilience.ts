@@ -7,6 +7,7 @@
 
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -198,6 +199,27 @@ export class KillSwitch {
   isActive(): boolean {
     try {
       statSync(this.path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Async check — avoids blocking the event loop with statSync. */
+  async checkAsync(): Promise<void> {
+    try {
+      await stat(this.path);
+      throw new KillSwitchActiveError(this.path);
+    } catch (err: unknown) {
+      if (err instanceof KillSwitchActiveError) throw err;
+      // File doesn't exist — all clear
+    }
+  }
+
+  /** Async version of isActive(). */
+  async isActiveAsync(): Promise<boolean> {
+    try {
+      await stat(this.path);
       return true;
     } catch {
       return false;

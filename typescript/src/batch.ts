@@ -421,18 +421,24 @@ async function anthropicStatus(apiKey: string, rawBatchId: string): Promise<Batc
     };
   };
 
+  const counts = batch.request_counts;
+
   // Anthropic batches don't have a "pending" state — they transition directly
   // to "in_progress" on creation, so all non-"ended" states map to "in_progress".
   let state: BatchState;
   if (batch.processing_status === "ended") {
-    state = "completed";
+    // Distinguish all-failed from completed
+    if (counts && counts.succeeded === 0 && counts.errored > 0) {
+      state = "failed";
+    } else {
+      state = "completed";
+    }
   } else if (batch.processing_status === "canceling") {
     state = "in_progress";
   } else {
     state = "in_progress";
   }
 
-  const counts = batch.request_counts;
   const total = counts
     ? counts.processing + counts.succeeded + counts.errored + counts.canceled + counts.expired
     : 0;
@@ -646,6 +652,7 @@ export class BatchProcessor {
    */
   async submit(options: BatchSubmitOptions): Promise<string> {
     const { provider, apiKey, model, prompts, systemPrompt, params } = options;
+    if (prompts.length === 0) throw new Error("prompts must not be empty");
     const effectiveStateDir = options.stateDir ?? this.stateDir;
 
     let rawBatchId: string;

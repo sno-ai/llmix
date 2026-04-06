@@ -15,6 +15,7 @@ Three strategies:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -316,12 +317,12 @@ class TwoTierCache:
     # -------------------------------------------------------------------------
 
     async def aget(self, key: str) -> CacheResult | None:
-        """Async wrapper for get(). L1 is sync; L2 uses sync Redis under the hood."""
-        return self.get(key)
+        """Async wrapper for get(). Offloads blocking Redis I/O to a thread."""
+        return await asyncio.to_thread(self.get, key)
 
     async def aset(self, key: str, value: str) -> None:
-        """Async wrapper for set()."""
-        self.set(key, value)
+        """Async wrapper for set(). Offloads blocking Redis I/O to a thread."""
+        await asyncio.to_thread(self.set, key, value)
 
     # -------------------------------------------------------------------------
     # LIFECYCLE

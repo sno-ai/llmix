@@ -10,13 +10,17 @@ from __future__ import annotations
 
 import asyncio
 import enum
-import fcntl
 import hashlib
 import os
 import random
 import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable, TypeVar
+
+try:
+    import fcntl as _fcntl
+except ImportError:
+    _fcntl = None  # Windows
 
 T = TypeVar("T")
 
@@ -440,17 +444,20 @@ class FileLock:
         return self._enabled
 
     def acquire(self) -> None:
-        """Acquire the file lock (blocking). No-op if not enabled."""
+        """Acquire the file lock (blocking). No-op if not enabled or on Windows."""
         if not self._enabled or self._lock_path is None:
             return
+        if _fcntl is None:
+            return
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
-        self._fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR)
-        fcntl.flock(self._fd, fcntl.LOCK_EX)
+        self._fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+        _fcntl.flock(self._fd, _fcntl.LOCK_EX)
 
     def release(self) -> None:
         """Release the file lock. No-op if not enabled or not acquired."""
         if self._fd is not None:
-            fcntl.flock(self._fd, fcntl.LOCK_UN)
+            if _fcntl is not None:
+                _fcntl.flock(self._fd, _fcntl.LOCK_UN)
             os.close(self._fd)
             self._fd = None
 
