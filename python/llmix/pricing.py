@@ -15,8 +15,8 @@ e.g., "gpt-5-mini" -> "gpt-5-mini"
 import json
 import re
 import warnings
+from importlib import resources
 from math import isfinite
-from pathlib import Path
 from typing import TypedDict
 
 
@@ -36,15 +36,9 @@ class CostBreakdown(TypedDict):
 
 
 def _load_pricing_data() -> dict[str, ModelPricing]:
-    """Load pricing data from JSON file.
-
-    The pricing.json lives in the TS package directory:
-    package/llmix/src/pricing/pricing.json
-    """
-    # Navigate from python/llmix/ up to repo root, then into shared/
-    json_path = Path(__file__).parent.parent.parent / "shared" / "pricing.json"
-    with open(json_path, encoding="utf-8") as f:
-        data = json.load(f)
+    """Load pricing data from packaged JSON data."""
+    json_path = resources.files("llmix").joinpath("pricing.json")
+    data = json.loads(json_path.read_text(encoding="utf-8"))
 
     # Filter out _meta key
     return {k: v for k, v in data.items() if not k.startswith("_")}

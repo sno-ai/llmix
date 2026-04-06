@@ -23,6 +23,9 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["python"]
 
+[tool.setuptools.package-data]
+llmix = ["pricing.json"]
+
 [build-system]
 requires = ["setuptools>=75.0.0"]
 build-backend = "setuptools.build_meta"

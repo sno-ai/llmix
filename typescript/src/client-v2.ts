@@ -398,11 +398,11 @@ export class V2CallPipeline {
       }
 
       // Step 14: Key Pool feedback (error)
-      // Note: no explicit rotate() on 429 — select() auto-advances (round-robin),
-      // so the next retry naturally picks the next key.
       const pool = this.keyPools.get(provider);
       if (pool && apiKey && statusCode !== undefined) {
-        if (statusCode === 401 || statusCode === 403) {
+        if (statusCode === 429) {
+          pool.rotate();
+        } else if (statusCode === 401 || statusCode === 403) {
           pool.markDead(apiKey);
         }
       }

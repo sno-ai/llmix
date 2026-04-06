@@ -219,6 +219,20 @@ class V2CallPipeline:
                 )
             return pool.select()
 
+    def _rotate_api_key_locked(self, provider: str) -> None:
+        """Advance key-pool state under the cross-process lock."""
+        with self._file_lock:
+            pool = self._key_pools.get(provider)
+            if pool is not None:
+                pool.rotate()
+
+    def _mark_api_key_dead_locked(self, provider: str, api_key: str) -> None:
+        """Mark a failed key dead under the cross-process lock."""
+        with self._file_lock:
+            pool = self._key_pools.get(provider)
+            if pool is not None:
+                pool.mark_dead(api_key)
+
     async def call(self, call_input: V2CallInput) -> V2CallResponse:
         """Execute the 19-step call flow."""
         config = call_input.config
@@ -415,16 +429,21 @@ class V2CallPipeline:
             status_code = getattr(exc, "status_code", None)
             if status_code == 429:
                 semaphore.on_rate_limit()
+                try:
+                    await asyncio.to_thread(self._rotate_api_key_locked, provider)
+                except Exception:
+                    pass
 
             # Step 14: Key Pool feedback (error) — use captured api_key
-            # Note: no explicit rotate() on 429 — select() auto-advances (round-robin),
-            # so the next retry naturally picks the next key.
-            if pool and status_code is not None:
-                if status_code in (401, 403):
-                    try:
-                        pool.mark_dead(api_key)
-                    except Exception:
-                        pass
+            if status_code in (401, 403):
+                try:
+                    await asyncio.to_thread(
+                        self._mark_api_key_dead_locked,
+                        provider,
+                        api_key,
+                    )
+                except Exception:
+                    pass
 
             # Step 15: Circuit Breaker feedback (error)
             cb.on_failure(

@@ -36,26 +36,32 @@ class KeyPool:
         Raises KeyPoolExhaustedError if all keys are dead.
         """
         with self._lock:
-            if self.is_exhausted():
+            if len(self._dead) >= len(self._keys):
                 raise KeyPoolExhaustedError(
                     f"All {len(self._keys)} keys are dead (401/403). "
                     "Replace keys or wait for provider resolution."
                 )
-            # Scan forward from current index to find a live key
-            for _ in range(len(self._keys)):
-                key = self._keys[self._idx % len(self._keys)]
+
+            for offset in range(len(self._keys)):
+                idx = (self._idx + offset) % len(self._keys)
+                key = self._keys[idx]
                 if key not in self._dead:
-                    # Advance index for true round-robin
-                    self._idx = (self._idx + 1) % len(self._keys)
+                    self._idx = idx
                     return key
-                self._idx = (self._idx + 1) % len(self._keys)
-            # Should never reach here if is_exhausted() is correct
+
             raise KeyPoolExhaustedError("All keys are dead")
 
     def rotate(self) -> None:
         """Advance to the next key (called on 429)."""
         with self._lock:
-            self._idx = (self._idx + 1) % len(self._keys)
+            if len(self._dead) >= len(self._keys):
+                return
+
+            for offset in range(1, len(self._keys) + 1):
+                idx = (self._idx + offset) % len(self._keys)
+                if self._keys[idx] not in self._dead:
+                    self._idx = idx
+                    return
 
     def mark_dead(self, key: str) -> None:
         """Mark a key as permanently failed (called on 401/403)."""

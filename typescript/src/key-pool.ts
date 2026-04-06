@@ -39,22 +39,29 @@ export class KeyPool {
           "Replace keys or wait for provider resolution.",
       );
     }
-    for (let i = 0; i < this.keys.length; i++) {
-      const key = this.keys[this.idx % this.keys.length];
+    for (let offset = 0; offset < this.keys.length; offset++) {
+      const idx = (this.idx + offset) % this.keys.length;
+      const key = this.keys[idx];
       if (!this.dead.has(key)) {
-        // Advance index for true round-robin — next select() starts at the next key
-        this.idx = (this.idx + 1) % this.keys.length;
+        this.idx = idx;
         return key;
       }
-      this.idx = (this.idx + 1) % this.keys.length;
     }
-    // Should never reach here if isExhausted() is correct
     throw new KeyPoolExhaustedError("All keys are dead");
   }
 
   /** Advance to the next key (called on 429). */
   rotate(): void {
-    this.idx = (this.idx + 1) % this.keys.length;
+    if (this.isExhausted()) {
+      return;
+    }
+    for (let offset = 1; offset <= this.keys.length; offset++) {
+      const idx = (this.idx + offset) % this.keys.length;
+      if (!this.dead.has(this.keys[idx])) {
+        this.idx = idx;
+        return;
+      }
+    }
   }
 
   /** Mark a key as permanently failed (called on 401/403). */
