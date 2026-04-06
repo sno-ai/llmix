@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Protocol
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,7 @@ from llmix.resilience import (
     Singleflight,
     is_retryable,
 )
+from llmix.response_cache import TwoTierCache, generate_cache_key, should_skip_cache
 from llmix.thinking import strip_thinking
 
 
@@ -125,6 +126,7 @@ class V2CallResponse:
     success: bool
     error: str | None = None
     thinking_content: str | None = None
+    cache_hit: str | None = None
 
 
 @dataclass
@@ -141,6 +143,7 @@ class V2PipelineConfig:
     semaphore_min: int = 4
     kill_switch_state_dir: str | None = None
     transform_kwargs_overrides: dict[str, TransformKwargsCallback] | None = None
+    response_cache: TwoTierCache | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +182,8 @@ class V2CallPipeline:
             **(config.transform_kwargs_overrides or {}),
         }
 
+        self._response_cache = config.response_cache
+
     def set_key_pool(self, provider: str, pool: KeyPool) -> None:
         """Register a key pool for a provider."""
         self._key_pools[provider] = pool
@@ -209,6 +214,10 @@ class V2CallPipeline:
         messages = call_input.messages
         provider: str = config.get("provider", "unknown")
         model: str = config.get("model", "unknown")
+        # Circuit breaker is per-provider (not per-baseUrl). The baseUrl is only
+        # known after kwargs transform (step 10, inside retry loop), which runs
+        # after the circuit breaker check (step 5). Provider-level scope is correct:
+        # a failing provider typically affects all its endpoints.
         base_url = ""
 
         try:
@@ -217,16 +226,62 @@ class V2CallPipeline:
 
             # Step 2: Config -- already resolved by caller
 
-            # Steps 3-4: Cache lookup (L1/L2) -- placeholder
-            # TODO: integrate LRU + Redis cache check
+            # Steps 3-4: Cache lookup (L1/L2)
+            common = config.get("common") or {}
+            caching_strategy = (config.get("caching") or {}).get("strategy", "disabled")
+            cache_key: str | None = None
+            if self._response_cache and not should_skip_cache(caching_strategy):
+                cache_key = generate_cache_key({
+                    "provider": provider,
+                    "model": model,
+                    "messages": messages,
+                    "baseUrl": config.get("baseUrl", ""),
+                    "enableThinking": common.get("enable_thinking"),
+                    "temperature": common.get("temperature"),
+                    "maxOutputTokens": common.get("max_output_tokens"),
+                    "responseFormat": common.get("response_format"),
+                    "seed": common.get("seed"),
+                    "topP": common.get("top_p"),
+                    "providerOptions": config.get("provider_options"),
+                })
+                hit = await self._response_cache.aget(cache_key)
+                if hit is not None:
+                    raw_content = hit.value
+                    if common.get("keep_thinking_output"):
+                        content = raw_content
+                        thinking_content = None
+                    else:
+                        content, thinking_content = strip_thinking(raw_content)
+                    return V2CallResponse(
+                        content=content,
+                        model=model,
+                        provider=provider,
+                        usage=LLMUsage(),
+                        success=True,
+                        thinking_content=thinking_content,
+                        cache_hit=hit.tier,
+                    )
 
             # Step 5: Circuit Breaker check
             cb = self._get_circuit_breaker(provider, base_url)
             cb.check()
 
             # Step 6: Singleflight deduplication
-            sf_key = call_input.singleflight_key or Singleflight.make_key(
-                json.dumps({"provider": provider, "model": model, "messages": messages}, default=str)
+            # Default key includes all request-shaping params to prevent
+            # cross-config result sharing (same identity as cache key).
+            sf_key = call_input.singleflight_key or cache_key or Singleflight.make_key(
+                json.dumps({
+                    "provider": provider,
+                    "model": model,
+                    "messages": messages,
+                    "enableThinking": common.get("enable_thinking"),
+                    "temperature": common.get("temperature"),
+                    "maxOutputTokens": common.get("max_output_tokens"),
+                    "responseFormat": common.get("response_format"),
+                    "seed": common.get("seed"),
+                    "topP": common.get("top_p"),
+                    "providerOptions": config.get("provider_options"),
+                }, default=str)
             )
 
             async def _inner() -> ProviderResult:
@@ -235,17 +290,25 @@ class V2CallPipeline:
                     is_retryable_fn=self._is_retryable_error,
                 )
 
-            result = await self._singleflight.do(sf_key, _inner)
+            try:
+                result = await self._singleflight.do(sf_key, _inner)
+            except Exception:
+                # If a HALF_OPEN probe was started by check() but never finalized
+                # by on_success/on_failure, cancel it so the breaker doesn't wedge.
+                cb.cancel_probe()
+                raise
 
             # Step 17: Thinking stripping
-            common = config.get("common") or {}
             if common.get("keep_thinking_output"):
                 content = result.content
                 thinking_content = None
             else:
                 content, thinking_content = strip_thinking(result.content)
 
-            # Step 18: Cache write -- placeholder
+            # Step 18: Cache write (raw content, pre-strip)
+            if self._response_cache and cache_key:
+                await self._response_cache.aset(cache_key, result.content)
+
             # Step 19: Telemetry -- placeholder
 
             return V2CallResponse(
@@ -292,9 +355,6 @@ class V2CallPipeline:
                     f"Set {provider.upper()}_API_KEY or {provider.upper()}_KEYS."
                 )
             api_key = pool.select()
-
-            # Step 5 (re-check): Circuit breaker check (under lock)
-            cb.check()
         finally:
             await asyncio.to_thread(self._file_lock.release)
 
@@ -305,6 +365,8 @@ class V2CallPipeline:
                 "temperature": common.get("temperature"),
                 "top_p": common.get("top_p"),
                 "max_tokens": common.get("max_output_tokens"),
+                "seed": common.get("seed"),
+                "response_format": common.get("response_format"),
             }
             transform_fn = self._transform_kwargs.get(provider)
             if transform_fn is not None:
@@ -315,6 +377,7 @@ class V2CallPipeline:
                     "temperature": common.get("temperature"),
                     "top_p": common.get("top_p"),
                     "provider_options": config.get("provider_options") or {},
+                    "base_url": config.get("baseUrl", ""),
                 }
                 kwargs = apply_transform_kwargs(ctx, kwargs, transform_fn)
 
@@ -354,14 +417,14 @@ class V2CallPipeline:
                 semaphore.on_rate_limit()
 
             # Step 14: Key Pool feedback (error) — use captured api_key
+            # Note: no explicit rotate() on 429 — select() auto-advances (round-robin),
+            # so the next retry naturally picks the next key.
             if pool and status_code is not None:
                 if status_code in (401, 403):
                     try:
                         pool.mark_dead(api_key)
                     except Exception:
                         pass
-                elif status_code == 429:
-                    pool.rotate()
 
             # Step 15: Circuit Breaker feedback (error)
             cb.on_failure(
@@ -380,10 +443,13 @@ class V2CallPipeline:
         """Step 16: Determine if an error is retryable."""
         if isinstance(exc, CircuitOpenError):
             return False
+        # Local config/programming errors are not retryable
+        if isinstance(exc, (ValueError, TypeError, KeyError)):
+            return False
         status_code = getattr(exc, "status_code", None)
         if status_code is not None:
             return is_retryable(status_code)
-        # Network errors are retryable
+        # Remaining errors without status_code are likely network errors — retryable
         return True
 
     # -----------------------------------------------------------------------

@@ -45,6 +45,8 @@ class KeyPool:
             for _ in range(len(self._keys)):
                 key = self._keys[self._idx % len(self._keys)]
                 if key not in self._dead:
+                    # Advance index for true round-robin
+                    self._idx = (self._idx + 1) % len(self._keys)
                     return key
                 self._idx = (self._idx + 1) % len(self._keys)
             # Should never reach here if is_exhausted() is correct

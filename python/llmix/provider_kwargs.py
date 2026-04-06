@@ -85,6 +85,12 @@ def openai_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any])
     kwargs = dict(kwargs)
     kwargs.pop("temperature", None)
     kwargs.pop("top_p", None)
+
+    # Reasoning models use max_completion_tokens, not max_tokens
+    max_tokens = kwargs.pop("max_tokens", None)
+    if max_tokens is not None and "max_completion_tokens" not in kwargs:
+        kwargs["max_completion_tokens"] = max_tokens
+
     return kwargs
 
 
@@ -180,5 +186,6 @@ PROVIDER_KWARGS_REGISTRY: dict[str, TransformKwargsCallback] = {
     "openai": openai_transform_kwargs,
     "deepseek": openrouter_transform_kwargs,
     "google": gemini_transform_kwargs,
+    "gemini": gemini_transform_kwargs,
     "snogpu": snogpu_transform_kwargs,
 }

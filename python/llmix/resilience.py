@@ -43,8 +43,8 @@ _KILLSWITCH_SUBDIR = "llmix2"
 # ---------------------------------------------------------------------------
 
 def _is_retryable_status(status_code: int) -> bool:
-    """Return True for 429 and 5xx status codes."""
-    return status_code == 429 or 500 <= status_code <= 599
+    """Return True for 408, 429, and 5xx status codes."""
+    return status_code == 408 or status_code == 429 or 500 <= status_code <= 599
 
 
 def _resolve_state_dir() -> Path:
@@ -134,6 +134,7 @@ class CircuitBreaker:
         if self._state == CircuitState.OPEN:
             elapsed = time.monotonic() - self._opened_at
             if elapsed >= self.cooldown_seconds:
+                self._state = CircuitState.HALF_OPEN
                 return CircuitState.HALF_OPEN
         return self._state
 
@@ -166,31 +167,56 @@ class CircuitBreaker:
     def on_failure(self, status_code: int | None = None, *, network_error: bool = False) -> None:
         """Record a failed request.
 
-        Only retryable errors (429, 5xx, network errors) increment the counter.
-        Auth errors (401, 403) are ignored.
+        Only retryable errors (408, 429, 5xx, network errors) increment the counter.
+        Auth errors (401, 403) are ignored in CLOSED state but still finalize
+        the HALF_OPEN probe.
         """
+        current = self.state
+
         retryable = network_error
         if status_code is not None:
             retryable = retryable or _is_retryable_status(status_code)
-            # Explicitly exclude auth errors
-            if status_code in (401, 403):
-                return
 
-        if not retryable:
+        # HALF_OPEN probe must always be finalized regardless of retryability.
+        if current == CircuitState.HALF_OPEN:
+            if retryable or network_error:
+                # Transient failure — re-open the circuit
+                self._state = CircuitState.OPEN
+                self._opened_at = time.monotonic()
+            else:
+                # Non-retryable error (400, 401, 404, etc.) means the server
+                # is reachable — close the circuit.
+                self._state = CircuitState.CLOSED
+                self._consecutive_failures = 0
+            self._half_open_probe_in_flight = False
             return
 
-        current = self.state
-        if current == CircuitState.HALF_OPEN:
-            # Probe failed — go back to OPEN
-            self._state = CircuitState.OPEN
-            self._opened_at = time.monotonic()
-            self._half_open_probe_in_flight = False
+        # Auth errors do NOT trip the breaker in CLOSED state.
+        # Server is reachable → reset the consecutive failure counter.
+        if status_code is not None and status_code in (401, 403):
+            self._consecutive_failures = 0
+            return
+
+        if not retryable:
+            # Non-retryable error proves server is reachable — reset counter
+            self._consecutive_failures = 0
             return
 
         self._consecutive_failures += 1
         if self._consecutive_failures >= self.failure_threshold:
             self._state = CircuitState.OPEN
             self._opened_at = time.monotonic()
+
+    def cancel_probe(self) -> None:
+        """Cancel an in-flight HALF_OPEN probe without recording success or failure.
+
+        Re-opens the circuit so the next cooldown expiry triggers a fresh probe.
+        Use this in a finally/catch when the caller cannot reach on_success/on_failure.
+        """
+        if self._half_open_probe_in_flight:
+            self._state = CircuitState.OPEN
+            self._opened_at = time.monotonic()
+            self._half_open_probe_in_flight = False
 
     def reset(self) -> None:
         """Manually reset the breaker to CLOSED."""
@@ -321,8 +347,8 @@ def parse_retry_after(
 ) -> int | None:
     """Parse Retry-After header value to milliseconds.
 
-    Supports integer seconds only. Returns None if unparseable.
-    Caps at max_ms.
+    Supports integer seconds and HTTP-date (RFC 7231) formats.
+    Returns None if unparseable. Caps at max_ms.
     """
     if header_value is None:
         return None
@@ -332,11 +358,24 @@ def parse_retry_after(
             return None
         return min(seconds * 1000, max_ms)
     except (ValueError, TypeError):
-        return None
+        pass
+
+    # Fallback: try HTTP-date format (RFC 7231 §7.1.1.1)
+    from email.utils import parsedate_to_datetime
+
+    try:
+        dt = parsedate_to_datetime(header_value)
+        delta_ms = int((dt.timestamp() - time.time()) * 1000)
+        if delta_ms > 0:
+            return min(delta_ms, max_ms)
+    except (ValueError, TypeError):
+        pass
+
+    return None
 
 
 def is_retryable(status_code: int) -> bool:
-    """Return True if the status code is retryable (429 or 5xx)."""
+    """Return True if the status code is retryable (408, 429, or 5xx)."""
     return _is_retryable_status(status_code)
 
 
@@ -408,7 +447,9 @@ class RetryPolicy:
                     raise
                 if is_retryable_fn and not is_retryable_fn(exc):
                     raise
-                delay_ms = self.get_delay_ms(attempt)
+                retry_after = getattr(exc, "headers", {})
+                retry_after_val = retry_after.get("retry-after") if isinstance(retry_after, dict) else None
+                delay_ms = self.get_delay_ms(attempt, retry_after_val)
                 await asyncio.sleep(delay_ms / 1000.0)
 
         # Should never reach here, but satisfy type checker
