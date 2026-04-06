@@ -134,10 +134,12 @@ function batchesDir(stateDir?: string): string {
   return join(base, BATCHES_SUBDIR);
 }
 
+function metadataFilename(batchId: string): string {
+  return `${Buffer.from(batchId, "utf8").toString("base64url")}.json`;
+}
+
 function metadataPath(batchId: string, stateDir?: string): string {
-  // Use a safe filename: replace colons with underscores
-  const safeId = batchId.replace(/:/g, "_");
-  return join(batchesDir(stateDir), `${safeId}.json`);
+  return join(batchesDir(stateDir), metadataFilename(batchId));
 }
 
 export async function writeMetadata(

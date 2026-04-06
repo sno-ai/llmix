@@ -7,6 +7,7 @@ batch submit/status/results dispatch.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from datetime import datetime, timezone
@@ -181,9 +182,13 @@ def _batches_dir(state_dir: Path | None = None) -> Path:
     return base / BATCHES_SUBDIR
 
 
+def _metadata_filename(batch_id: str) -> str:
+    encoded = base64.urlsafe_b64encode(batch_id.encode("utf-8")).decode("ascii")
+    return f"{encoded.rstrip('=')}.json"
+
+
 def _metadata_path(batch_id: str, state_dir: Path | None = None) -> Path:
-    safe_id = batch_id.replace(":", "_")
-    return _batches_dir(state_dir) / f"{safe_id}.json"
+    return _batches_dir(state_dir) / _metadata_filename(batch_id)
 
 
 def write_metadata(
@@ -695,7 +700,12 @@ class BatchProcessor:
         else:
             raise ValueError(f"Unsupported batch provider: {decoded.provider}")
 
-    def results(self, batch_id: str, api_key: str) -> list[BatchResult]:
+    def results(
+        self,
+        batch_id: str,
+        api_key: str,
+        state_dir: Path | None = None,
+    ) -> list[BatchResult]:
         """Retrieve batch results.
 
         Metadata is deleted only once the provider returns terminal results.
@@ -706,6 +716,7 @@ class BatchProcessor:
             api_key: API key for the provider (must match the key fingerprint in batch ID).
         """
         decoded = decode_batch_id(batch_id)
+        effective_state_dir = state_dir or self._state_dir
         if _key_fingerprint(api_key) != decoded.key_fingerprint:
             raise ValueError("API key fingerprint does not match batch ID")
 
@@ -719,7 +730,7 @@ class BatchProcessor:
             raise ValueError(f"Unsupported batch provider: {decoded.provider}")
 
         if results:
-            delete_metadata(batch_id, self._state_dir)
+            delete_metadata(batch_id, effective_state_dir)
         return results
 
 
