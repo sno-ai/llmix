@@ -1,0 +1,155 @@
+/**
+ * AIMD Adaptive Semaphore for rate-limit-aware concurrency control.
+ *
+ * Adjusts concurrency window dynamically:
+ * - Additive increase on success (+1)
+ * - Multiplicative decrease on 429 (/2)
+ * - Preemptive backoff from rate-limit headers
+ */
+
+const DEFAULT_INITIAL = 32;
+const DEFAULT_MIN_CONCURRENCY = 4;
+const HEADER_BACKOFF_THRESHOLD = 0.10;
+
+interface Waiter {
+  resolve: () => void;
+}
+
+/**
+ * Async semaphore with AIMD concurrency control and header-based early warning.
+ *
+ * When rate-limit headers are available (OpenAI):
+ *   - onHeaderFeedback(remaining, limit): preemptive backoff when remaining < 10%.
+ *     Above threshold -> AIMD grow as normal. Below -> scale proportionally.
+ * When no headers:
+ *   - onSuccess(): window += 1 (additive increase)
+ * Always:
+ *   - onRateLimit(): window //= 2 (multiplicative decrease)
+ */
+export class AdaptiveSemaphore {
+  private _max: number;
+  private _min: number;
+  private _window: number;
+  private _permits: number;
+  private _queue: Waiter[] = [];
+  private _hasHeaderSignal = false;
+
+  constructor(
+    initial: number = DEFAULT_INITIAL,
+    minConcurrency: number = DEFAULT_MIN_CONCURRENCY,
+  ) {
+    this._max = initial;
+    this._min = minConcurrency;
+    this._window = initial;
+    this._permits = initial;
+  }
+
+  get window(): number {
+    return this._window;
+  }
+
+  get maxConcurrency(): number {
+    return this._max;
+  }
+
+  get minConcurrency(): number {
+    return this._min;
+  }
+
+  async acquire(): Promise<void> {
+    if (this._permits > 0) {
+      this._permits--;
+      return;
+    }
+    return new Promise<void>((resolve) => {
+      this._queue.push({ resolve });
+    });
+  }
+
+  release(): void {
+    if (this._queue.length > 0) {
+      const waiter = this._queue.shift()!;
+      waiter.resolve();
+    } else {
+      this._permits++;
+    }
+  }
+
+  onSuccess(): void {
+    if (this._hasHeaderSignal) return;
+    if (this._window < this._max) {
+      this._window = Math.min(this._window + 1, this._max);
+      this._releaseOne();
+    }
+  }
+
+  onRateLimit(): void {
+    const target = Math.max(Math.floor(this._window / 2), this._min);
+    this._adjustWindow(target);
+  }
+
+  onHeaderFeedback(remaining: number, limit: number): void {
+    if (limit <= 0) return;
+    this._hasHeaderSignal = true;
+    const ratio = remaining / limit;
+    if (ratio >= HEADER_BACKOFF_THRESHOLD) {
+      if (this._window < this._max) {
+        this._window = Math.min(this._window + 1, this._max);
+        this._releaseOne();
+      }
+    } else {
+      const scale = ratio / HEADER_BACKOFF_THRESHOLD;
+      const target = Math.floor(this._min + scale * (this._max - this._min));
+      this._adjustWindow(target);
+    }
+  }
+
+  private _releaseOne(): void {
+    if (this._queue.length > 0) {
+      const waiter = this._queue.shift()!;
+      waiter.resolve();
+    } else {
+      this._permits++;
+    }
+  }
+
+  private _adjustWindow(target: number): void {
+    target = Math.max(target, this._min);
+    target = Math.min(target, this._max);
+    if (target === this._window) return;
+
+    if (target > this._window) {
+      const grow = target - this._window;
+      for (let i = 0; i < grow; i++) {
+        this._releaseOne();
+      }
+    } else {
+      const shrink = this._window - target;
+      for (let i = 0; i < shrink; i++) {
+        if (this._permits > 0) {
+          this._permits--;
+        }
+      }
+    }
+    this._window = target;
+  }
+}
+
+/**
+ * Extract rate-limit info from OpenAI response headers.
+ * Returns { remaining, limit } or null if headers not present/valid.
+ */
+export function parseOpenAIRatelimitHeaders(
+  headers: Record<string, string | undefined>,
+): { remaining: number; limit: number } | null {
+  const remaining = headers["x-ratelimit-remaining-requests"];
+  const limit = headers["x-ratelimit-limit-requests"];
+  if (remaining != null && limit != null) {
+    const rem = parseInt(remaining, 10);
+    const lim = parseInt(limit, 10);
+    if (!isNaN(rem) && !isNaN(lim) && lim > 0) {
+      return { remaining: rem, limit: lim };
+    }
+  }
+  return null;
+}

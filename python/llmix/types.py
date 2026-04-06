@@ -164,6 +164,11 @@ class CommonParams(TypedDict, total=False):
     enable_thinking: bool
     """Enable/disable thinking mode (provider-specific, e.g. Qwen3 on DeepInfra)"""
 
+    keep_thinking_output: bool
+    """Preserve <think>...</think> blocks in response content.
+    When True, thinking blocks are NOT stripped and thinking_content is not populated.
+    Default: False (thinking blocks are stripped automatically)."""
+
 
 # =============================================================================
 # PROVIDER-SPECIFIC OPTIONS
@@ -642,6 +647,9 @@ class LLMResponse(TypedDict, total=False):
 
     parsed_data: dict[str, Any] | list[Any] | None
     """Parsed JSON when parse_json=True. dict or list only (scalars trigger retry)."""
+
+    thinking_content: str
+    """Captured thinking content stripped from response (when keep_thinking_output is False)."""
 
 
 # =============================================================================

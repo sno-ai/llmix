@@ -196,6 +196,13 @@ export interface CommonParams {
 
   /** Retry attempts (default: 2) */
   maxRetries?: number;
+
+  /**
+   * Preserve <think>...</think> blocks in response content.
+   * When true, thinking blocks are NOT stripped and thinkingContent is not populated.
+   * Default: false (thinking blocks are stripped automatically).
+   */
+  keepThinkingOutput?: boolean;
 }
 
 // =============================================================================
@@ -788,6 +795,9 @@ export interface LLMResponse {
 
   /** Error message if success is false */
   error?: string;
+
+  /** Captured thinking content stripped from response (when keepThinkingOutput is false) */
+  thinkingContent?: string;
 }
 
 /**
