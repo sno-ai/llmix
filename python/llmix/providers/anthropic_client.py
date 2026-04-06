@@ -9,22 +9,38 @@ Provides async Anthropic API support with:
 - Error classification (retryable vs non-retryable)
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import random
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import anthropic
-from anthropic import (
-    APIConnectionError,
-    APITimeoutError,
-    AsyncAnthropic,
-    InternalServerError,
-    RateLimitError,
-)
+if TYPE_CHECKING:
+    from anthropic import AsyncAnthropic
 
 from llmix.providers.base import BaseLLMClient, LLMResponse
+
+_anthropic_module = None
+_anthropic_lock = threading.Lock()
+
+
+def _get_anthropic():
+    """Lazy load the anthropic SDK (thread-safe, double-checked locking)."""
+    global _anthropic_module
+    if _anthropic_module is None:
+        with _anthropic_lock:
+            if _anthropic_module is None:
+                try:
+                    import anthropic
+                    _anthropic_module = anthropic
+                except ImportError:
+                    raise ImportError(
+                        "Anthropic provider requires the 'anthropic' package. "
+                        "Install with: uv add anthropic"
+                    )
+    return _anthropic_module
 
 _DEFAULT_MAX_OUTPUT_TOKENS = 16384
 _DEFAULT_MODEL = "claude-sonnet-4-20250514"
@@ -172,13 +188,14 @@ def classify_anthropic_error(error: Exception) -> bool:
     Returns:
         True if retryable (429, 5xx, connection, timeout), False otherwise (4xx).
     """
-    if isinstance(error, RateLimitError):
+    sdk = _get_anthropic()
+    if isinstance(error, sdk.RateLimitError):
         return True
-    if isinstance(error, InternalServerError):
+    if isinstance(error, sdk.InternalServerError):
         return True
-    if isinstance(error, APIConnectionError):
+    if isinstance(error, sdk.APIConnectionError):
         return True
-    if isinstance(error, APITimeoutError):
+    if isinstance(error, sdk.APITimeoutError):
         return True
 
     # Check for HTTP status code on generic API errors
@@ -248,7 +265,9 @@ class AsyncAnthropicClient(BaseLLMClient):
                 if self._default_headers:
                     client_params["default_headers"] = self._default_headers
 
-                self._client = AsyncAnthropic(**client_params)
+                client_params["max_retries"] = 0
+                client_params["timeout"] = self.DEFAULT_TIMEOUT
+                self._client = _get_anthropic().AsyncAnthropic(**client_params)
 
         return self._client
 
@@ -299,7 +318,13 @@ class AsyncAnthropicClient(BaseLLMClient):
         # Extended thinking support
         thinking_config = kwargs.get("thinking")
         if thinking_config and thinking_config.get("type") == "enabled":
+            from llmix.types import ANTHROPIC_MIN_BUDGET_TOKENS
+
             budget = thinking_config.get("budget_tokens", 10000)
+            if not isinstance(budget, int) or budget < ANTHROPIC_MIN_BUDGET_TOKENS:
+                raise ValueError(
+                    f"budget_tokens must be an int >= {ANTHROPIC_MIN_BUDGET_TOKENS}, got {budget}"
+                )
             api_kwargs["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": budget,
@@ -399,10 +424,16 @@ class AsyncAnthropicClient(BaseLLMClient):
             raise NotImplementedError("parallel_tool_calls parameter not yet supported in Anthropic v2 provider")
         if allowed_tools is not None:
             raise NotImplementedError("allowed_tools parameter not yet supported in Anthropic v2 provider")
+        if text is not None:
+            raise NotImplementedError("text (structured output) parameter not yet supported in Anthropic v2 provider")
+        if store is not None:
+            raise NotImplementedError("store parameter not yet supported in Anthropic v2 provider")
+        if reasoning_effort is not None:
+            raise NotImplementedError("reasoning_effort parameter not yet supported in Anthropic v2 provider")
 
         model = self.get_model(model)
         resolved_temperature = temperature if temperature is not None else self.default_temperature
-        max_tokens = max_output_tokens or _DEFAULT_MAX_OUTPUT_TOKENS
+        max_tokens = max_output_tokens if max_output_tokens is not None else _DEFAULT_MAX_OUTPUT_TOKENS
 
         # Build messages from input, prepending instructions as system message
         if isinstance(input, str):
