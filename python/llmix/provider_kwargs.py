@@ -26,6 +26,7 @@ class TransformKwargsContext(TypedDict, total=False):
     messages: list[dict[str, Any]]
     temperature: float | None
     top_p: float | None
+    enable_thinking: bool | None
     provider_options: dict[str, Any]
     base_url: str | None
 
@@ -134,11 +135,15 @@ def gemini_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any])
     raw_thinking_config = google_opts.get("thinking_config") or {}
     thinking_budget = raw_thinking_config.get("thinking_budget")
     if thinking_budget is None:
-        thinking_budget = google_opts.get("thinking_budget", 0)
+        thinking_budget = google_opts.get("thinking_budget")
 
     thinking_config = kwargs.get("thinking_config") or {}
     # Only set default if not already explicitly configured
     if "thinking_budget" not in thinking_config:
+        if thinking_budget is None and ctx.get("enable_thinking") is True:
+            return kwargs
+        if thinking_budget is None:
+            thinking_budget = 0
         thinking_config = {**thinking_config, "thinking_budget": thinking_budget}
         kwargs["thinking_config"] = thinking_config
 

@@ -235,6 +235,21 @@ def delete_metadata(batch_id: str, state_dir: Path | None = None) -> None:
         pass
 
 
+def _validate_batch_request(
+    batch_id: str,
+    api_key: str,
+    state_dir: Path | None = None,
+) -> DecodedBatchId:
+    """Validate a batch ID against durable submit-time metadata."""
+    decoded = decode_batch_id(batch_id)
+    metadata = read_metadata(batch_id, state_dir)
+    if _key_fingerprint(api_key) != metadata.key_fingerprint:
+        raise ValueError("API key fingerprint does not match batch ID")
+    if decoded.provider != metadata.provider or decoded.n_prompts != metadata.n_prompts:
+        raise ValueError("Batch ID does not match stored metadata")
+    return decoded
+
+
 # ---------------------------------------------------------------------------
 # Provider-specific batch operations (Tasks 107, 108, 109)
 # ---------------------------------------------------------------------------
@@ -687,9 +702,7 @@ class BatchProcessor:
             batch_id: Encoded batch ID.
             api_key: API key for the provider (must match the key fingerprint in batch ID).
         """
-        decoded = decode_batch_id(batch_id)
-        if _key_fingerprint(api_key) != decoded.key_fingerprint:
-            raise ValueError("API key fingerprint does not match batch ID")
+        decoded = _validate_batch_request(batch_id, api_key, self._state_dir)
 
         if decoded.provider == "openai":
             return _openai_status(api_key, decoded.raw_batch_id)
@@ -715,10 +728,8 @@ class BatchProcessor:
             batch_id: Encoded batch ID.
             api_key: API key for the provider (must match the key fingerprint in batch ID).
         """
-        decoded = decode_batch_id(batch_id)
         effective_state_dir = state_dir or self._state_dir
-        if _key_fingerprint(api_key) != decoded.key_fingerprint:
-            raise ValueError("API key fingerprint does not match batch ID")
+        decoded = _validate_batch_request(batch_id, api_key, effective_state_dir)
 
         if decoded.provider == "openai":
             results = _openai_results(api_key, decoded.raw_batch_id, decoded.n_prompts)

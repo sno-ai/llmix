@@ -422,8 +422,12 @@ class LLMClient:
             return None
 
         fb_ctx = self._resolve_effective_params(fb_config, primary_ctx.options, fallback_config["preset"], primary_ctx.messages, time.time())
-        # Merge primary common params as base for fallback
-        fb_ctx.effective_common = {**primary_ctx.effective_common, **fb_config.get("common", {})}
+        runtime_common = primary_ctx.options.get("overrides", {}).get("common", {})
+        fb_ctx.effective_common = {
+            **primary_ctx.config.get("common", {}),
+            **fb_config.get("common", {}),
+            **runtime_common,
+        }
 
         fb_cb = ProviderCircuitBreaker.for_provider(fb_ctx.provider)
         if not await fb_cb.should_attempt_primary_async():

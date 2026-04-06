@@ -258,6 +258,7 @@ class V2CallPipeline:
             "messages": messages,
             "temperature": common.get("temperature"),
             "top_p": common.get("top_p"),
+            "enable_thinking": common.get("enable_thinking"),
             "provider_options": config.get("provider_options") or {},
             "base_url": config.get("baseUrl", ""),
         }
