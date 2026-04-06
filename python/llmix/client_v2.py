@@ -469,7 +469,11 @@ class V2CallPipeline:
             # Step 15: Circuit Breaker feedback (error)
             cb.on_failure(
                 status_code,
-                network_error=(not isinstance(exc, CircuitOpenError) and status_code is None),
+                network_error=(
+                    not isinstance(exc, CircuitOpenError)
+                    and status_code is None
+                    and self._is_retryable_error(exc)
+                ),
             )
 
             raise
