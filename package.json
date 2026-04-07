@@ -1,7 +1,7 @@
 {
   "name": "llmix",
   "version": "2.0.0",
-  "description": "Config-driven LLM client with three-tier caching and AI SDK v6 integration",
+  "description": "Cross-runtime LLM orchestration for Python and TypeScript with L2 caching, retries, key rotation, and config-driven client",
   "publishConfig": {
     "access": "public"
   },
