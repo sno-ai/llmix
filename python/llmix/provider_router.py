@@ -9,12 +9,15 @@ Usage:
     client = router.get_provider_client(provider="openai", model="gpt-4o", ...)
 """
 
+from __future__ import annotations
+
 import asyncio
 import inspect
 import logging
 import threading
 from collections import OrderedDict
 from collections.abc import Coroutine
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
 from llmix.env import (
@@ -61,6 +64,16 @@ _ANTHROPIC_MODEL_MAPPINGS: dict[str, str] = {
     "claude-3.5-sonnet": "anthropic/claude-3.5-sonnet",
     "claude-3-opus": "anthropic/claude-3-opus",
 }
+
+
+@lru_cache(maxsize=1)
+def _import_helicone_module() -> Any | None:
+    """Import Helicone lazily so standalone installs still work."""
+    try:
+        from lib.telemetry import helicone as helicone_module
+    except ImportError:
+        return None
+    return helicone_module
 
 
 def _resolve_google_api_key(api_keys: ApiKeysConfig | None) -> str | None:
@@ -330,21 +343,24 @@ class ProviderRouter:
 
         Returns (base_url, headers) if Helicone should be used, None otherwise.
         """
-        from lib.telemetry.helicone import get_helicone_headers, get_helicone_url, is_helicone_enabled
-
         if not helicone_enabled_yaml:
             return None
 
+        helicone_lib = _import_helicone_module()
+        if helicone_lib is None:
+            logger.debug("[LLMix] Helicone module unavailable; skipping proxy routing")
+            return None
+
         helicone_api_key = self._helicone.get("api_key") if self._helicone else None
-        if not is_helicone_enabled(helicone_api_key):
+        if not helicone_lib.is_helicone_enabled(helicone_api_key):
             return None
 
         helicone_base_url = self._helicone.get("base_url") if self._helicone else None
         if not helicone_base_url:
-            helicone_base_url = get_helicone_url(provider)
+            helicone_base_url = helicone_lib.get_helicone_url(provider)
 
         env = _resolve_helicone_environment(self._helicone)
-        headers = get_helicone_headers(app="sno-cortex", module=helicone_module, environment=env, api_key=helicone_api_key)
+        headers = helicone_lib.get_helicone_headers(app="sno-cortex", module=helicone_module, environment=env, api_key=helicone_api_key)
 
         if provider not in _CF_GATEWAY_PROVIDERS or caching_strategy == "disabled":
             headers["Helicone-Skip-CF-Gateway"] = "true"
@@ -356,6 +372,13 @@ class ProviderRouter:
                 headers["Helicone-Cache-Key"] = cache_key
 
         return (helicone_base_url, headers)
+
+    def _create_helicone_http_client(self, provider: HeliconeProvider) -> Any | None:
+        """Create a Helicone-aware HTTP client when the telemetry module is available."""
+        helicone_lib = _import_helicone_module()
+        if helicone_lib is None:
+            return None
+        return helicone_lib.create_helicone_http_client(provider=provider, enable_fallback=True)
 
     def _create_openai_client(
         self, model: str, caching_strategy: CachingStrategy, cache_key: str | None, helicone_module: str, helicone_enabled_yaml: bool = True
@@ -467,10 +490,7 @@ class ProviderRouter:
         if helicone:
             base_url, headers = helicone
             logger.info("[LLMix] Routing DeepInfra via Helicone (cache: %s, key: %s)", caching_strategy, "custom" if cache_key else "auto")
-
-            from lib.telemetry.helicone import create_helicone_http_client
-
-            http_client = create_helicone_http_client(provider="deepinfra", enable_fallback=True)
+            http_client = self._create_helicone_http_client("deepinfra")
 
             return DeepInfraClient(
                 api_key=api_key,
@@ -501,10 +521,7 @@ class ProviderRouter:
         if helicone:
             base_url, headers = helicone
             logger.info("[LLMix] Routing Together via Helicone (cache: %s, key: %s)", caching_strategy, "custom" if cache_key else "auto")
-
-            from lib.telemetry.helicone import create_helicone_http_client
-
-            http_client = create_helicone_http_client(provider="together", enable_fallback=True)
+            http_client = self._create_helicone_http_client("together")
 
             return TogetherClient(api_key=api_key, base_url=base_url, model=model, default_headers=headers, http_client=http_client)
 
@@ -534,10 +551,7 @@ class ProviderRouter:
         if helicone:
             base_url, headers = helicone
             logger.info("[LLMix] Routing Novita via Helicone (cache: %s, key: %s)", caching_strategy, "custom" if cache_key else "auto")
-
-            from lib.telemetry.helicone import create_helicone_http_client
-
-            http_client = create_helicone_http_client(provider="novita", enable_fallback=True)
+            http_client = self._create_helicone_http_client("novita")
 
             return NovitaClient(
                 api_key=api_key,
@@ -585,10 +599,7 @@ class ProviderRouter:
             helicone_base_url, headers = helicone
             base_url = f"{helicone_base_url}{path_suffix}"
             logger.info("[LLMix] Routing snogpu/%s via Helicone (cache: %s, thinking: %s)", path_label, caching_strategy, bool(enable_thinking))
-
-            from lib.telemetry.helicone import create_helicone_http_client
-
-            http_client = create_helicone_http_client(provider="snogpu", enable_fallback=True)
+            http_client = self._create_helicone_http_client("snogpu")
 
             return GpuClient(
                 service_secret=service_secret,

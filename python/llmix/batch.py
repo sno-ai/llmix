@@ -7,6 +7,7 @@ batch submit/status/results dispatch.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from datetime import datetime, timezone
@@ -181,9 +182,13 @@ def _batches_dir(state_dir: Path | None = None) -> Path:
     return base / BATCHES_SUBDIR
 
 
+def _metadata_filename(batch_id: str) -> str:
+    encoded = base64.urlsafe_b64encode(batch_id.encode("utf-8")).decode("ascii")
+    return f"{encoded.rstrip('=')}.json"
+
+
 def _metadata_path(batch_id: str, state_dir: Path | None = None) -> Path:
-    safe_id = batch_id.replace(":", "_")
-    return _batches_dir(state_dir) / f"{safe_id}.json"
+    return _batches_dir(state_dir) / _metadata_filename(batch_id)
 
 
 def write_metadata(
@@ -228,6 +233,21 @@ def delete_metadata(batch_id: str, state_dir: Path | None = None) -> None:
         path.unlink()
     except FileNotFoundError:
         pass
+
+
+def _validate_batch_request(
+    batch_id: str,
+    api_key: str,
+    state_dir: Path | None = None,
+) -> DecodedBatchId:
+    """Validate a batch ID against durable submit-time metadata."""
+    decoded = decode_batch_id(batch_id)
+    metadata = read_metadata(batch_id, state_dir)
+    if _key_fingerprint(api_key) != metadata.key_fingerprint:
+        raise ValueError("API key fingerprint does not match batch ID")
+    if decoded.provider != metadata.provider or decoded.n_prompts != metadata.n_prompts:
+        raise ValueError("Batch ID does not match stored metadata")
+    return decoded
 
 
 # ---------------------------------------------------------------------------
@@ -682,9 +702,7 @@ class BatchProcessor:
             batch_id: Encoded batch ID.
             api_key: API key for the provider (must match the key fingerprint in batch ID).
         """
-        decoded = decode_batch_id(batch_id)
-        if _key_fingerprint(api_key) != decoded.key_fingerprint:
-            raise ValueError("API key fingerprint does not match batch ID")
+        decoded = _validate_batch_request(batch_id, api_key, self._state_dir)
 
         if decoded.provider == "openai":
             return _openai_status(api_key, decoded.raw_batch_id)
@@ -695,16 +713,23 @@ class BatchProcessor:
         else:
             raise ValueError(f"Unsupported batch provider: {decoded.provider}")
 
-    def results(self, batch_id: str, api_key: str) -> list[BatchResult]:
-        """Retrieve batch results. Deletes metadata after successful retrieval.
+    def results(
+        self,
+        batch_id: str,
+        api_key: str,
+        state_dir: Path | None = None,
+    ) -> list[BatchResult]:
+        """Retrieve batch results.
+
+        Metadata is deleted only once the provider returns terminal results.
+        Pending polls that return an empty list keep the metadata on disk.
 
         Args:
             batch_id: Encoded batch ID.
             api_key: API key for the provider (must match the key fingerprint in batch ID).
         """
-        decoded = decode_batch_id(batch_id)
-        if _key_fingerprint(api_key) != decoded.key_fingerprint:
-            raise ValueError("API key fingerprint does not match batch ID")
+        effective_state_dir = state_dir or self._state_dir
+        decoded = _validate_batch_request(batch_id, api_key, effective_state_dir)
 
         if decoded.provider == "openai":
             results = _openai_results(api_key, decoded.raw_batch_id, decoded.n_prompts)
@@ -715,7 +740,8 @@ class BatchProcessor:
         else:
             raise ValueError(f"Unsupported batch provider: {decoded.provider}")
 
-        delete_metadata(batch_id, self._state_dir)
+        if results:
+            delete_metadata(batch_id, effective_state_dir)
         return results
 
 

@@ -23,11 +23,11 @@ import threading
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
-import redis
 import yaml
 
 from llmix.types import (
@@ -46,6 +46,9 @@ from llmix.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import redis as redis_types
 
 # =============================================================================
 # DEFAULT CONFIGURATION
@@ -98,6 +101,24 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
     "promptCacheRetention": "prompt_cache_retention",
     "gpuPath": "gpu_path",
 }
+
+
+@lru_cache(maxsize=1)
+def _import_redis_module() -> Any | None:
+    """Import redis lazily so llmix.loader works without the redis extra."""
+    try:
+        import redis as redis_lib
+    except ImportError:
+        return None
+    return redis_lib
+
+
+def _is_redis_connection_error(error: BaseException) -> bool:
+    """Check whether an exception is a redis connectivity failure."""
+    redis_lib = _import_redis_module()
+    if redis_lib is None:
+        return False
+    return isinstance(error, (redis_lib.ConnectionError, redis_lib.TimeoutError))
 
 
 def _normalize_config_keys(config: dict[str, Any]) -> dict[str, Any]:
@@ -235,7 +256,7 @@ class LLMConfigLoader:
         self._warned_config_ids_lock = threading.RLock()
 
         # Redis state (type: ignore for generic - redis-py typing is complex)
-        self.redis_client: redis.Redis | None = None  # type: ignore[type-arg]
+        self.redis_client: redis_types.Redis | None = None  # type: ignore[type-arg]
         self.redis_available = False
         self._redis_url = redis_url
 
@@ -268,21 +289,25 @@ class LLMConfigLoader:
 
     def _init_redis(self, redis_url: str) -> None:
         """Initialize Redis connection."""
+        redis_lib = _import_redis_module()
+        if redis_lib is None:
+            logger.warning("Redis URL provided but redis extra is not installed; using file-only mode.")
+            self.redis_client = None
+            self.redis_available = False
+            return
+
         try:
-            self.redis_client = redis.from_url(redis_url, decode_responses=True, socket_connect_timeout=5, socket_timeout=5, retry_on_timeout=True)
+            self.redis_client = redis_lib.from_url(redis_url, decode_responses=True, socket_connect_timeout=5, socket_timeout=5, retry_on_timeout=True)
             self.redis_client.ping()
             self.redis_available = True
             self.redis_command_failures = 0
             self._half_open_ping_failures = 0
             logger.info(f"Redis connection established: {self._mask_redis_url(redis_url)}")
-        except (redis.ConnectionError, redis.TimeoutError) as e:
-            logger.warning(f"Redis connection failed: {e}. Will use file-only mode.")
-            self.redis_client = None
-            self.redis_available = False
-            self.circuit_breaker_tripped_at = time.time() * 1000
-            self.redis_command_failures = 1
         except Exception as e:
-            logger.error(f"Unexpected error initializing Redis: {e}")
+            if _is_redis_connection_error(e):
+                logger.warning(f"Redis connection failed: {e}. Will use file-only mode.")
+            else:
+                logger.error(f"Unexpected error initializing Redis: {e}")
             self.redis_client = None
             self.redis_available = False
             self.circuit_breaker_tripped_at = time.time() * 1000
@@ -569,14 +594,13 @@ class LLMConfigLoader:
                 return None
 
             return experiment
-        except (redis.ConnectionError, redis.TimeoutError) as e:
-            # Graceful degradation
-            logger.warning(f"[AB] Failed to fetch experiment config: {e}")
-            return None
         except json.JSONDecodeError as e:
             logger.warning(f"[AB] Invalid JSON in experiment config: {e}")
             return None
         except Exception as e:
+            if _is_redis_connection_error(e):
+                logger.warning(f"[AB] Failed to fetch experiment config: {e}")
+                return None
             logger.warning(f"[AB] Failed to fetch experiment config: {e}")
             return None
 
@@ -789,13 +813,13 @@ class LLMConfigLoader:
                 return json.loads(str(content))
 
             return None
-        except (redis.ConnectionError, redis.TimeoutError) as e:
-            self._handle_redis_failure(e, config_id)
-            return None
         except json.JSONDecodeError as e:
             logger.warning(f"Invalid JSON in Redis for {config_id}: {e}")
             return None
         except Exception as e:
+            if _is_redis_connection_error(e):
+                self._handle_redis_failure(e, config_id)
+                return None
             self._handle_redis_failure(e, config_id)
             return None
 

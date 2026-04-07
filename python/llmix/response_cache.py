@@ -209,6 +209,22 @@ class TwoTierCache:
         self._l2_retry_interval: float = 30.0  # seconds before retrying after connect failure
         self._l2_consecutive_write_failures: int = 0
 
+    def _can_attempt_l2(self) -> bool:
+        if not self._l2_enabled:
+            return False
+        return self._l2_healthy or (
+            time.monotonic() - self._l2_last_fail_time >= self._l2_retry_interval
+        )
+
+    def _reset_stale_redis_client(self) -> None:
+        with self._redis_lock:
+            if self._redis_client is not None:
+                try:
+                    self._redis_client.close()
+                except Exception:
+                    pass
+            self._redis_client = None
+
     def _ensure_redis(self) -> bool:
         """Lazily connect to Redis on first L2 operation (thread-safe)."""
         if not self._l2_enabled:
@@ -231,6 +247,8 @@ class TwoTierCache:
                 )
                 client.ping()
                 self._redis_client = client
+                self._l2_healthy = True
+                self._l2_consecutive_write_failures = 0
                 logger.info("Redis L2 connected for response cache.")
                 return True
             except Exception:
@@ -273,21 +291,10 @@ class TwoTierCache:
             return CacheResult(value=l1_entry.data, tier="l1")
 
         # L2 lookup
-        if not self._l2_enabled:
+        if not self._can_attempt_l2():
             return None
         if not self._l2_healthy:
-            # Retry connection after backoff period
-            if time.monotonic() - self._l2_last_fail_time < self._l2_retry_interval:
-                return None
-            # Enough time has passed -- close stale client and attempt reconnect
-            with self._redis_lock:
-                if self._redis_client is not None:
-                    try:
-                        self._redis_client.close()
-                    except Exception:
-                        pass
-                self._redis_client = None
-                self._l2_healthy = True
+            self._reset_stale_redis_client()
 
         try:
             connected = self._ensure_redis()
@@ -340,7 +347,7 @@ class TwoTierCache:
             self._l1[key] = entry
 
         # L2 write (best-effort)
-        if self._l2_enabled and self._l2_healthy:
+        if self._can_attempt_l2():
             self._write_l2(key, entry)
 
     def _write_l2(self, key: str, entry: CachedValue) -> None:
@@ -376,7 +383,7 @@ class TwoTierCache:
         entry = CachedValue(data=value, cached_at=time.time())
         with self._l1_lock:
             self._l1[key] = entry
-        if self._l2_enabled and self._l2_healthy:
+        if self._can_attempt_l2():
             task = asyncio.ensure_future(self._awrite_l2(key, entry))
             task.add_done_callback(self._on_l2_write_done)
 

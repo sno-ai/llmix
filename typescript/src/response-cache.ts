@@ -121,6 +121,17 @@ interface RedisPayload {
   cached_at: number;
 }
 
+function normalizeCachedAtSeconds(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+    return Math.floor(Date.now() / 1000);
+  }
+  // Legacy TypeScript entries may still be stored in milliseconds.
+  if (raw > 1_000_000_000_000) {
+    return Math.floor(raw / 1000);
+  }
+  return raw;
+}
+
 // =============================================================================
 // STRATEGY HELPERS
 // =============================================================================
@@ -337,15 +348,15 @@ export class TwoTierCache {
         this.log.warn("L2 returned malformed cache entry, ignoring.");
         return null;
       }
-      const cachedAt = typeof parsed.cached_at === "number"
-        ? parsed.cached_at
-        : typeof parsed.cachedAt === "number"
-          ? parsed.cachedAt
-          : Date.now();
+      const cachedAt = normalizeCachedAtSeconds(
+        typeof parsed.cached_at === "number"
+          ? parsed.cached_at
+          : parsed.cachedAt,
+      );
       const entry: CachedValue = { data: parsed.data as string, cachedAt };
 
       // Backfill L1 with remaining TTL so entries don't outlive their Redis lifetime
-      const ageMs = Date.now() - cachedAt;
+      const ageMs = Date.now() - cachedAt * 1000;
       const remainingMs = Math.max(0, this.ttlSeconds * 1000 - ageMs);
       if (remainingMs <= 0) return null; // already expired
       this.l1.set(key, entry, { ttl: remainingMs });
@@ -362,7 +373,10 @@ export class TwoTierCache {
   // ---------------------------------------------------------------------------
 
   async set(key: string, value: string): Promise<void> {
-    const entry: CachedValue = { data: value, cachedAt: Date.now() };
+    const entry: CachedValue = {
+      data: value,
+      cachedAt: Math.floor(Date.now() / 1000),
+    };
 
     // L1 write (synchronous)
     this.l1.set(key, entry);

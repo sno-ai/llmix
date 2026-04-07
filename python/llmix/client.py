@@ -422,8 +422,12 @@ class LLMClient:
             return None
 
         fb_ctx = self._resolve_effective_params(fb_config, primary_ctx.options, fallback_config["preset"], primary_ctx.messages, time.time())
-        # Merge primary common params as base for fallback
-        fb_ctx.effective_common = {**primary_ctx.effective_common, **fb_config.get("common", {})}
+        runtime_common = primary_ctx.options.get("overrides", {}).get("common", {})
+        fb_ctx.effective_common = {
+            **primary_ctx.config.get("common", {}),
+            **fb_config.get("common", {}),
+            **runtime_common,
+        }
 
         fb_cb = ProviderCircuitBreaker.for_provider(fb_ctx.provider)
         if not await fb_cb.should_attempt_primary_async():
@@ -685,18 +689,22 @@ class LLMClient:
         usage = extract_usage(result.usage if hasattr(result, "usage") else {})
         latency_ms = int((time.time() - ctx.start_time) * 1000)
 
-        from lib.telemetry.helicone import log_cache_ratio
+        try:
+            from lib.telemetry.helicone import log_cache_ratio
+        except ImportError:
+            log_cache_ratio = None
 
-        log_cache_ratio(
-            {
-                "usage": {
-                    "prompt_tokens": usage.get("input_tokens", 0),
-                    "prompt_tokens_details": {"cached_tokens": usage.get("cached_input_tokens", 0)},
-                }
-            },
-            helicone_module,
-            "client",
-        )
+        if log_cache_ratio is not None:
+            log_cache_ratio(
+                {
+                    "usage": {
+                        "prompt_tokens": usage.get("input_tokens", 0),
+                        "prompt_tokens_details": {"cached_tokens": usage.get("cached_input_tokens", 0)},
+                    }
+                },
+                helicone_module,
+                "client",
+            )
         self._log_cache_status(ctx, usage, latency_ms)
 
         provider_success = bool(getattr(result, "success", True))

@@ -208,17 +208,81 @@ class V2CallPipeline:
             self._semaphores[provider] = sem
         return sem
 
+    def _select_api_key_locked(self, provider: str) -> str:
+        """Read key-pool state under the cross-process lock in one blocking call."""
+        with self._file_lock:
+            pool = self._key_pools.get(provider)
+            if not pool:
+                raise ValueError(
+                    f'No API key pool for provider "{provider}". '
+                    f"Set {provider.upper()}_API_KEY or {provider.upper()}_KEYS."
+                )
+            return pool.select()
+
+    def _rotate_api_key_locked(self, provider: str) -> None:
+        """Advance key-pool state under the cross-process lock."""
+        with self._file_lock:
+            pool = self._key_pools.get(provider)
+            if pool is not None:
+                pool.rotate()
+
+    def _mark_api_key_dead_locked(self, provider: str, api_key: str) -> None:
+        """Mark a failed key dead under the cross-process lock."""
+        with self._file_lock:
+            pool = self._key_pools.get(provider)
+            if pool is not None:
+                pool.mark_dead(api_key)
+
+    def _build_request_kwargs(
+        self,
+        config: dict[str, Any],
+        messages: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Build provider kwargs before dispatch and derive the effective base URL."""
+        provider: str = config.get("provider", "unknown")
+        common = config.get("common") or {}
+        kwargs: dict[str, Any] = {
+            "temperature": common.get("temperature"),
+            "top_p": common.get("top_p"),
+            "max_tokens": common.get("max_output_tokens"),
+            "seed": common.get("seed"),
+            "response_format": common.get("response_format"),
+        }
+        transform_fn = self._transform_kwargs.get(provider)
+        if transform_fn is None:
+            return kwargs
+
+        ctx: TransformKwargsContext = {
+            "model": config.get("model", ""),
+            "provider": provider,
+            "messages": messages,
+            "temperature": common.get("temperature"),
+            "top_p": common.get("top_p"),
+            "enable_thinking": common.get("enable_thinking"),
+            "provider_options": config.get("provider_options") or {},
+            "base_url": config.get("baseUrl", ""),
+        }
+        return apply_transform_kwargs(ctx, kwargs, transform_fn)
+
+    def _resolve_effective_base_url(
+        self,
+        config: dict[str, Any],
+        messages: list[dict[str, Any]],
+    ) -> str:
+        """Resolve the final base URL shape used by the provider dispatch."""
+        kwargs = self._build_request_kwargs(config, messages)
+        base_url = kwargs.get("base_url")
+        if isinstance(base_url, str) and base_url.strip():
+            return base_url
+        return str(config.get("baseUrl", "") or "")
+
     async def call(self, call_input: V2CallInput) -> V2CallResponse:
         """Execute the 19-step call flow."""
         config = call_input.config
         messages = call_input.messages
         provider: str = config.get("provider", "unknown")
         model: str = config.get("model", "unknown")
-        # Circuit breaker is per-provider (not per-baseUrl). The baseUrl is only
-        # known after kwargs transform (step 10, inside retry loop), which runs
-        # after the circuit breaker check (step 5). Provider-level scope is correct:
-        # a failing provider typically affects all its endpoints.
-        base_url = ""
+        effective_base_url = self._resolve_effective_base_url(config, messages)
 
         try:
             # Step 1: Kill Switch
@@ -235,7 +299,7 @@ class V2CallPipeline:
                     "provider": provider,
                     "model": model,
                     "messages": messages,
-                    "baseUrl": config.get("baseUrl", ""),
+                    "baseUrl": effective_base_url,
                     "enableThinking": common.get("enable_thinking"),
                     "temperature": common.get("temperature"),
                     "maxOutputTokens": common.get("max_output_tokens"),
@@ -263,7 +327,7 @@ class V2CallPipeline:
                     )
 
             # Step 5: Circuit Breaker check
-            cb = self._get_circuit_breaker(provider, base_url)
+            cb = self._get_circuit_breaker(provider, effective_base_url)
             cb.check()
 
             # Step 6: Singleflight deduplication
@@ -274,6 +338,7 @@ class V2CallPipeline:
                     "provider": provider,
                     "model": model,
                     "messages": messages,
+                    "baseUrl": effective_base_url,
                     "enableThinking": common.get("enable_thinking"),
                     "temperature": common.get("temperature"),
                     "maxOutputTokens": common.get("max_output_tokens"),
@@ -343,43 +408,14 @@ class V2CallPipeline:
 
         # Step 8: AIMD Semaphore acquire (before lock to avoid convoy/deadlock)
         await semaphore.acquire()
-
-        # Step 7: Cross-process lock — only wrap state reads, not the API call
-        await asyncio.to_thread(self._file_lock.acquire)
-        try:
-            # Step 9: Key Pool select (under lock)
-            pool = self._key_pools.get(provider)
-            if not pool:
-                raise ValueError(
-                    f'No API key pool for provider "{provider}". '
-                    f"Set {provider.upper()}_API_KEY or {provider.upper()}_KEYS."
-                )
-            api_key = pool.select()
-        finally:
-            await asyncio.to_thread(self._file_lock.release)
+        api_key: str | None = None
 
         try:
+            # Step 7: Cross-process lock — only wrap state reads, not the API call
+            api_key = await asyncio.to_thread(self._select_api_key_locked, provider)
+
             # Step 10: Provider kwargs transform
-            common = config.get("common") or {}
-            kwargs: dict[str, Any] = {
-                "temperature": common.get("temperature"),
-                "top_p": common.get("top_p"),
-                "max_tokens": common.get("max_output_tokens"),
-                "seed": common.get("seed"),
-                "response_format": common.get("response_format"),
-            }
-            transform_fn = self._transform_kwargs.get(provider)
-            if transform_fn is not None:
-                ctx: TransformKwargsContext = {
-                    "model": config.get("model", ""),
-                    "provider": provider,
-                    "messages": messages,
-                    "temperature": common.get("temperature"),
-                    "top_p": common.get("top_p"),
-                    "provider_options": config.get("provider_options") or {},
-                    "base_url": config.get("baseUrl", ""),
-                }
-                kwargs = apply_transform_kwargs(ctx, kwargs, transform_fn)
+            kwargs = self._build_request_kwargs(config, messages)
 
             # Step 11: Provider dispatch
             result = await self._dispatch(
@@ -415,21 +451,30 @@ class V2CallPipeline:
             status_code = getattr(exc, "status_code", None)
             if status_code == 429:
                 semaphore.on_rate_limit()
+                try:
+                    await asyncio.to_thread(self._rotate_api_key_locked, provider)
+                except Exception:
+                    pass
 
             # Step 14: Key Pool feedback (error) — use captured api_key
-            # Note: no explicit rotate() on 429 — select() auto-advances (round-robin),
-            # so the next retry naturally picks the next key.
-            if pool and status_code is not None:
-                if status_code in (401, 403):
-                    try:
-                        pool.mark_dead(api_key)
-                    except Exception:
-                        pass
+            if status_code in (401, 403) and api_key is not None:
+                try:
+                    await asyncio.to_thread(
+                        self._mark_api_key_dead_locked,
+                        provider,
+                        api_key,
+                    )
+                except Exception:
+                    pass
 
             # Step 15: Circuit Breaker feedback (error)
             cb.on_failure(
                 status_code,
-                network_error=(not isinstance(exc, CircuitOpenError) and status_code is None),
+                network_error=(
+                    not isinstance(exc, CircuitOpenError)
+                    and status_code is None
+                    and self._is_retryable_error(exc)
+                ),
             )
 
             raise

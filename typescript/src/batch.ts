@@ -134,10 +134,12 @@ function batchesDir(stateDir?: string): string {
   return join(base, BATCHES_SUBDIR);
 }
 
+function metadataFilename(batchId: string): string {
+  return `${Buffer.from(batchId, "utf8").toString("base64url")}.json`;
+}
+
 function metadataPath(batchId: string, stateDir?: string): string {
-  // Use a safe filename: replace colons with underscores
-  const safeId = batchId.replace(/:/g, "_");
-  return join(batchesDir(stateDir), `${safeId}.json`);
+  return join(batchesDir(stateDir), metadataFilename(batchId));
 }
 
 export async function writeMetadata(
@@ -640,6 +642,10 @@ export interface BatchSubmitOptions {
   stateDir?: string;
 }
 
+export interface BatchReadOptions {
+  stateDir?: string;
+}
+
 export class BatchProcessor {
   private readonly stateDir?: string;
 
@@ -681,9 +687,14 @@ export class BatchProcessor {
    * @param batchId - Encoded batch ID
    * @param apiKey - API key for the provider (must match the key used at submit time)
    */
-  async status(batchId: string, apiKey: string): Promise<BatchStatus> {
+  async status(
+    batchId: string,
+    apiKey: string,
+    options?: BatchReadOptions,
+  ): Promise<BatchStatus> {
     const decoded = decodeBatchId(batchId);
-    const metadata = await readMetadata(batchId, this.stateDir);
+    const effectiveStateDir = options?.stateDir ?? this.stateDir;
+    const metadata = await readMetadata(batchId, effectiveStateDir);
 
     // Verify the provided key matches the fingerprint stored at submit time
     const fp = keyFingerprint(apiKey);
@@ -711,9 +722,14 @@ export class BatchProcessor {
    * @param batchId - Encoded batch ID
    * @param apiKey - API key for the provider (must match the key used at submit time)
    */
-  async results(batchId: string, apiKey: string): Promise<BatchResult[]> {
+  async results(
+    batchId: string,
+    apiKey: string,
+    options?: BatchReadOptions,
+  ): Promise<BatchResult[]> {
     const decoded = decodeBatchId(batchId);
-    const metadata = await readMetadata(batchId, this.stateDir);
+    const effectiveStateDir = options?.stateDir ?? this.stateDir;
+    const metadata = await readMetadata(batchId, effectiveStateDir);
 
     // Verify the provided key matches the fingerprint stored at submit time
     const fp = keyFingerprint(apiKey);
@@ -738,7 +754,9 @@ export class BatchProcessor {
         throw new Error(`Unsupported batch provider: ${decoded.provider as string}`);
     }
 
-    await deleteMetadata(batchId, this.stateDir);
+    if (results.length > 0) {
+      await deleteMetadata(batchId, effectiveStateDir);
+    }
     return results;
   }
 }

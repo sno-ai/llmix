@@ -176,6 +176,54 @@ export class V2CallPipeline {
     return this.fileLock;
   }
 
+  /** Build provider kwargs before dispatch and derive the effective base URL. */
+  private buildRequestKwargs(
+    config: LLMConfig,
+    messages: unknown[],
+  ): Record<string, unknown> {
+    const provider = config.provider;
+    let kwargs: Record<string, unknown> = {
+      temperature: config.common?.temperature,
+      top_p: config.common?.topP,
+      max_tokens: config.common?.maxOutputTokens,
+      seed: config.common?.seed,
+      response_format: (config as unknown as Record<string, unknown>).responseFormat,
+    };
+    const transformFn = this.transformKwargs[provider];
+    if (!transformFn) {
+      return kwargs;
+    }
+
+    kwargs = applyTransformKwargs(
+      {
+        model: config.model,
+        provider,
+        messages,
+        temperature: config.common?.temperature,
+        topP: config.common?.topP,
+        providerOptions: config.providerOptions as ProviderOptions | undefined,
+        baseUrl: (config as unknown as Record<string, unknown>).baseUrl as string | undefined,
+        enableThinking: config.common?.enableThinking,
+      },
+      kwargs,
+      transformFn,
+    );
+    return kwargs;
+  }
+
+  /** Resolve the final base URL shape used by provider dispatch. */
+  private resolveEffectiveBaseUrl(
+    config: LLMConfig,
+    messages: unknown[],
+  ): string {
+    const kwargs = this.buildRequestKwargs(config, messages);
+    const baseUrl = kwargs.baseUrl;
+    if (typeof baseUrl === "string" && baseUrl.trim()) {
+      return baseUrl;
+    }
+    return ((config as unknown as Record<string, unknown>).baseUrl as string | undefined) ?? "";
+  }
+
   /**
    * Execute the 19-step call flow.
    */
@@ -183,11 +231,7 @@ export class V2CallPipeline {
     const { config, messages } = input;
     const provider = config.provider;
     const model = config.model;
-    // Circuit breaker is per-provider (not per-baseUrl). The baseUrl is only
-    // known after kwargs transform (step 10, inside retry loop), which runs
-    // after the circuit breaker check (step 5). Provider-level scope is correct:
-    // a failing provider typically affects all its endpoints.
-    const baseUrl = "";
+    const effectiveBaseUrl = this.resolveEffectiveBaseUrl(config, messages);
 
     try {
       // Step 1: Kill Switch
@@ -203,7 +247,7 @@ export class V2CallPipeline {
           provider,
           model,
           messages,
-          baseUrl: baseUrl || undefined,
+          baseUrl: effectiveBaseUrl || undefined,
           enableThinking: config.common?.enableThinking,
           temperature: config.common?.temperature,
           maxOutputTokens: config.common?.maxOutputTokens,
@@ -228,7 +272,7 @@ export class V2CallPipeline {
       }
 
       // Step 5: Circuit Breaker check
-      const cb = this.getCircuitBreaker(provider, baseUrl);
+      const cb = this.getCircuitBreaker(provider, effectiveBaseUrl);
       cb.check();
 
       let result: ProviderResult;
@@ -241,6 +285,7 @@ export class V2CallPipeline {
             provider,
             model,
             messages,
+            baseUrl: effectiveBaseUrl || undefined,
             enableThinking: config.common?.enableThinking,
             temperature: config.common?.temperature,
             maxOutputTokens: config.common?.maxOutputTokens,
@@ -331,30 +376,7 @@ export class V2CallPipeline {
         apiKey = pool.select();
 
         // Step 10: Provider kwargs transform
-        kwargs = {
-          temperature: config.common?.temperature,
-          top_p: config.common?.topP,
-          max_tokens: config.common?.maxOutputTokens,
-          seed: config.common?.seed,
-          response_format: (config as unknown as Record<string, unknown>).responseFormat,
-        };
-        const transformFn = this.transformKwargs[provider];
-        if (transformFn) {
-          kwargs = applyTransformKwargs(
-            {
-              model: config.model,
-              provider,
-              messages: messages as unknown[],
-              temperature: config.common?.temperature,
-              topP: config.common?.topP,
-              providerOptions: config.providerOptions as ProviderOptions | undefined,
-              baseUrl: (config as unknown as Record<string, unknown>).baseUrl as string | undefined,
-              enableThinking: config.common?.enableThinking,
-            },
-            kwargs,
-            transformFn,
-          );
-        }
+        kwargs = this.buildRequestKwargs(config, messages);
       } finally {
         // Release cross-process lock before network call
         await lock.release();
@@ -398,11 +420,11 @@ export class V2CallPipeline {
       }
 
       // Step 14: Key Pool feedback (error)
-      // Note: no explicit rotate() on 429 — select() auto-advances (round-robin),
-      // so the next retry naturally picks the next key.
       const pool = this.keyPools.get(provider);
       if (pool && apiKey && statusCode !== undefined) {
-        if (statusCode === 401 || statusCode === 403) {
+        if (statusCode === 429) {
+          pool.rotate();
+        } else if (statusCode === 401 || statusCode === 403) {
           pool.markDead(apiKey);
         }
       }
