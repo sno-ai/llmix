@@ -33,19 +33,19 @@ function getAnthropicSdk(): Promise<typeof import("@ai-sdk/anthropic")> {
 /** Options for creating an Anthropic model instance */
 export interface AnthropicModelOptions {
   /** Anthropic API key (falls back to ANTHROPIC_API_KEY env var) */
-  apiKey?: string;
+  apiKey?: string | undefined;
 
   /** Base URL override (e.g., for Helicone proxy) */
-  baseURL?: string;
+  baseURL?: string | undefined;
 
   /** Custom headers (e.g., Helicone headers) */
-  headers?: Record<string, string>;
+  headers?: Record<string, string> | undefined;
 
   /** Caching strategy */
-  cachingStrategy?: CachingStrategy;
+  cachingStrategy?: CachingStrategy | undefined;
 
   /** Provider-specific options (thinking, cacheControl, etc.) */
-  providerOptions?: AnthropicProviderOptions;
+  providerOptions?: AnthropicProviderOptions | undefined;
 }
 
 /**
@@ -73,9 +73,9 @@ export async function createAnthropicModel(
 
   const { createAnthropic } = await getAnthropicSdk();
   const anthropic = createAnthropic({
-    apiKey,
-    baseURL,
-    headers,
+    ...(apiKey ? { apiKey } : {}),
+    ...(baseURL ? { baseURL } : {}),
+    ...(headers ? { headers } : {}),
   });
 
   return anthropic(modelId) as LanguageModel;

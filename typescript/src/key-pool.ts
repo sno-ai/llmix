@@ -41,7 +41,7 @@ export class KeyPool {
     }
     for (let offset = 0; offset < this.keys.length; offset++) {
       const idx = (this.idx + offset) % this.keys.length;
-      const key = this.keys[idx];
+      const key = this.keys[idx] as string;
       if (!this.dead.has(key)) {
         this.idx = idx;
         return key;
@@ -57,7 +57,7 @@ export class KeyPool {
     }
     for (let offset = 1; offset <= this.keys.length; offset++) {
       const idx = (this.idx + offset) % this.keys.length;
-      if (!this.dead.has(this.keys[idx])) {
+      if (!this.dead.has(this.keys[idx] as string)) {
         this.idx = idx;
         return;
       }

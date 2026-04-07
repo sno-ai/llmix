@@ -77,9 +77,9 @@ export interface V2CallResponse {
   provider: string;
   usage: LLMUsage;
   success: boolean;
-  error?: string;
-  thinkingContent?: string;
-  cacheHit?: CacheHitTier;
+  error?: string | undefined;
+  thinkingContent?: string | undefined;
+  cacheHit?: CacheHitTier | undefined;
 }
 
 /** Configuration for the v2 pipeline. */

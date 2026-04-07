@@ -205,7 +205,7 @@ async function openaiSubmit(
   for (let i = 0; i < prompts.length; i++) {
     const messages: Array<{ role: string; content: string }> = [];
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompts[i] });
+    messages.push({ role: "user", content: prompts[i] as string });
     const body: Record<string, unknown> = { model, messages, ...params };
     const req: OpenAIBatchRequest = {
       custom_id: `req-${i}`,
@@ -650,7 +650,9 @@ export class BatchProcessor {
   private readonly stateDir?: string;
 
   constructor(options?: { stateDir?: string }) {
-    this.stateDir = options?.stateDir;
+    if (options?.stateDir !== undefined) {
+      this.stateDir = options.stateDir;
+    }
   }
 
   /**

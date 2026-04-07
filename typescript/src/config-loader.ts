@@ -285,7 +285,7 @@ export class LLMConfigLoader {
    * @throws ConfigNotFoundError if no config found in cascade (should never happen with valid base)
    */
   async loadConfig(options: LoadConfigOptions): Promise<ResolvedLLMConfig> {
-    const scope = options.scope ?? this.config.defaultScope;
+    const scope = options.scope ?? this.config.defaultScope ?? DEFAULT_SCOPE;
     const { module, preset } = options;
     let version = options.version ?? 1;
     let forceRefresh = options.forceRefresh ?? false;
@@ -678,7 +678,7 @@ export class LLMConfigLoader {
 
     try {
       const redisKey = this.buildRedisKey(configId);
-      await this.redisClient.setex(redisKey, this.config.redisTtlSeconds, serialized);
+      await this.redisClient.setex(redisKey, this.config.redisTtlSeconds ?? DEFAULT_REDIS_TTL_SECONDS, serialized);
       this.logger.debug(`Stored in Redis: ${redisKey}`);
     } catch (error) {
       this.logger.debug(`Failed to store in Redis (non-critical): ${error}`);

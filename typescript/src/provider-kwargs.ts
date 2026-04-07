@@ -19,12 +19,12 @@ import type { ProviderOptions } from "./types";
 export interface TransformKwargsContext {
   model: string;
   provider: string;
-  messages?: unknown[];
-  temperature?: number;
-  topP?: number;
-  providerOptions?: ProviderOptions;
-  baseUrl?: string;
-  enableThinking?: boolean;
+  messages?: unknown[] | undefined;
+  temperature?: number | undefined;
+  topP?: number | undefined;
+  providerOptions?: ProviderOptions | undefined;
+  baseUrl?: string | undefined;
+  enableThinking?: boolean | undefined;
 }
 
 export type TransformKwargsCallback = (

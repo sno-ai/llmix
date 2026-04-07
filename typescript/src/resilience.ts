@@ -366,11 +366,11 @@ export function isRetryable(statusCode: number): boolean {
 }
 
 export interface RetryPolicyOptions {
-  maxRetries?: number;
-  baseMs?: number;
-  maxDelayMs?: number;
-  jitterMs?: number;
-  maxRetryAfterMs?: number;
+  maxRetries?: number | undefined;
+  baseMs?: number | undefined;
+  maxDelayMs?: number | undefined;
+  jitterMs?: number | undefined;
+  maxRetryAfterMs?: number | undefined;
 }
 
 export class RetryPolicy {

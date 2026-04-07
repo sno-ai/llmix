@@ -58,13 +58,13 @@ export interface CachingConfig {
    *
    * Example: "extraction-v1", "search-2024"
    */
-  key?: string;
+  key?: string | undefined;
 
   /** TTL in seconds for response cache entries (default: 3600). Applies to L1 and L2. */
-  ttl?: number;
+  ttl?: number | undefined;
 
   /** Maximum L1 cache entries (default: 1000). */
-  maxItems?: number;
+  maxItems?: number | undefined;
 }
 
 // =============================================================================
@@ -89,31 +89,31 @@ export interface LLMConfigLoaderConfig {
   configDir: string;
 
   /** Redis URL - optional, works without Redis */
-  redisUrl?: string;
+  redisUrl?: string | undefined;
 
   /** LRU cache max size (default: 100) */
-  cacheSize?: number;
+  cacheSize?: number | undefined;
 
   /** Local cache TTL in seconds (default: 21600 = 6 hours) */
-  cacheTtlSeconds?: number;
+  cacheTtlSeconds?: number | undefined;
 
   /** Redis cache TTL in seconds (default: 86400 = 24 hours) */
-  redisTtlSeconds?: number;
+  redisTtlSeconds?: number | undefined;
 
   /** Redis connection timeout in ms (default: 5000) */
-  redisConnectTimeoutMs?: number;
+  redisConnectTimeoutMs?: number | undefined;
 
   /** Redis command timeout in ms (default: 5000) */
-  redisCommandTimeoutMs?: number;
+  redisCommandTimeoutMs?: number | undefined;
 
   /** Max retries per Redis request (default: 3) */
-  redisMaxRetries?: number;
+  redisMaxRetries?: number | undefined;
 
   /** Default scope for config resolution (default: "default") */
-  defaultScope?: string;
+  defaultScope?: string | undefined;
 
   /** Custom logger - uses console if not provided */
-  logger?: LLMConfigLoaderLogger;
+  logger?: LLMConfigLoaderLogger | undefined;
 }
 
 // =============================================================================
@@ -157,7 +157,7 @@ export interface TimeoutConfig {
    * After this time, the request is aborted.
    * Default: 2 (minutes)
    */
-  totalTime?: number;
+  totalTime?: number | undefined;
 
   /**
    * Max wait time for first chunk in streaming responses (minutes)
@@ -166,7 +166,7 @@ export interface TimeoutConfig {
    * Useful for detecting slow/stuck models early.
    * Default: undefined (uses totalTime)
    */
-  streamFirstChunkTime?: number;
+  streamFirstChunkTime?: number | undefined;
 }
 
 // =============================================================================
@@ -189,41 +189,41 @@ export type ProviderOrUnknown = Provider | "unknown";
  */
 export interface CommonParams {
   /** Max tokens to generate */
-  maxOutputTokens?: number;
+  maxOutputTokens?: number | undefined;
 
   /** Temperature 0.0-2.0 (don't use with topP) */
-  temperature?: number;
+  temperature?: number | undefined;
 
   /** Top-p sampling 0.0-1.0 (don't use with temperature) */
-  topP?: number;
+  topP?: number | undefined;
 
   /** Sample from top K options */
-  topK?: number;
+  topK?: number | undefined;
 
   /** Reduce repetition of existing info */
-  presencePenalty?: number;
+  presencePenalty?: number | undefined;
 
   /** Reduce reuse of identical phrases */
-  frequencyPenalty?: number;
+  frequencyPenalty?: number | undefined;
 
   /** Sequences that halt generation */
-  stopSequences?: string[];
+  stopSequences?: string[] | undefined;
 
   /** Seed for deterministic results */
-  seed?: number;
+  seed?: number | undefined;
 
   /** Retry attempts (default: 2) */
-  maxRetries?: number;
+  maxRetries?: number | undefined;
 
   /** Enable/disable thinking mode (provider-specific, e.g. Qwen3 on DeepInfra) */
-  enableThinking?: boolean;
+  enableThinking?: boolean | undefined;
 
   /**
    * Preserve <think>...</think> blocks in response content.
    * When true, thinking blocks are NOT stripped and thinkingContent is not populated.
    * Default: false (thinking blocks are stripped automatically).
    */
-  keepThinkingOutput?: boolean;
+  keepThinkingOutput?: boolean | undefined;
 }
 
 // =============================================================================
@@ -237,52 +237,52 @@ export interface CommonParams {
  */
 export interface OpenAIProviderOptions {
   /** Reasoning effort for reasoning models (GPT-5) */
-  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
 
   /** Enable parallel tool calls */
-  parallelToolCalls?: boolean;
+  parallelToolCalls?: boolean | undefined;
 
   /** User identifier for abuse detection */
-  user?: string;
+  user?: string | undefined;
 
   /** Enable logprobs (boolean or number of top logprobs) */
-  logprobs?: boolean | number;
+  logprobs?: boolean | number | undefined;
 
   /** Modify likelihood of specific tokens */
-  logitBias?: Record<number, number>;
+  logitBias?: Record<number, number> | undefined;
 
   /** Enable structured outputs */
-  structuredOutputs?: boolean;
+  structuredOutputs?: boolean | undefined;
 
   /** Strict JSON schema validation */
-  strictJsonSchema?: boolean;
+  strictJsonSchema?: boolean | undefined;
 
   /** Max completion tokens (overrides maxOutputTokens for reasoning models) */
-  maxCompletionTokens?: number;
+  maxCompletionTokens?: number | undefined;
 
   /** Enable storage of conversation */
-  store?: boolean;
+  store?: boolean | undefined;
 
   /** Metadata for stored conversations */
-  metadata?: Record<string, string>;
+  metadata?: Record<string, string> | undefined;
 
   /** Prediction mode parameters */
-  prediction?: Record<string, unknown>;
+  prediction?: Record<string, unknown> | undefined;
 
   /** Service tier selection */
-  serviceTier?: "auto" | "flex" | "priority" | "default";
+  serviceTier?: "auto" | "flex" | "priority" | "default" | undefined;
 
   /** Text verbosity level */
-  textVerbosity?: "low" | "medium" | "high";
+  textVerbosity?: "low" | "medium" | "high" | undefined;
 
   /** Prompt cache key */
-  promptCacheKey?: string;
+  promptCacheKey?: string | undefined;
 
   /** Prompt cache retention policy */
-  promptCacheRetention?: "in_memory" | "24h";
+  promptCacheRetention?: "in_memory" | "24h" | undefined;
 
   /** Safety identifier for policy-violating users */
-  safetyIdentifier?: string;
+  safetyIdentifier?: string | undefined;
 }
 
 /**
@@ -293,7 +293,7 @@ export interface AnthropicThinkingConfig {
   type: "enabled" | "disabled";
 
   /** Token budget for thinking (min 1024 for extended thinking) */
-  budgetTokens?: number;
+  budgetTokens?: number | undefined;
 }
 
 /**
@@ -304,7 +304,7 @@ export interface AnthropicCacheControl {
   type: "ephemeral";
 
   /** Cache TTL (e.g., "1h") */
-  ttl?: string;
+  ttl?: string | undefined;
 }
 
 /**
@@ -314,25 +314,25 @@ export interface AnthropicCacheControl {
  */
 export interface AnthropicProviderOptions {
   /** Extended thinking configuration */
-  thinking?: AnthropicThinkingConfig;
+  thinking?: AnthropicThinkingConfig | undefined;
 
   /** Cache control configuration */
-  cacheControl?: AnthropicCacheControl;
+  cacheControl?: AnthropicCacheControl | undefined;
 
   /** Disable parallel tool use */
-  disableParallelToolUse?: boolean;
+  disableParallelToolUse?: boolean | undefined;
 
   /** Send reasoning in response */
-  sendReasoning?: boolean;
+  sendReasoning?: boolean | undefined;
 
   /** Effort level */
-  effort?: "high" | "medium" | "low";
+  effort?: "high" | "medium" | "low" | undefined;
 
   /** Enable tool streaming */
-  toolStreaming?: boolean;
+  toolStreaming?: boolean | undefined;
 
   /** Structured output mode */
-  structuredOutputMode?: "outputFormat" | "jsonTool" | "auto";
+  structuredOutputMode?: "outputFormat" | "jsonTool" | "auto" | undefined;
 }
 
 /**
@@ -340,13 +340,13 @@ export interface AnthropicProviderOptions {
  */
 export interface GoogleThinkingConfig {
   /** Thinking level (Gemini 3) */
-  thinkingLevel?: "low" | "high";
+  thinkingLevel?: "low" | "high" | undefined;
 
   /** Thinking budget in tokens (Gemini 2.5) */
-  thinkingBudget?: number;
+  thinkingBudget?: number | undefined;
 
   /** Include thinking in response */
-  includeThoughts?: boolean;
+  includeThoughts?: boolean | undefined;
 }
 
 /**
@@ -367,19 +367,19 @@ export interface GoogleSafetySetting {
  */
 export interface GoogleProviderOptions {
   /** Thinking configuration */
-  thinkingConfig?: GoogleThinkingConfig;
+  thinkingConfig?: GoogleThinkingConfig | undefined;
 
   /** Cached content identifier */
-  cachedContent?: string;
+  cachedContent?: string | undefined;
 
   /** Enable structured outputs */
-  structuredOutputs?: boolean;
+  structuredOutputs?: boolean | undefined;
 
   /** Safety settings array */
-  safetySettings?: GoogleSafetySetting[];
+  safetySettings?: GoogleSafetySetting[] | undefined;
 
   /** Response modalities */
-  responseModalities?: string[];
+  responseModalities?: string[] | undefined;
 }
 
 /**
@@ -397,7 +397,7 @@ export interface DeepSeekThinkingConfig {
  */
 export interface DeepSeekProviderOptions {
   /** Thinking configuration (enables reasoning mode) */
-  thinking?: DeepSeekThinkingConfig;
+  thinking?: DeepSeekThinkingConfig | undefined;
 }
 
 /**
@@ -405,13 +405,13 @@ export interface DeepSeekProviderOptions {
  */
 export interface SnogpuProviderOptions {
   /** Enable thinking mode for Qwen3.5. Default: false. */
-  enableThinking?: boolean;
+  enableThinking?: boolean | undefined;
 
   /** Token budget for thinking/reasoning. Only applies when enableThinking is true. */
-  thinkingBudget?: number;
+  thinkingBudget?: number | undefined;
 
   /** GPU routing path: 'extract' (GPU 0, SMR) or 'reason' (GPU 1, EKG). Omit for legacy /v1. */
-  gpuPath?: string;
+  gpuPath?: string | undefined;
 }
 
 /**
@@ -420,11 +420,11 @@ export interface SnogpuProviderOptions {
  * Keys match AI SDK v6 providerOptions structure.
  */
 export interface ProviderOptions {
-  openai?: OpenAIProviderOptions;
-  anthropic?: AnthropicProviderOptions;
-  google?: GoogleProviderOptions;
-  deepseek?: DeepSeekProviderOptions;
-  snogpu?: SnogpuProviderOptions;
+  openai?: OpenAIProviderOptions | undefined;
+  anthropic?: AnthropicProviderOptions | undefined;
+  google?: GoogleProviderOptions | undefined;
+  deepseek?: DeepSeekProviderOptions | undefined;
+  snogpu?: SnogpuProviderOptions | undefined;
 }
 
 /**
@@ -441,10 +441,10 @@ export interface LLMConfig {
   model: string;
 
   /** Common AI SDK v6 parameters */
-  common?: CommonParams;
+  common?: CommonParams | undefined;
 
   /** Provider-specific options */
-  providerOptions?: ProviderOptions;
+  providerOptions?: ProviderOptions | undefined;
 
   /**
    * Timeout configuration for this preset
@@ -452,16 +452,16 @@ export interface LLMConfig {
    * Per-preset timeout allows reasoning models to have longer timeouts.
    * Fallback chain: preset.timeout → clientConfig.callTimeoutMs → 120000ms
    */
-  timeout?: TimeoutConfig;
+  timeout?: TimeoutConfig | undefined;
 
   /** Human-readable description (metadata, not passed to LLM) */
-  description?: string;
+  description?: string | undefined;
 
   /** Mark config as deprecated (metadata) */
-  deprecated?: boolean;
+  deprecated?: boolean | undefined;
 
   /** Tags for organization/filtering (metadata) */
-  tags?: string[];
+  tags?: string[] | undefined;
 
   /**
    * Caching strategy for this preset
@@ -476,13 +476,13 @@ export interface LLMConfig {
    *
    * @default "gateway"
    */
-  caching?: CachingConfig;
+  caching?: CachingConfig | undefined;
 
   /**
    * @deprecated Use caching.strategy instead
    * Legacy flag: true maps to caching.strategy="native"
    */
-  bypassGateway?: boolean;
+  bypassGateway?: boolean | undefined;
 }
 
 /**
@@ -518,19 +518,19 @@ export interface ResolvedLLMConfig extends LLMConfig {
  */
 export interface LoadConfigOptions {
   /** Deployment scope (default: "default") */
-  scope?: string;
+  scope?: string | undefined;
 
   /** Functional module (e.g., "hrkg", "memobase") */
   module: string;
 
   /** User ID for user-specific overrides ("_" for global) */
-  userId?: string;
+  userId?: string | undefined;
 
   /** Config preset name (e.g., "extraction", "search") */
   preset: string;
 
   /** Config version (default: 1) */
-  version?: number;
+  version?: number | undefined;
 
   /**
    * Bypass LRU cache and load fresh from file
@@ -538,7 +538,7 @@ export interface LoadConfigOptions {
    * Used by A/B experiment switching to ensure fresh config when experiment is active.
    * @default false
    */
-  forceRefresh?: boolean;
+  forceRefresh?: boolean | undefined;
 }
 
 // =============================================================================
@@ -571,43 +571,43 @@ export interface ExperimentConfig {
  */
 export interface TelemetryContext {
   /** User identifier */
-  userId?: string;
+  userId?: string | undefined;
 
   /** Workspace identifier */
-  workspaceId?: string;
+  workspaceId?: string | undefined;
 
   /** Project identifier */
-  projectId?: string;
+  projectId?: string | undefined;
 
   /** Feature name for tracking */
-  featureName?: string;
+  featureName?: string | undefined;
 
   /** Trace ID for correlation across services */
-  traceId?: string;
+  traceId?: string | undefined;
 
   /** Session ID for grouping related LLM calls */
-  sessionId?: string;
+  sessionId?: string | undefined;
 
   /** Conversation/thread ID for multi-turn conversations */
-  conversationId?: string;
+  conversationId?: string | undefined;
 
   /** Turn number in conversation (1, 2, 3...) */
-  turnNumber?: number;
+  turnNumber?: number | undefined;
 
   /** Experiment ID for A/B testing */
-  experimentId?: string;
+  experimentId?: string | undefined;
 
   /** Variant ID within experiment (control/treatment) */
-  variantId?: string;
+  variantId?: string | undefined;
 
   /** Prompt template version for iteration tracking */
-  promptVersion?: string;
+  promptVersion?: string | undefined;
 
   /** Whether a fallback was used (e.g., different model, default value) */
-  fallbackUsed?: boolean;
+  fallbackUsed?: boolean | undefined;
 
   /** Reason for fallback if used */
-  fallbackReason?: string;
+  fallbackReason?: string | undefined;
 }
 
 // =============================================================================
@@ -657,16 +657,16 @@ export interface LLMCallEventData {
   success: boolean;
 
   /** Error message if failed */
-  errorMessage?: string;
+  errorMessage?: string | undefined;
 
   /** Telemetry context passed by caller */
-  context?: TelemetryContext;
+  context?: TelemetryContext | undefined;
 
   /** Input messages (for tracing systems that capture payloads) */
-  messages?: unknown[];
+  messages?: unknown[] | undefined;
 
   /** Output text (for tracing systems that capture payloads) */
-  output?: string;
+  output?: string | undefined;
 }
 
 /**
@@ -720,16 +720,16 @@ export interface LLMixTelemetryProvider {
  */
 export interface RuntimeOverrides {
   /** Override model (transitional support) */
-  model?: string;
+  model?: string | undefined;
 
   /** Override common parameters */
-  common?: Partial<CommonParams>;
+  common?: Partial<CommonParams> | undefined;
 
   /** Override provider options */
-  providerOptions?: Partial<ProviderOptions>;
+  providerOptions?: Partial<ProviderOptions> | undefined;
 
   /** Bypass AI Gateway for native provider features (e.g., OpenAI prompt caching) */
-  bypassGateway?: boolean;
+  bypassGateway?: boolean | undefined;
 }
 
 /**
@@ -758,26 +758,26 @@ export interface CallOptions {
   messages: unknown[];
 
   /** Deployment scope (default: defaultScope from config) */
-  scope?: string;
+  scope?: string | undefined;
 
   /** User ID for per-user config overrides */
-  userId?: string;
+  userId?: string | undefined;
 
   /** Config version (default: 1) */
-  version?: number;
+  version?: number | undefined;
 
   /** Runtime overrides (merged with config) */
-  overrides?: RuntimeOverrides;
+  overrides?: RuntimeOverrides | undefined;
 
   /** Telemetry context */
-  telemetry?: TelemetryContext;
+  telemetry?: TelemetryContext | undefined;
 
   /**
    * Cache key for native prompt caching (OpenAI/Anthropic).
    * Usually obtained from Promptix: prompt.promptCacheKey
    * Format: "{category}:{promptName}:v{version}"
    */
-  promptCacheKey?: string;
+  promptCacheKey?: string | undefined;
 }
 
 // =============================================================================
@@ -798,7 +798,7 @@ export interface LLMUsage {
   totalTokens: number;
 
   /** Cached input tokens (provider-dependent, may be undefined) */
-  cachedInputTokens?: number;
+  cachedInputTokens?: number | undefined;
 }
 
 /**
@@ -824,19 +824,19 @@ export interface LLMResponse {
    * The resolved config that was used
    * LH: undefined when config load fails (before config is resolved)
    */
-  config?: ResolvedLLMConfig;
+  config?: ResolvedLLMConfig | undefined;
 
   /** Whether the call succeeded */
   success: boolean;
 
   /** Error message if success is false */
-  error?: string;
+  error?: string | undefined;
 
   /** Captured thinking content stripped from response (when keepThinkingOutput is false) */
-  thinkingContent?: string;
+  thinkingContent?: string | undefined;
 
   /** Indicates which cache tier served this response, if any. */
-  cacheHit?: CacheHitTier;
+  cacheHit?: CacheHitTier | undefined;
 }
 
 /**

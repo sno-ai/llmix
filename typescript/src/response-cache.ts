@@ -99,14 +99,14 @@ export interface CacheKeyParams {
   provider: string;
   model: string;
   messages: unknown[];
-  baseUrl?: string | null;
-  enableThinking?: boolean | null;
-  temperature?: number | null;
-  maxOutputTokens?: number | null;
-  responseFormat?: unknown | null;
-  providerOptions?: Record<string, unknown> | null;
-  seed?: number | null;
-  topP?: number | null;
+  baseUrl?: string | null | undefined;
+  enableThinking?: boolean | null | undefined;
+  temperature?: number | null | undefined;
+  maxOutputTokens?: number | null | undefined;
+  responseFormat?: unknown | null | undefined;
+  providerOptions?: Record<string, unknown> | null | undefined;
+  seed?: number | null | undefined;
+  topP?: number | null | undefined;
 }
 
 interface CachedValue {

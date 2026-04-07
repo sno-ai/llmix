@@ -75,17 +75,17 @@ const defaultLogger: LLMConfigLoaderLogger = {
 // =============================================================================
 
 interface HeliconeHeaderOptions {
-  apiKey?: string;
-  properties?: Record<string, string | number | boolean | undefined>;
+  apiKey?: string | undefined;
+  properties?: Record<string, string | number | boolean | undefined> | undefined;
 }
 
 interface CacheRatioPayload {
   usage?: {
-    prompt_tokens?: number;
+    prompt_tokens?: number | undefined;
     prompt_tokens_details?: {
-      cached_tokens?: number;
-    };
-  };
+      cached_tokens?: number | undefined;
+    } | undefined;
+  } | undefined;
 }
 
 function isHeliconeEnabled(apiKey?: string): boolean {
@@ -141,17 +141,17 @@ function logCacheRatio(payload: CacheRatioPayload, module = "llmix", source = "c
  */
 export interface ProviderUrlConfig {
   /** OpenAI base URL override */
-  openaiBaseUrl?: string;
+  openaiBaseUrl?: string | undefined;
   /** Anthropic base URL override */
-  anthropicBaseUrl?: string;
+  anthropicBaseUrl?: string | undefined;
   /** Google/Gemini base URL override */
-  geminiBaseUrl?: string;
+  geminiBaseUrl?: string | undefined;
   /** OpenRouter base URL override */
-  openRouterBaseUrl?: string;
+  openRouterBaseUrl?: string | undefined;
   /** OpenRouter API key (falls back to env var) */
-  openRouterApiKey?: string;
+  openRouterApiKey?: string | undefined;
   /** Whether Cloudflare AI Gateway is being used */
-  useCfAiGateway?: boolean;
+  useCfAiGateway?: boolean | undefined;
 }
 
 /**
@@ -162,9 +162,9 @@ export interface ProviderUrlConfig {
  */
 export interface HeliconeConfig {
   /** Helicone API key (required for native caching) */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /** Helicone base URL (default: http://sno-main-1:8585) */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
 }
 
 /**
@@ -173,13 +173,13 @@ export interface HeliconeConfig {
  */
 export interface ApiKeysConfig {
   /** OpenAI API key */
-  openai?: string;
+  openai?: string | undefined;
   /** Anthropic API key */
-  anthropic?: string;
+  anthropic?: string | undefined;
   /** Google Generative AI API key */
-  google?: string;
+  google?: string | undefined;
   /** OpenRouter API key (used for DeepSeek) */
-  openrouter?: string;
+  openrouter?: string | undefined;
 }
 
 /**
@@ -190,7 +190,7 @@ export interface LLMClientConfig {
   loader: LLMConfigLoader;
 
   /** Default scope for config resolution (default: uses loader's defaultScope) */
-  defaultScope?: string;
+  defaultScope?: string | undefined;
 
   /**
    * Optional telemetry provider for tracking LLM calls
@@ -198,44 +198,44 @@ export interface LLMClientConfig {
    * If not provided, telemetry is disabled (no external dependencies).
    * Inject your implementation to integrate with PostHog or other systems.
    */
-  telemetry?: LLMixTelemetryProvider;
+  telemetry?: LLMixTelemetryProvider | undefined;
 
   /**
    * Provider URL configuration for CF AI Gateway support
    * If not provided, uses provider defaults (direct API calls)
    */
-  providerUrls?: ProviderUrlConfig;
+  providerUrls?: ProviderUrlConfig | undefined;
 
   /**
    * Helicone configuration for native prompt caching
    * Required for caching.strategy = "native" with OpenAI
    */
-  helicone?: HeliconeConfig;
+  helicone?: HeliconeConfig | undefined;
 
   /**
    * API keys for LLM providers
    * If not provided, falls back to environment variables
    */
-  apiKeys?: ApiKeysConfig;
+  apiKeys?: ApiKeysConfig | undefined;
 
   /**
    * Enable telemetry payload capture for debugging
    * When true, full messages/output are included in telemetry
    * Default: false (env fallback: LLMIX_CAPTURE_TELEMETRY_PAYLOAD)
    */
-  captureTelemetryPayload?: boolean;
+  captureTelemetryPayload?: boolean | undefined;
 
   /**
    * Call timeout in milliseconds
    * Prevents hanging requests from tying up resources
    * Default: 120000 (env fallback: LLMIX_CALL_TIMEOUT_MS)
    */
-  callTimeoutMs?: number;
+  callTimeoutMs?: number | undefined;
 
   /**
    * Custom logger - uses console if not provided
    */
-  logger?: LLMConfigLoaderLogger;
+  logger?: LLMConfigLoaderLogger | undefined;
 }
 
 /**
@@ -251,19 +251,19 @@ interface ParsedPreset {
  * Token details are now nested under inputTokenDetails/outputTokenDetails
  */
 interface AISDKUsage {
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+  totalTokens?: number | undefined;
   /** Input token details (v6 structure) */
   inputTokenDetails?: {
     /** Cached input tokens (prompt caching) - was cachedInputTokens in v5 */
-    cacheReadTokens?: number;
-  };
+    cacheReadTokens?: number | undefined;
+  } | undefined;
   /** Output token details (v6 structure) */
   outputTokenDetails?: {
     /** Reasoning tokens (o-series models) - was reasoningTokens in v5 */
-    reasoningTokens?: number;
-  };
+    reasoningTokens?: number | undefined;
+  } | undefined;
 }
 
 // =============================================================================
@@ -375,17 +375,17 @@ function resolveCachingStrategy(
  */
 interface ProviderRoutingOptions {
   /** Provider URL config for CF AI Gateway */
-  urls?: ProviderUrlConfig;
+  urls?: ProviderUrlConfig | undefined;
   /** API keys (falls back to env vars) */
-  apiKeys?: ApiKeysConfig;
+  apiKeys?: ApiKeysConfig | undefined;
   /** Helicone config for native caching */
-  helicone?: HeliconeConfig;
+  helicone?: HeliconeConfig | undefined;
   /** Caching strategy */
-  cachingStrategy?: CachingStrategy;
+  cachingStrategy?: CachingStrategy | undefined;
   /** Cache key for native strategy */
-  cacheKey?: string;
+  cacheKey?: string | undefined;
   /** Module name for Helicone tracking (default: "llmix") */
-  module?: string;
+  module?: string | undefined;
 }
 
 /**
@@ -476,7 +476,7 @@ function getProviderModel(
 
       // Gateway or disabled: use CF AI Gateway or direct
       const baseURL = cachingStrategy === "disabled" ? undefined : urls?.openaiBaseUrl;
-      const openai = createOpenAI({ apiKey, baseURL });
+      const openai = createOpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
       return openai(model) as unknown as LanguageModel;
     }
     case "anthropic": {
@@ -489,7 +489,7 @@ function getProviderModel(
       // LH: Native caching for Anthropic uses direct API (Anthropic's built-in caching)
       // Gateway or disabled: use CF AI Gateway or direct
       const baseURL = cachingStrategy === "disabled" ? undefined : urls?.anthropicBaseUrl;
-      const anthropic = createAnthropic({ apiKey, baseURL });
+      const anthropic = createAnthropic({ apiKey, ...(baseURL ? { baseURL } : {}) });
       return anthropic(model) as unknown as LanguageModel;
     }
     case "google": {
@@ -502,7 +502,7 @@ function getProviderModel(
       // Gateway or disabled: use CF AI Gateway or direct
       // Note: geminiBaseUrl includes /v1beta suffix when using CF AI Gateway
       const baseURL = cachingStrategy === "disabled" ? undefined : urls?.geminiBaseUrl;
-      const google = createGoogleGenerativeAI({ apiKey, baseURL });
+      const google = createGoogleGenerativeAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
       return google(model) as unknown as LanguageModel;
     }
     case "deepseek": {
@@ -595,11 +595,11 @@ function extractUsage(usage: AISDKUsage | undefined): LLMUsage {
  */
 export class LLMClient {
   private readonly loader: LLMConfigLoader;
-  private readonly defaultScope?: string;
-  private readonly telemetry?: LLMixTelemetryProvider;
-  private readonly providerUrls?: ProviderUrlConfig;
-  private readonly helicone?: HeliconeConfig;
-  private readonly apiKeys?: ApiKeysConfig;
+  private readonly defaultScope?: string | undefined;
+  private readonly telemetry?: LLMixTelemetryProvider | undefined;
+  private readonly providerUrls?: ProviderUrlConfig | undefined;
+  private readonly helicone?: HeliconeConfig | undefined;
+  private readonly apiKeys?: ApiKeysConfig | undefined;
   private readonly captureTelemetryPayload: boolean;
   private readonly callTimeoutMs: number;
   private readonly logger: LLMConfigLoaderLogger;
@@ -939,15 +939,15 @@ export class LLMClient {
    * Logs failures but never throws.
    */
   private async trackTelemetryNonBlocking(params: {
-    config?: ResolvedLLMConfig;
+    config?: ResolvedLLMConfig | undefined;
     effectiveModel: string;
     usage: LLMUsage;
     latencyMs: number;
     success: boolean;
-    errorMessage?: string;
+    errorMessage?: string | undefined;
     messages: unknown[];
-    output?: string;
-    telemetryContext?: TelemetryContext;
+    output?: string | undefined;
+    telemetryContext?: TelemetryContext | undefined;
   }): Promise<void> {
     // Skip if no telemetry provider or no config (config load failure)
     if (!this.telemetry || !params.config) {
@@ -991,10 +991,10 @@ export class LLMClient {
     usage: LLMUsage;
     latencyMs: number;
     success: boolean;
-    errorMessage?: string;
+    errorMessage?: string | undefined;
     messages: unknown[];
-    output?: string;
-    telemetryContext?: TelemetryContext;
+    output?: string | undefined;
+    telemetryContext?: TelemetryContext | undefined;
   }): Promise<void> {
     // Skip if no telemetry provider configured
     if (!this.telemetry) {
