@@ -71,13 +71,13 @@ export function openaiTransformKwargs(
   }
 
   const result = { ...kwargs };
-  delete result.temperature;
-  delete result.top_p;
+  delete result["temperature"];
+  delete result["top_p"];
 
   // Reasoning models use max_completion_tokens, not max_tokens
-  if (result.max_tokens !== undefined && result.max_completion_tokens === undefined) {
-    result.max_completion_tokens = result.max_tokens;
-    delete result.max_tokens;
+  if (result["max_tokens"] !== undefined && result["max_completion_tokens"] === undefined) {
+    result["max_completion_tokens"] = result["max_tokens"];
+    delete result["max_tokens"];
   }
 
   return result;
@@ -98,13 +98,13 @@ export function openrouterTransformKwargs(
   kwargs: Record<string, unknown>
 ): Record<string, unknown> {
   const result = { ...kwargs };
-  const raw = result.extra_body;
+  const raw = result["extra_body"];
   const extraBody: Record<string, unknown> =
     typeof raw === "object" && raw !== null && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
       : {};
   if (!("provider" in extraBody)) {
-    result.extra_body = { ...extraBody, provider: OPENROUTER_DEFAULT_PROVIDER };
+    result["extra_body"] = { ...extraBody, provider: OPENROUTER_DEFAULT_PROVIDER };
   }
   return result;
 }
@@ -132,13 +132,13 @@ export function geminiTransformKwargs(
   const thinkingBudget: number | undefined =
     explicitBudget ?? (ctx.enableThinking ? undefined : 0);
 
-  const rawTc = result.thinkingConfig;
+  const rawTc = result["thinkingConfig"];
   const thinkingConfig: Record<string, unknown> =
     typeof rawTc === "object" && rawTc !== null && !Array.isArray(rawTc)
       ? (rawTc as Record<string, unknown>)
       : {};
   if (!("thinkingBudget" in thinkingConfig) && thinkingBudget !== undefined) {
-    result.thinkingConfig = { ...thinkingConfig, thinkingBudget };
+    result["thinkingConfig"] = { ...thinkingConfig, thinkingBudget };
   }
 
   return result;
@@ -177,9 +177,9 @@ export function snogpuTransformKwargs(
     if (gpuPath.includes("..") || !/^[a-zA-Z0-9_/-]+$/.test(gpuPath)) {
       throw new Error(`Invalid gpuPath: "${gpuPath}"`);
     }
-    result.baseUrl = `${base}/${gpuPath}/v1`;
+    result["baseUrl"] = `${base}/${gpuPath}/v1`;
   } else {
-    result.baseUrl = `${base}/v1`;
+    result["baseUrl"] = `${base}/v1`;
   }
 
   return result;

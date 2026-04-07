@@ -344,16 +344,16 @@ export class TwoTierCache {
 
       // Backfill L1 (validate shape from Redis, accept both camelCase and snake_case for cross-language parity)
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      if (typeof parsed?.data !== "string") {
+      if (typeof parsed?.["data"] !== "string") {
         this.log.warn("L2 returned malformed cache entry, ignoring.");
         return null;
       }
       const cachedAt = normalizeCachedAtSeconds(
-        typeof parsed.cached_at === "number"
-          ? parsed.cached_at
-          : parsed.cachedAt,
+        typeof parsed["cached_at"] === "number"
+          ? parsed["cached_at"]
+          : parsed["cachedAt"],
       );
-      const entry: CachedValue = { data: parsed.data as string, cachedAt };
+      const entry: CachedValue = { data: parsed["data"] as string, cachedAt };
 
       // Backfill L1 with remaining TTL so entries don't outlive their Redis lifetime
       const ageMs = Date.now() - cachedAt * 1000;

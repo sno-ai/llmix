@@ -187,7 +187,7 @@ export class V2CallPipeline {
       top_p: config.common?.topP,
       max_tokens: config.common?.maxOutputTokens,
       seed: config.common?.seed,
-      response_format: (config as unknown as Record<string, unknown>).responseFormat,
+      response_format: (config as unknown as Record<string, unknown>)["responseFormat"],
     };
     const transformFn = this.transformKwargs[provider];
     if (!transformFn) {
@@ -202,7 +202,7 @@ export class V2CallPipeline {
         temperature: config.common?.temperature,
         topP: config.common?.topP,
         providerOptions: config.providerOptions as ProviderOptions | undefined,
-        baseUrl: (config as unknown as Record<string, unknown>).baseUrl as string | undefined,
+        baseUrl: (config as unknown as Record<string, unknown>)["baseUrl"] as string | undefined,
         enableThinking: config.common?.enableThinking,
       },
       kwargs,
@@ -217,11 +217,11 @@ export class V2CallPipeline {
     messages: unknown[],
   ): string {
     const kwargs = this.buildRequestKwargs(config, messages);
-    const baseUrl = kwargs.baseUrl;
+    const baseUrl = kwargs["baseUrl"];
     if (typeof baseUrl === "string" && baseUrl.trim()) {
       return baseUrl;
     }
-    return ((config as unknown as Record<string, unknown>).baseUrl as string | undefined) ?? "";
+    return ((config as unknown as Record<string, unknown>)["baseUrl"] as string | undefined) ?? "";
   }
 
   /**
@@ -251,7 +251,7 @@ export class V2CallPipeline {
           enableThinking: config.common?.enableThinking,
           temperature: config.common?.temperature,
           maxOutputTokens: config.common?.maxOutputTokens,
-          responseFormat: (config as unknown as Record<string, unknown>).responseFormat,
+          responseFormat: (config as unknown as Record<string, unknown>)["responseFormat"],
           seed: config.common?.seed,
           topP: config.common?.topP,
           providerOptions: config.providerOptions as Record<string, unknown> | undefined,
@@ -289,7 +289,7 @@ export class V2CallPipeline {
             enableThinking: config.common?.enableThinking,
             temperature: config.common?.temperature,
             maxOutputTokens: config.common?.maxOutputTokens,
-            responseFormat: (config as unknown as Record<string, unknown>).responseFormat,
+            responseFormat: (config as unknown as Record<string, unknown>)["responseFormat"],
             seed: config.common?.seed,
             topP: config.common?.topP,
             providerOptions: config.providerOptions,

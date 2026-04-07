@@ -102,31 +102,31 @@ export function buildAnthropicProviderOptions(
   const result: Record<string, unknown> = {};
 
   if (options?.thinking) {
-    result.thinking = options.thinking;
+    result["thinking"] = options.thinking;
   }
 
   if (options?.cacheControl || cachingStrategy === "native") {
-    result.cacheControl = options?.cacheControl ?? { type: "ephemeral" };
+    result["cacheControl"] = options?.cacheControl ?? { type: "ephemeral" };
   }
 
   if (options?.disableParallelToolUse !== undefined) {
-    result.disableParallelToolUse = options.disableParallelToolUse;
+    result["disableParallelToolUse"] = options.disableParallelToolUse;
   }
 
   if (options?.sendReasoning !== undefined) {
-    result.sendReasoning = options.sendReasoning;
+    result["sendReasoning"] = options.sendReasoning;
   }
 
   if (options?.effort !== undefined) {
-    result.effort = options.effort;
+    result["effort"] = options.effort;
   }
 
   if (options?.toolStreaming !== undefined) {
-    result.toolStreaming = options.toolStreaming;
+    result["toolStreaming"] = options.toolStreaming;
   }
 
   if (options?.structuredOutputMode !== undefined) {
-    result.structuredOutputMode = options.structuredOutputMode;
+    result["structuredOutputMode"] = options.structuredOutputMode;
   }
 
   return Object.keys(result).length > 0 ? result : undefined;

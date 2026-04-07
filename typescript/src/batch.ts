@@ -368,14 +368,14 @@ async function anthropicSubmit(
   systemPrompt?: string,
   params?: Record<string, unknown>,
 ): Promise<string> {
-  const maxTokens = (params?.max_tokens as number | undefined) ?? 4096;
+  const maxTokens = (params?.["max_tokens"] as number | undefined) ?? 4096;
   const requests = prompts.map((prompt, i) => {
     const reqParams: Record<string, unknown> = {
       model,
       max_tokens: maxTokens,
       messages: [{ role: "user", content: prompt }],
     };
-    if (systemPrompt) reqParams.system = systemPrompt;
+    if (systemPrompt) reqParams["system"] = systemPrompt;
     if (params) {
       const { max_tokens: _mt, ...rest } = params;
       Object.assign(reqParams, rest);
