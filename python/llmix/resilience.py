@@ -101,14 +101,18 @@ class CircuitState(enum.Enum):
     HALF_OPEN = "HALF_OPEN"
 
 
+_DEFAULT_PERMITTED_HALF_OPEN_CALLS = 10
+
+
 class CircuitBreaker:
-    """Per-(provider, baseUrl) circuit breaker.
+    """Per-(provider, baseUrl) circuit breaker (Resilience4j-style).
 
     State machine:
-      CLOSED  -- 3 consecutive retryable failures --> OPEN
-      OPEN    -- 30s cooldown --> HALF_OPEN (allow 1 probe)
-      HALF_OPEN -- success --> CLOSED
-      HALF_OPEN -- failure --> OPEN
+      CLOSED    -- N consecutive retryable failures --> OPEN
+      OPEN      -- cooldown expires --> HALF_OPEN
+      HALF_OPEN -- allows up to `permitted_half_open_calls` concurrent probes
+                   if probe success rate >= 50% --> CLOSED
+                   if probe failure rate > 50%  --> OPEN (with doubled cooldown)
     """
 
     def __init__(
@@ -117,16 +121,22 @@ class CircuitBreaker:
         base_url: str,
         failure_threshold: int = _DEFAULT_FAILURE_THRESHOLD,
         cooldown_seconds: float = _DEFAULT_COOLDOWN_SECONDS,
+        permitted_half_open_calls: int = _DEFAULT_PERMITTED_HALF_OPEN_CALLS,
     ) -> None:
         self.provider = provider
         self.base_url = base_url
         self.failure_threshold = failure_threshold
         self.cooldown_seconds = cooldown_seconds
+        self.permitted_half_open_calls = permitted_half_open_calls
+        self._base_cooldown = cooldown_seconds
 
         self._state = CircuitState.CLOSED
         self._consecutive_failures = 0
         self._opened_at: float = 0.0
-        self._half_open_probe_in_flight = False
+        # HALF_OPEN probe tracking (Resilience4j-style)
+        self._half_open_active: int = 0
+        self._half_open_successes: int = 0
+        self._half_open_failures: int = 0
 
     @property
     def state(self) -> CircuitState:
@@ -135,34 +145,61 @@ class CircuitBreaker:
             elapsed = time.monotonic() - self._opened_at
             if elapsed >= self.cooldown_seconds:
                 self._state = CircuitState.HALF_OPEN
+                self._half_open_active = 0
+                self._half_open_successes = 0
+                self._half_open_failures = 0
                 return CircuitState.HALF_OPEN
         return self._state
 
     def check(self) -> None:
         """Check whether a request is allowed.
 
-        Raises CircuitOpenError if the breaker is OPEN.
-        In HALF_OPEN, allows exactly one probe request.
+        Raises CircuitOpenError if the breaker is OPEN or HALF_OPEN slots full.
+        In HALF_OPEN, allows up to `permitted_half_open_calls` concurrent probes.
         """
         current = self.state
         if current == CircuitState.CLOSED:
             return
         if current == CircuitState.HALF_OPEN:
-            if self._half_open_probe_in_flight:
+            if self._half_open_active >= self.permitted_half_open_calls:
                 raise CircuitOpenError(self.provider, self.base_url)
-            self._half_open_probe_in_flight = True
-            # Transition to HALF_OPEN in stored state so subsequent checks
-            # while the probe is in flight see HALF_OPEN, not OPEN.
-            self._state = CircuitState.HALF_OPEN
+            self._half_open_active += 1
             return
         # OPEN
         raise CircuitOpenError(self.provider, self.base_url)
 
+    def _evaluate_half_open(self) -> None:
+        """Evaluate HALF_OPEN results once enough probes have completed.
+
+        Uses a fixed window (permitted_half_open_calls) — not the active count —
+        so we wait for the full sample before deciding. If a probe is lost
+        (timeout/crash), the failure path in cancel_probe() counts it as a
+        failure so the window always completes.
+        """
+        total_completed = self._half_open_successes + self._half_open_failures
+        if total_completed < self.permitted_half_open_calls:
+            return  # Need more samples before deciding
+
+        if self._half_open_successes > self._half_open_failures:
+            # Majority success — service recovered
+            self._state = CircuitState.CLOSED
+            self._consecutive_failures = 0
+            self.cooldown_seconds = self._base_cooldown
+        else:
+            # Majority failures — re-open with exponential backoff (cap 5 min)
+            self._state = CircuitState.OPEN
+            self._opened_at = time.monotonic()
+            self.cooldown_seconds = min(self.cooldown_seconds * 2, 300.0)
+
     def on_success(self) -> None:
-        """Record a successful request. Resets the breaker to CLOSED."""
+        """Record a successful request."""
+        if self._state == CircuitState.HALF_OPEN:
+            self._half_open_successes += 1
+            self._evaluate_half_open()
+            return
+        # CLOSED state — reset failure counter
         self._state = CircuitState.CLOSED
         self._consecutive_failures = 0
-        self._half_open_probe_in_flight = False
 
     def on_failure(self, status_code: int | None = None, *, network_error: bool = False) -> None:
         """Record a failed request.
@@ -171,34 +208,25 @@ class CircuitBreaker:
         Auth errors (401, 403) are ignored in CLOSED state but still finalize
         the HALF_OPEN probe.
         """
-        current = self.state
-
         retryable = network_error
         if status_code is not None:
             retryable = retryable or _is_retryable_status(status_code)
 
-        # HALF_OPEN probe must always be finalized regardless of retryability.
-        if current == CircuitState.HALF_OPEN:
+        if self._state == CircuitState.HALF_OPEN:
             if retryable or network_error:
-                # Transient failure — re-open the circuit
-                self._state = CircuitState.OPEN
-                self._opened_at = time.monotonic()
+                self._half_open_failures += 1
             else:
-                # Non-retryable error (400, 401, 404, etc.) means the server
-                # is reachable — close the circuit.
-                self._state = CircuitState.CLOSED
-                self._consecutive_failures = 0
-            self._half_open_probe_in_flight = False
+                # Non-retryable (400, 404) = server is reachable, count as success
+                self._half_open_successes += 1
+            self._evaluate_half_open()
             return
 
         # Auth errors do NOT trip the breaker in CLOSED state.
-        # Server is reachable → reset the consecutive failure counter.
         if status_code is not None and status_code in (401, 403):
             self._consecutive_failures = 0
             return
 
         if not retryable:
-            # Non-retryable error proves server is reachable — reset counter
             self._consecutive_failures = 0
             return
 
@@ -211,19 +239,20 @@ class CircuitBreaker:
         """Cancel an in-flight HALF_OPEN probe without recording success or failure.
 
         Re-opens the circuit so the next cooldown expiry triggers a fresh probe.
-        Use this in a finally/catch when the caller cannot reach on_success/on_failure.
         """
-        if self._half_open_probe_in_flight:
-            self._state = CircuitState.OPEN
-            self._opened_at = time.monotonic()
-            self._half_open_probe_in_flight = False
+        if self._state == CircuitState.HALF_OPEN:
+            self._half_open_failures += 1
+            self._evaluate_half_open()
 
     def reset(self) -> None:
         """Manually reset the breaker to CLOSED."""
         self._state = CircuitState.CLOSED
         self._consecutive_failures = 0
         self._opened_at = 0.0
-        self._half_open_probe_in_flight = False
+        self._half_open_active = 0
+        self._half_open_successes = 0
+        self._half_open_failures = 0
+        self.cooldown_seconds = self._base_cooldown
 
 
 # ---------------------------------------------------------------------------
