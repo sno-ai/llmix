@@ -238,11 +238,17 @@ class CircuitBreaker:
     def cancel_probe(self) -> None:
         """Cancel an in-flight HALF_OPEN probe without recording success or failure.
 
-        Re-opens the circuit so the next cooldown expiry triggers a fresh probe.
+        Safety net for when on_success/on_failure were never called (e.g. crash).
+        No-op if the probe was already finalized — prevents double-counting when
+        on_failure() and cancel_probe() both fire for the same probe.
         """
-        if self._state == CircuitState.HALF_OPEN:
-            self._half_open_failures += 1
-            self._evaluate_half_open()
+        if self._state != CircuitState.HALF_OPEN:
+            return
+        total_finalized = self._half_open_successes + self._half_open_failures
+        if total_finalized >= self._half_open_active:
+            return  # All admitted probes already reported — this is a duplicate
+        self._half_open_failures += 1
+        self._evaluate_half_open()
 
     def reset(self) -> None:
         """Manually reset the breaker to CLOSED."""
