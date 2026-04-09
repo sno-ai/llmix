@@ -15,31 +15,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
 from llmix.adaptive_semaphore import AdaptiveSemaphore, parse_openai_ratelimit_headers
 from llmix.key_pool import KeyPool
-from llmix.provider_kwargs import (
-    PROVIDER_KWARGS_REGISTRY,
-    TransformKwargsCallback,
-    TransformKwargsContext,
-    apply_transform_kwargs,
-)
-from llmix.resilience import (
-    CircuitBreaker,
-    CircuitOpenError,
-    FileLock,
-    KillSwitch,
-    RetryPolicy,
-    Singleflight,
-    is_retryable,
-)
+from llmix.provider_kwargs import PROVIDER_KWARGS_REGISTRY, TransformKwargsCallback, TransformKwargsContext, apply_transform_kwargs
+from llmix.resilience import CircuitBreaker, CircuitOpenError, FileLock, KillSwitch, RetryPolicy, Singleflight, is_retryable
 from llmix.response_cache import TwoTierCache, generate_cache_key, should_skip_cache
 from llmix.thinking import strip_thinking
-
 
 # ---------------------------------------------------------------------------
 # Types
@@ -49,13 +36,7 @@ from llmix.thinking import strip_thinking
 class ProviderError(Exception):
     """Error with optional HTTP status and headers."""
 
-    def __init__(
-        self,
-        message: str,
-        *,
-        status_code: int | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> None:
+    def __init__(self, message: str, *, status_code: int | None = None, headers: dict[str, str] | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.headers = headers
@@ -69,6 +50,7 @@ class ProviderResult:
     model: str
     usage: LLMUsage
     headers: dict[str, str] | None = None
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -127,6 +109,7 @@ class V2CallResponse:
     error: str | None = None
     thinking_content: str | None = None
     cache_hit: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -161,11 +144,7 @@ class V2CallPipeline:
         state_dir = Path(config.kill_switch_state_dir) if config.kill_switch_state_dir else None
         self._kill_switch = KillSwitch(state_dir=state_dir)
         self._singleflight = Singleflight()
-        self._retry_policy = RetryPolicy(
-            max_retries=config.max_retries,
-            base_ms=config.retry_base_ms,
-            max_delay_ms=config.retry_max_delay_ms,
-        )
+        self._retry_policy = RetryPolicy(max_retries=config.max_retries, base_ms=config.retry_base_ms, max_delay_ms=config.retry_max_delay_ms)
         self._file_lock = FileLock()
 
         self._circuit_breakers: dict[str, CircuitBreaker] = {}
@@ -177,10 +156,7 @@ class V2CallPipeline:
         self._sem_initial = config.semaphore_initial
         self._sem_min = config.semaphore_min
 
-        self._transform_kwargs: dict[str, TransformKwargsCallback] = {
-            **PROVIDER_KWARGS_REGISTRY,
-            **(config.transform_kwargs_overrides or {}),
-        }
+        self._transform_kwargs: dict[str, TransformKwargsCallback] = {**PROVIDER_KWARGS_REGISTRY, **(config.transform_kwargs_overrides or {})}
 
         self._response_cache = config.response_cache
 
@@ -192,12 +168,7 @@ class V2CallPipeline:
         key = f"{provider}:{base_url}"
         cb = self._circuit_breakers.get(key)
         if cb is None:
-            cb = CircuitBreaker(
-                provider,
-                base_url,
-                failure_threshold=self._cb_threshold,
-                cooldown_seconds=self._cb_cooldown,
-            )
+            cb = CircuitBreaker(provider, base_url, failure_threshold=self._cb_threshold, cooldown_seconds=self._cb_cooldown)
             self._circuit_breakers[key] = cb
         return cb
 
@@ -213,10 +184,7 @@ class V2CallPipeline:
         with self._file_lock:
             pool = self._key_pools.get(provider)
             if not pool:
-                raise ValueError(
-                    f'No API key pool for provider "{provider}". '
-                    f"Set {provider.upper()}_API_KEY or {provider.upper()}_KEYS."
-                )
+                raise ValueError(f'No API key pool for provider "{provider}". Set {provider.upper()}_API_KEY or {provider.upper()}_KEYS.')
             return pool.select()
 
     def _rotate_api_key_locked(self, provider: str) -> None:
@@ -233,11 +201,7 @@ class V2CallPipeline:
             if pool is not None:
                 pool.mark_dead(api_key)
 
-    def _build_request_kwargs(
-        self,
-        config: dict[str, Any],
-        messages: list[dict[str, Any]],
-    ) -> dict[str, Any]:
+    def _build_request_kwargs(self, config: dict[str, Any], messages: list[dict[str, Any]]) -> dict[str, Any]:
         """Build provider kwargs before dispatch and derive the effective base URL."""
         provider: str = config.get("provider", "unknown")
         common = config.get("common") or {}
@@ -264,11 +228,7 @@ class V2CallPipeline:
         }
         return apply_transform_kwargs(ctx, kwargs, transform_fn)
 
-    def _resolve_effective_base_url(
-        self,
-        config: dict[str, Any],
-        messages: list[dict[str, Any]],
-    ) -> str:
+    def _resolve_effective_base_url(self, config: dict[str, Any], messages: list[dict[str, Any]]) -> str:
         """Resolve the final base URL shape used by the provider dispatch."""
         kwargs = self._build_request_kwargs(config, messages)
         base_url = kwargs.get("base_url")
@@ -333,26 +293,32 @@ class V2CallPipeline:
             # Step 6: Singleflight deduplication
             # Default key includes all request-shaping params to prevent
             # cross-config result sharing (same identity as cache key).
-            sf_key = call_input.singleflight_key or cache_key or Singleflight.make_key(
-                json.dumps({
-                    "provider": provider,
-                    "model": model,
-                    "messages": messages,
-                    "baseUrl": effective_base_url,
-                    "enableThinking": common.get("enable_thinking"),
-                    "temperature": common.get("temperature"),
-                    "maxOutputTokens": common.get("max_output_tokens"),
-                    "responseFormat": common.get("response_format"),
-                    "seed": common.get("seed"),
-                    "topP": common.get("top_p"),
-                    "providerOptions": config.get("provider_options"),
-                }, default=str)
+            sf_key = (
+                call_input.singleflight_key
+                or cache_key
+                or Singleflight.make_key(
+                    json.dumps(
+                        {
+                            "provider": provider,
+                            "model": model,
+                            "messages": messages,
+                            "baseUrl": effective_base_url,
+                            "enableThinking": common.get("enable_thinking"),
+                            "temperature": common.get("temperature"),
+                            "maxOutputTokens": common.get("max_output_tokens"),
+                            "responseFormat": common.get("response_format"),
+                            "seed": common.get("seed"),
+                            "topP": common.get("top_p"),
+                            "providerOptions": config.get("provider_options"),
+                        },
+                        default=str,
+                    )
+                )
             )
 
             async def _inner() -> ProviderResult:
                 return await self._retry_policy.execute(
-                    lambda: self._execute_retry_body(config, messages, cb),
-                    is_retryable_fn=self._is_retryable_error,
+                    lambda: self._execute_retry_body(config, messages, cb), is_retryable_fn=self._is_retryable_error
                 )
 
             try:
@@ -383,25 +349,14 @@ class V2CallPipeline:
                 usage=result.usage,
                 success=True,
                 thinking_content=thinking_content,
+                tool_calls=result.tool_calls,
             )
 
         except Exception as exc:
             logger.exception("V2 pipeline call failed")
-            return V2CallResponse(
-                content="",
-                model=model,
-                provider=provider,
-                usage=LLMUsage(),
-                success=False,
-                error=str(exc),
-            )
+            return V2CallResponse(content="", model=model, provider=provider, usage=LLMUsage(), success=False, error=str(exc))
 
-    async def _execute_retry_body(
-        self,
-        config: dict[str, Any],
-        messages: list[dict[str, Any]],
-        cb: CircuitBreaker,
-    ) -> ProviderResult:
+    async def _execute_retry_body(self, config: dict[str, Any], messages: list[dict[str, Any]], cb: CircuitBreaker) -> ProviderResult:
         """Steps 7-14 inside the retry loop."""
         provider: str = config.get("provider", "unknown")
         semaphore = self._get_semaphore(provider)
@@ -419,14 +374,7 @@ class V2CallPipeline:
 
             # Step 11: Provider dispatch
             result = await self._dispatch(
-                DispatchInput(
-                    provider=provider,
-                    model=config.get("model", ""),
-                    api_key=api_key,
-                    messages=messages,
-                    kwargs=kwargs,
-                    config=config,
-                )
+                DispatchInput(provider=provider, model=config.get("model", ""), api_key=api_key, messages=messages, kwargs=kwargs, config=config)
             )
 
             # Step 12: AIMD feedback (success path)
@@ -459,22 +407,13 @@ class V2CallPipeline:
             # Step 14: Key Pool feedback (error) — use captured api_key
             if status_code in (401, 403) and api_key is not None:
                 try:
-                    await asyncio.to_thread(
-                        self._mark_api_key_dead_locked,
-                        provider,
-                        api_key,
-                    )
+                    await asyncio.to_thread(self._mark_api_key_dead_locked, provider, api_key)
                 except Exception:
                     pass
 
             # Step 15: Circuit Breaker feedback (error)
             cb.on_failure(
-                status_code,
-                network_error=(
-                    not isinstance(exc, CircuitOpenError)
-                    and status_code is None
-                    and self._is_retryable_error(exc)
-                ),
+                status_code, network_error=(not isinstance(exc, CircuitOpenError) and status_code is None and self._is_retryable_error(exc))
             )
 
             raise
