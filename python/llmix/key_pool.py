@@ -37,10 +37,7 @@ class KeyPool:
         """
         with self._lock:
             if len(self._dead) >= len(self._keys):
-                raise KeyPoolExhaustedError(
-                    f"All {len(self._keys)} keys are dead (401/403). "
-                    "Replace keys or wait for provider resolution."
-                )
+                raise KeyPoolExhaustedError(f"All {len(self._keys)} keys are dead (401/403). Replace keys or wait for provider resolution.")
 
             for offset in range(len(self._keys)):
                 idx = (self._idx + offset) % len(self._keys)
@@ -67,17 +64,19 @@ class KeyPool:
         """Mark a key as permanently failed (called on 401/403)."""
         with self._lock:
             if key not in self._keys:
-                raise ValueError(f"Key not in pool: cannot mark unknown key as dead")
+                raise ValueError("Key not in pool: cannot mark unknown key as dead")
             self._dead.add(key)
 
     def is_exhausted(self) -> bool:
         """Return True if all keys are dead."""
-        return len(self._dead) >= len(self._keys)
+        with self._lock:
+            return len(self._dead) >= len(self._keys)
 
     @property
     def alive_count(self) -> int:
         """Number of keys still alive."""
-        return len(self._keys) - len(self._dead)
+        with self._lock:
+            return len(self._keys) - len(self._dead)
 
     @property
     def total_count(self) -> int:
@@ -112,7 +111,4 @@ def load_keys_from_env(provider: str) -> KeyPool:
     if single_key.strip():
         return KeyPool([single_key])
 
-    raise ValueError(
-        f"No API keys found for {provider_upper}. "
-        f"Set {keys_var} (comma-separated) or {key_var}."
-    )
+    raise ValueError(f"No API keys found for {provider_upper}. Set {keys_var} (comma-separated) or {key_var}.")
