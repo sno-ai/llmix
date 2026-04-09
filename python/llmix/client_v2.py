@@ -164,6 +164,11 @@ class V2CallPipeline:
         """Register a key pool for a provider."""
         self._key_pools[provider] = pool
 
+    def close(self) -> None:
+        """Release pipeline-owned resources."""
+        if self._response_cache is not None:
+            self._response_cache.close()
+
     def _get_circuit_breaker(self, provider: str, base_url: str = "") -> CircuitBreaker:
         key = f"{provider}:{base_url}"
         cb = self._circuit_breakers.get(key)
