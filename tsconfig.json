@@ -4,7 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022"],
-    "rootDir": ".",
+    "rootDir": "typescript/src",
     "outDir": "./typescript/dist",
     "declaration": true,
     "declarationMap": true,
@@ -24,6 +24,6 @@
     "noUncheckedIndexedAccess": true,
     "noPropertyAccessFromIndexSignature": true
   },
-  "include": ["typescript/src/**/*", "tests/typescript/**/*"],
+  "include": ["typescript/src/**/*"],
   "exclude": ["node_modules", "typescript/dist"]
 }

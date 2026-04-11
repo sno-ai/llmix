@@ -24,7 +24,13 @@ dev = [
 where = ["python"]
 
 [tool.setuptools.package-data]
-llmix = ["pricing.json"]
+llmix = ["pricing.json", "py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 
 [build-system]
 requires = ["setuptools>=75.0.0"]

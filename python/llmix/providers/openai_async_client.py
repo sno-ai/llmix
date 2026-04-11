@@ -100,6 +100,7 @@ class AsyncOpenAIClient(BaseLLMClient):
         environment: str = "dev",
         helicone_cache_enabled: bool = False,
         helicone_api_key: str | None = None,
+        helicone_app: str = "llmix",
         **kwargs: Any,
     ):
         """
@@ -143,6 +144,7 @@ class AsyncOpenAIClient(BaseLLMClient):
         self._environment = environment
         self._helicone_cache_enabled = helicone_cache_enabled
         self._helicone_api_key = helicone_api_key
+        self._helicone_app = helicone_app
 
         if not self.api_key:
             raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass api_key parameter.")
@@ -176,7 +178,7 @@ class AsyncOpenAIClient(BaseLLMClient):
                 elif helicone_lib is not None and helicone_lib.is_helicone_enabled(self._helicone_api_key):
                     base_url = helicone_lib.get_helicone_url('openai')
                     default_headers = helicone_lib.get_helicone_headers(
-                        app='sno-cortex', module='umi-async', environment=self._environment, api_key=self._helicone_api_key
+                        app=self._helicone_app, module='umi-async', environment=self._environment, api_key=self._helicone_api_key
                     )
                     if self._helicone_cache_enabled:
                         default_headers['Helicone-Cache-Enabled'] = 'true'

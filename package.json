@@ -6,12 +6,12 @@
     "access": "public"
   },
   "type": "module",
-  "main": "./typescript/dist/typescript/src/index.js",
-  "types": "./typescript/dist/typescript/src/index.d.ts",
+  "main": "./typescript/dist/index.js",
+  "types": "./typescript/dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./typescript/dist/typescript/src/index.js",
-      "types": "./typescript/dist/typescript/src/index.d.ts"
+      "import": "./typescript/dist/index.js",
+      "types": "./typescript/dist/index.d.ts"
     }
   },
   "files": [
@@ -22,7 +22,7 @@
   "scripts": {
     "build": "bun run tsc",
     "dev": "bun run tsc --watch",
-    "check": "bun run tsc --noEmit",
+    "check": "bunx tsc -p tsconfig.check.json",
     "clean": "rm -rf typescript/dist",
     "test": "bun test"
   },

@@ -2,11 +2,11 @@
 GPU Client Implementation
 
 Provides async on-prem GPU inference via OpenAI-compatible Chat Completions API.
-Targets Qwen3.5-27B Dense running on 2x RTX 3090 behind Caddy load balancer.
+Intended for self-hosted inference servers behind a load balancer.
 The API does NOT support the Response API, so response_completion() maps to chat_completion().
 
-Supports thinking mode control: Qwen3.5 defaults to thinking=True, so enable_thinking
-is always sent explicitly to ensure deterministic behavior.
+Supports thinking mode control via enable_thinking flag, sent explicitly on every
+request to ensure deterministic behavior with models that default to thinking mode.
 """
 
 import asyncio
@@ -34,7 +34,7 @@ def build_gpu_base_url(gpu_path: str | None = None) -> str:
         gpu_path: 'extract' (GPU 0, SMR), 'reason' (GPU 1, EKG), or None (legacy /v1).
 
     Returns:
-        Full base URL for AsyncOpenAI (e.g. https://rt3-llm.sno.ai/extract/v1).
+        Full base URL for AsyncOpenAI (e.g. https://llm.example.com/extract/v1).
     """
     if gpu_path:
         if gpu_path not in VALID_GPU_PATHS:
@@ -51,10 +51,10 @@ class GpuClient(BaseLLMClient):
     The API does not support OpenAI's Response API, so response_completion()
     maps parameters to chat_completion() format internally.
 
-    Supports path-based GPU routing:
-    - /extract/v1 → GPU 0 (Unsloth Qwen3.5-27B, model: qwen3.5-27b-extract) — SMR, structured extraction
-    - /reason/v1  → GPU 1 (Jackrong Qwen3.5-27B, model: qwen3.5-27b-reason) — EKG, reasoning, CoT
-    - /v1         → Legacy (maps to extract)
+    Supports optional path-based routing via gpu_path:
+    - /extract/v1 → path="extract"
+    - /reason/v1  → path="reason"
+    - /v1         → no path (default)
     """
 
     def __init__(
