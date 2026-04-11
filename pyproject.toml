@@ -18,6 +18,7 @@ redis = ["redis>=6.4.0,<8"]
 dev = [
   "pyright>=1.1.0",
   "pytest>=8.0.0",
+  "pytest-asyncio>=0.24",
 ]
 
 [tool.setuptools.packages.find]
@@ -31,6 +32,7 @@ testpaths = ["tests/python"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+asyncio_mode = "auto"
 
 [build-system]
 requires = ["setuptools>=75.0.0"]
