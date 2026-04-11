@@ -1,0 +1,18 @@
+{
+  "_meta": {
+    "description": "Model capability classification rules. Both Python and TypeScript consume this file for parity.",
+    "version": 1
+  },
+  "reasoningModelPrefixes": ["o", "gpt-5", "codex-", "computer-use"],
+  "reasoningModelExclusions": ["gpt-5-chat"],
+  "textVerbosityPrefixes": ["gpt-5"],
+  "textVerbosityExclusions": ["gpt-5-chat"],
+  "modelClassRules": [
+    { "prefix": "gpt-5", "exclude": "gpt-5-chat", "class": "gpt5" },
+    { "prefix": "o", "class": "o-series" },
+    { "prefix": "codex-", "class": "codex" },
+    { "prefix": "computer-use", "class": "codex" }
+  ],
+  "defaultModelClass": "standard",
+  "fixedTemperatureValue": 1
+}

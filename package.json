@@ -17,7 +17,7 @@
   "files": [
     "typescript/dist",
     "typescript/src",
-    "shared"
+    "data"
   ],
   "scripts": {
     "build": "bun run tsc",

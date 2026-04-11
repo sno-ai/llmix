@@ -3,6 +3,8 @@ internal/           export-ignore
 tests/              export-ignore
 openspec/           export-ignore
 ai-doc/             export-ignore
+scripts/            export-ignore
+.github/            export-ignore
 .claude/            export-ignore
 .codex/             export-ignore
 .env.test           export-ignore

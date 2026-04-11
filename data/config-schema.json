@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://llmix.dev/config-schema.json",
+  "title": "LLMix YAML Preset Configuration",
+  "description": "JSON Schema for LLMix v2 YAML preset files. TODO: Generate from Zod schemas in Phase 2.",
+  "type": "object",
+  "properties": {
+    "common": {
+      "type": "object",
+      "description": "Common parameters shared across providers",
+      "properties": {
+        "model": { "type": "string" },
+        "provider": { "type": "string", "enum": ["openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "snogpu"] },
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+        "maxOutputTokens": { "type": "integer", "minimum": 1 },
+        "enableThinking": { "type": "boolean" },
+        "keepThinkingOutput": { "type": "boolean" }
+      },
+      "required": ["model", "provider"]
+    },
+    "providerOptions": {
+      "type": "object",
+      "description": "Provider-specific options"
+    },
+    "caching": {
+      "type": "object",
+      "properties": {
+        "strategy": { "type": "string", "enum": ["redis", "redis-or-memory", "memory", "native", "gateway", "disabled"] },
+        "ttl": { "type": "integer", "minimum": 0 },
+        "maxItems": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}
