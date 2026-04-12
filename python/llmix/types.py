@@ -9,23 +9,24 @@ import re
 from collections.abc import Awaitable
 from typing import Any, Literal, Protocol, TypedDict
 
-try:
-    from lib.infra.validation import DANGEROUS_CHARS as DANGEROUS_CHARS
-    from lib.infra.validation import VALID_USER_ID_PATTERN as VALID_USER_ID_PATTERN
-    from lib.infra.validation import validate_user_id as validate_user_id
-except ImportError:
-    DANGEROUS_CHARS: list[str] = ["/", "\\", "..", "~", "$", "`"]
-    VALID_USER_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+# ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
 
-    def validate_user_id(user_id: str | None) -> bool:
-        """Validate user ID format without the shared infra package."""
-        if user_id is None:
-            return False
-        if len(user_id) > 64:
-            return False
-        if any(char in user_id for char in DANGEROUS_CHARS):
-            return False
-        return bool(VALID_USER_ID_PATTERN.match(user_id))
+DANGEROUS_CHARS: list[str] = ["/", "\\", "..", "~", "$", "`"]
+VALID_USER_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+
+def validate_user_id(user_id: str | None) -> bool:
+    """Validate user ID format — rejects None, >64 chars, path-traversal chars."""
+    if user_id is None:
+        return False
+    if len(user_id) > 64:
+        return False
+    if any(char in user_id for char in DANGEROUS_CHARS):
+        return False
+    return bool(VALID_USER_ID_PATTERN.match(user_id))
+
 
 # =============================================================================
 # EXCEPTIONS
@@ -838,7 +839,7 @@ VALID_PRESET_PATTERN = re.compile(r"^(_base[a-z0-9_]*|[a-z][a-z0-9_]{0,63})$")
 # Allows: _default, or lowercase alphanumeric with underscores/hyphens starting with letter
 VALID_SCOPE_PATTERN = re.compile(r"^(_default|[a-z][a-z0-9_-]{0,63})$")
 
-# Pattern for valid user IDs (re-exported from lib.infra.validation)
+# Pattern for valid user IDs
 
 # Version bounds
 MIN_VERSION = 1
@@ -853,7 +854,7 @@ ANTHROPIC_MIN_BUDGET_TOKENS = 1024
 # OpenAI prompt cache minimum token threshold
 OPENAI_PROMPT_CACHE_MIN_TOKENS = 1024
 
-# Characters that could enable path traversal attacks (re-exported from lib.infra.validation)
+# Characters that could enable path traversal attacks
 
 # Models that support OpenAI Batch API
 # TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
@@ -952,7 +953,7 @@ def validate_scope(scope: str) -> None:
         )
 
 
-# validate_user_id re-exported from lib.infra.validation at top of file
+# validate_user_id defined at top of file
 
 
 def validate_version(version: int) -> None:

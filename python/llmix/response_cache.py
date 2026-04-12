@@ -28,8 +28,7 @@ from cachetools import TTLCache
 if TYPE_CHECKING:
     import redis as redis_types
 
-# Re-declare locally to avoid importing llmix.types at runtime
-# (llmix.types pulls in lib.infra.validation which may not be available)
+# Re-declare locally — lightweight standalone type avoids pulling in full types.py chain
 CachingStrategy = Literal["native", "gateway", "disabled", "redis", "redis-or-memory", "memory"]
 ResponseCacheStrategy = Literal["redis", "redis-or-memory", "memory"]
 CacheHitTier = Literal["l1", "l2"]

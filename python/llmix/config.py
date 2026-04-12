@@ -7,64 +7,58 @@ Provides flexible path resolution with priority:
 3. Default path relative to project root
 
 PROJECT ROOT: Found by walking up from cwd looking for pyproject.toml or package.json
-
-Project root helpers re-exported from lib.infra.project_root (single source of truth).
 """
 
-import os
-from pathlib import Path
 import json
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
-try:
-    # Re-export from shared_infra (single source of truth)
-    from lib.infra.project_root import LOCKFILES as LOCKFILES
-    from lib.infra.project_root import LOCKFILES_PY as LOCKFILES_PY
-    from lib.infra.project_root import LOCKFILES_TS as LOCKFILES_TS
-    from lib.infra.project_root import find_project_root as find_project_root
-    from lib.infra.project_root import has_lockfile as has_lockfile
-    from lib.infra.project_root import is_monorepo_root as is_monorepo_root
-except ImportError:
-    LOCKFILES_TS = ["bun.lock", "pnpm-lock.yaml", "yarn.lock", "package-lock.json"]
-    LOCKFILES_PY = ["uv.lock", "poetry.lock", "Pipfile.lock", "pdm.lock"]
-    LOCKFILES = LOCKFILES_TS + LOCKFILES_PY
+# ---------------------------------------------------------------------------
+# Project root detection
+# ---------------------------------------------------------------------------
 
-    def is_monorepo_root(directory: Path) -> bool:
-        """Check if directory is the monorepo root by looking for workspaces in package.json."""
-        pkg_json = directory / "package.json"
-        if pkg_json.exists():
-            try:
-                with open(pkg_json) as f:
-                    pkg = json.load(f)
-                    if "workspaces" in pkg:
-                        return True
-            except (json.JSONDecodeError, OSError):
-                pass
-        return False
+LOCKFILES_TS = ["bun.lock", "pnpm-lock.yaml", "yarn.lock", "package-lock.json"]
+LOCKFILES_PY = ["uv.lock", "poetry.lock", "Pipfile.lock", "pdm.lock"]
+LOCKFILES = LOCKFILES_TS + LOCKFILES_PY
 
-    def has_lockfile(directory: Path) -> bool:
-        """Check if directory contains a lockfile."""
-        return any((directory / f).exists() for f in LOCKFILES)
 
-    def find_project_root(start_dir: Path | None = None) -> Path:
-        """Find project root by walking up directory tree."""
-        current = (start_dir or Path.cwd()).resolve()
-        first_pkg_dir: Path | None = None
-        first_lockfile_dir: Path | None = None
+def is_monorepo_root(directory: Path) -> bool:
+    """Check if directory is the monorepo root by looking for workspaces in package.json."""
+    pkg_json = directory / "package.json"
+    if pkg_json.exists():
+        try:
+            with open(pkg_json) as f:
+                pkg = json.load(f)
+                if "workspaces" in pkg:
+                    return True
+        except (json.JSONDecodeError, OSError):
+            pass
+    return False
 
-        while current != current.parent:
-            if is_monorepo_root(current):
-                return current
-            if first_lockfile_dir is None and has_lockfile(current):
-                first_lockfile_dir = current
-            if first_pkg_dir is None and (
-                (current / "pyproject.toml").exists() or (current / "package.json").exists()
-            ):
-                first_pkg_dir = current
-            current = current.parent
 
-        return first_lockfile_dir or first_pkg_dir or Path.cwd()
+def has_lockfile(directory: Path) -> bool:
+    """Check if directory contains a lockfile."""
+    return any((directory / f).exists() for f in LOCKFILES)
+
+
+def find_project_root(start_dir: Path | None = None) -> Path:
+    """Find project root by walking up directory tree."""
+    current = (start_dir or Path.cwd()).resolve()
+    first_pkg_dir: Path | None = None
+    first_lockfile_dir: Path | None = None
+
+    while current != current.parent:
+        if is_monorepo_root(current):
+            return current
+        if first_lockfile_dir is None and has_lockfile(current):
+            first_lockfile_dir = current
+        if first_pkg_dir is None and ((current / "pyproject.toml").exists() or (current / "package.json").exists()):
+            first_pkg_dir = current
+        current = current.parent
+
+    return first_lockfile_dir or first_pkg_dir or Path.cwd()
 
 
 @dataclass

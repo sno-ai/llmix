@@ -59,7 +59,7 @@ def _is_reasoning_model(model_id: str) -> bool:
     """Check if model is an OpenAI reasoning model.
 
     Mirrors logic from model_capabilities._is_reasoning_model without
-    pulling in the types.py import chain (which requires lib.infra).
+    pulling in the full types.py import chain.
     # TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
     """
     lower = model_id.lower()
