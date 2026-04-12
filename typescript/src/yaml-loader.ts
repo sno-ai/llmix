@@ -18,6 +18,7 @@ import {
   type AnthropicThinkingConfig,
   type CachingConfig,
   type CommonParams,
+  ConfigAccessError,
   ConfigNotFoundError,
   type DeepSeekProviderOptions,
   type DeepSeekThinkingConfig,
@@ -440,13 +441,13 @@ export const ProviderSchema = z.enum([
 ]) satisfies z.ZodType<Provider>;
 
 /**
- * Timeout configuration schema (all values in minutes)
+ * Timeout configuration schema (all values in seconds)
  */
 export const TimeoutConfigSchema = z
   .object({
-    /** Total time limit for the entire LLM call (minutes) */
+    /** Total time limit for the entire LLM call (seconds) */
     totalTime: z.number().positive().optional(),
-    /** Max wait time for first chunk in streaming responses (minutes) */
+    /** Max wait time for first chunk in streaming responses (seconds) */
     streamFirstChunkTime: z.number().positive().optional(),
   })
   .strict() satisfies z.ZodType<TimeoutConfig>;
@@ -571,7 +572,7 @@ export async function loadConfigFromFile(
         );
       }
       if (code === "EACCES") {
-        throw new ConfigNotFoundError(`Permission denied reading config file: ${filePath}`);
+        throw new ConfigAccessError(`Permission denied reading config file: ${filePath}`);
       }
     }
     throw error;

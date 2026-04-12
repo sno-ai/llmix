@@ -137,7 +137,7 @@ export interface LLMConfigLoaderLogger {
 // =============================================================================
 
 /**
- * Timeout configuration for LLM calls (all values in minutes)
+ * Timeout configuration for LLM calls (all values in seconds)
  *
  * Per-preset timeout allows reasoning models to have longer timeouts
  * than fast models, without affecting global defaults.
@@ -146,21 +146,21 @@ export interface LLMConfigLoaderLogger {
  * ```yaml
  * # In LLM config YAML
  * timeout:
- *   totalTime: 10  # 10 minutes for reasoning models
- *   streamFirstChunkTime: 2  # 2 minutes to first chunk
+ *   totalTime: 900  # 15 minutes for reasoning models
+ *   streamFirstChunkTime: 120  # 2 minutes to first chunk
  * ```
  */
 export interface TimeoutConfig {
   /**
-   * Total time limit for the entire LLM call (minutes)
+   * Total time limit for the entire LLM call (seconds)
    *
    * After this time, the request is aborted.
-   * Default: 2 (minutes)
+   * Default: 120 (seconds)
    */
   totalTime?: number | undefined;
 
   /**
-   * Max wait time for first chunk in streaming responses (minutes)
+   * Max wait time for first chunk in streaming responses (seconds)
    *
    * For streaming calls, this limits how long to wait for the first token.
    * Useful for detecting slow/stuck models early.
@@ -929,6 +929,17 @@ export class ConfigNotFoundError extends LLMConfigError {
     super(message);
     this.name = "ConfigNotFoundError";
     Object.setPrototypeOf(this, ConfigNotFoundError.prototype);
+  }
+}
+
+/**
+ * Thrown when a config file exists but cannot be read (e.g., EACCES)
+ */
+export class ConfigAccessError extends LLMConfigError {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigAccessError";
+    Object.setPrototypeOf(this, ConfigAccessError.prototype);
   }
 }
 
