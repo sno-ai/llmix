@@ -304,6 +304,8 @@ export class V2CallPipeline {
             (err) => this.isRetryableError(err),
           );
 
+          // HALF_OPEN recovery decisions are based on the final probe outcome,
+          // not intermediate retry attempts within a single admitted execution.
           cb.onSuccess();
           return providerResult;
         } catch (err: unknown) {
@@ -313,6 +315,7 @@ export class V2CallPipeline {
               cb.cancelProbe();
             }
           } else if (!(err instanceof CircuitOpenError)) {
+            // Count the full retry sequence as one failed probe.
             cb.onFailure(
               statusCode,
               statusCode === undefined,

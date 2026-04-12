@@ -331,6 +331,8 @@ class V2CallPipeline:
                         lambda: self._execute_retry_body(config, messages),
                         is_retryable_fn=self._is_retryable_error,
                     )
+                    # HALF_OPEN recovery decisions are based on the final probe
+                    # outcome, not intermediate retry attempts.
                     cb.on_success()
                     return provider_result
                 except Exception as exc:
@@ -339,6 +341,7 @@ class V2CallPipeline:
                         if probe_admitted:
                             cb.cancel_probe()
                     elif not isinstance(exc, CircuitOpenError):
+                        # Count the full retry sequence as one failed probe.
                         cb.on_failure(
                             status_code,
                             network_error=status_code is None,
