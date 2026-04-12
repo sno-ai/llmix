@@ -16,8 +16,10 @@ All features identical to OpenAIClient but with async/await support.
 import asyncio
 import logging
 import threading
-from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from llmix.telemetry import TelemetryPlugin
 
 from openai import APIConnectionError, APITimeoutError, AsyncOpenAI, InternalServerError, RateLimitError
 
@@ -45,27 +47,17 @@ _DEFAULT_MODEL = "gpt-5-mini"
 logger = logging.getLogger(__name__)
 
 
-_helicone_logged_once = False
-_helicone_log_lock = threading.Lock()
+_telemetry_logged_once = False
+_telemetry_log_lock = threading.Lock()
 
 
-@lru_cache(maxsize=1)
-def _import_helicone_module() -> Any | None:
-    """Import Helicone lazily so OpenAI client works without telemetry extras."""
-    try:
-        from lib.telemetry import helicone as helicone_module
-    except ImportError:
-        return None
-    return helicone_module
-
-
-def _log_helicone_route_once(message: str) -> None:
-    """Log Helicone/OpenAI routing once across threads/tasks."""
-    global _helicone_logged_once
-    with _helicone_log_lock:
-        if not _helicone_logged_once:
+def _log_telemetry_route_once(message: str) -> None:
+    """Log telemetry routing once across threads/tasks."""
+    global _telemetry_logged_once
+    with _telemetry_log_lock:
+        if not _telemetry_logged_once:
             logger.info(message)
-            _helicone_logged_once = True
+            _telemetry_logged_once = True
 
 
 class AsyncOpenAIClient(BaseLLMClient):
@@ -95,10 +87,7 @@ class AsyncOpenAIClient(BaseLLMClient):
         temperature: float | None = None,
         reasoning_effort: str | None = None,
         default_headers: dict[str, str] | None = None,
-        environment: str = "dev",
-        helicone_cache_enabled: bool = False,
-        helicone_api_key: str | None = None,
-        helicone_app: str = "llmix",
+        telemetry: TelemetryPlugin | None = None,
         **kwargs: Any,
     ):
         """
@@ -112,12 +101,10 @@ class AsyncOpenAIClient(BaseLLMClient):
             reasoning_effort: Reasoning effort for GPT-5 series
                 (minimal/low/medium/high, retrieved from config if None)
             default_headers: Custom default headers for all requests. When provided,
-                bypasses automatic Helicone header generation. Used by LLMix
-                for pre-configured Helicone routing.
-            environment: Environment name for Helicone headers (default: dev)
-            helicone_cache_enabled: Enable Helicone response caching (default: False)
-            helicone_api_key: Helicone API key for auto-detection path (Priority 2).
-                When None, auto-detection is disabled and LLMix pre-configured headers
+                bypasses automatic telemetry header generation. Used by LLMix
+                for pre-configured telemetry routing.
+            telemetry: Optional TelemetryPlugin for auto-detection path (Priority 2).
+                When None, auto-detection is disabled and pre-configured headers
                 (Priority 1) or direct base_url (Priority 3) are used instead.
             **kwargs: Additional configuration parameters
 
@@ -139,10 +126,7 @@ class AsyncOpenAIClient(BaseLLMClient):
         self.api_key = api_key or get_openai_api_key()
         self.base_url = base_url or get_openai_base_url()
         self._default_headers = default_headers
-        self._environment = environment
-        self._helicone_cache_enabled = helicone_cache_enabled
-        self._helicone_api_key = helicone_api_key
-        self._helicone_app = helicone_app
+        self._telemetry = telemetry
 
         if not self.api_key:
             raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass api_key parameter.")
@@ -164,28 +148,22 @@ class AsyncOpenAIClient(BaseLLMClient):
 
                 base_url: str | None = None
                 default_headers: dict[str, str] = {}
-                helicone_lib = _import_helicone_module()
 
-                # Priority 1: Custom headers provided (LLMix path with pre-configured Helicone)
+                # Priority 1: Custom headers provided (LLMix path with pre-configured telemetry)
                 if self._default_headers is not None:
                     base_url = self.base_url
                     default_headers = self._default_headers
                     if base_url:
-                        _log_helicone_route_once(f"Using pre-configured headers, routing through {base_url}")
-                # Priority 2: Auto-detect Helicone (requires helicone_api_key to be passed)
-                elif helicone_lib is not None and helicone_lib.is_helicone_enabled(self._helicone_api_key):
-                    base_url = helicone_lib.get_helicone_url('openai')
-                    default_headers = helicone_lib.get_helicone_headers(
-                        app=self._helicone_app, module='umi-async', environment=self._environment, api_key=self._helicone_api_key
-                    )
-                    if self._helicone_cache_enabled:
-                        default_headers['Helicone-Cache-Enabled'] = 'true'
-                        default_headers['Cache-Control'] = 'max-age=86400'
-                    _log_helicone_route_once(f"Helicone enabled, routing through {base_url}")
+                        _log_telemetry_route_once(f"Using pre-configured headers, routing through {base_url}")
+                # Priority 2: Auto-detect via TelemetryPlugin
+                elif self._telemetry is not None and self._telemetry.is_enabled():
+                    base_url = self._telemetry.get_proxy_url("openai")
+                    default_headers = self._telemetry.get_headers(app="llmix", module="umi-async")
+                    _log_telemetry_route_once(f"Telemetry enabled, routing through {base_url}")
                 # Priority 3: Configured base_url
                 elif self.base_url:
                     base_url = self.base_url
-                    logger.info(f"Using configured base URL for OpenAI: {base_url}")
+                    logger.info("Using configured base URL for OpenAI: %s", base_url)
 
                 # Create AsyncOpenAI client with enhanced configuration
                 client_params: dict[str, Any] = {"api_key": self.api_key}

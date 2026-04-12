@@ -57,6 +57,8 @@ _LAZY_IMPORTS: dict[str, str] = {
     "TwoTierCache": "llmix.response_cache",
     "generate_cache_key": "llmix.response_cache",
     "should_skip_cache": "llmix.response_cache",
+    # telemetry
+    "TelemetryPlugin": "llmix.telemetry",
 }
 
 if TYPE_CHECKING:
@@ -89,6 +91,7 @@ if TYPE_CHECKING:
     from llmix.resilience import Singleflight as Singleflight
     from llmix.resilience import is_retryable as is_retryable
     from llmix.response_cache import TwoTierCache as TwoTierCache
+    from llmix.telemetry import TelemetryPlugin as TelemetryPlugin
     from llmix.response_cache import generate_cache_key as generate_cache_key
     from llmix.response_cache import should_skip_cache as should_skip_cache
     from llmix.thinking import strip_thinking as strip_thinking

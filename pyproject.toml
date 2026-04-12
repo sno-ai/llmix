@@ -42,9 +42,3 @@ build-backend = "setuptools.build_meta"
 pythonVersion = "3.14"
 typeCheckingMode = "standard"
 include = ["python/llmix"]
-# v1 files still import lib.telemetry.helicone (Phase 2: TelemetryPlugin Protocol)
-exclude = [
-  "python/llmix/client.py",
-  "python/llmix/provider_router.py",
-  "python/llmix/providers/openai_async_client.py",
-]
