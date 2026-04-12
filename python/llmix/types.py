@@ -6,7 +6,8 @@ Mirrors TypeScript implementation in package/llmix/src/types.ts.
 """
 
 import re
-from typing import Any, Awaitable, Literal, Protocol, TypedDict
+from collections.abc import Awaitable
+from typing import Any, Literal, Protocol, TypedDict
 
 try:
     from lib.infra.validation import DANGEROUS_CHARS as DANGEROUS_CHARS
@@ -855,7 +856,8 @@ OPENAI_PROMPT_CACHE_MIN_TOKENS = 1024
 # Characters that could enable path traversal attacks (re-exported from lib.infra.validation)
 
 # Models that support OpenAI Batch API
-BATCH_CAPABLE_MODEL_PATTERNS = [r"^gpt-4", r"^gpt-5", r"^o1", r"^o3"]
+# TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
+BATCH_CAPABLE_MODEL_PATTERNS = [r"^gpt-4", r"^gpt-5", r"^o\d"]
 
 
 # =============================================================================

@@ -13,8 +13,6 @@ Provides comprehensive async OpenAI API support with:
 All features identical to OpenAIClient but with async/await support.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import threading

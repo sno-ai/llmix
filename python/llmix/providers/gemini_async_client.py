@@ -12,6 +12,7 @@ Timeout Configuration:
 
 import asyncio
 import logging
+import threading
 from typing import Any
 
 from llmix.providers._config import DEFAULT_GEMINI_FLASH_MODEL, DEFAULT_LLM_TIMEOUT
@@ -84,28 +85,32 @@ class AsyncGeminiClient(BaseLLMClient):
 
         # Lazy initialization of genai.Client
         self._genai_client: genai.Client | None = None
+        self._client_lock = threading.Lock()
 
         logger.info("AsyncGeminiClient initialized with model: %s", model)
 
     @property
     def client(self) -> genai.Client:
-        """Lazy load genai.Client."""
-        if self._genai_client is None:
-            base_url = self.base_url
+        """Lazy load genai.Client (thread-safe)."""
+        client = self._genai_client
+        if client is not None:
+            return client
+        with self._client_lock:
+            if self._genai_client is None:
+                base_url = self.base_url
 
-            http_opts: dict[str, Any] = {"timeout": self.DEFAULT_TIMEOUT_MS}
-            if base_url:
-                http_opts["base_url"] = base_url
-            if self._default_headers:
-                http_opts["headers"] = self._default_headers
+                http_opts: dict[str, Any] = {"timeout": self.DEFAULT_TIMEOUT_MS}
+                if base_url:
+                    http_opts["base_url"] = base_url
+                if self._default_headers:
+                    http_opts["headers"] = self._default_headers
 
-            self._genai_client = genai.Client(api_key=self.api_key, http_options=types.HttpOptions(**http_opts))
-            if base_url:
-                logger.info("Initialized async Gemini client with gateway: %s", base_url)
-            else:
-                logger.info("Initialized async Gemini client with default endpoint")
-
-        return self._genai_client
+                self._genai_client = genai.Client(api_key=self.api_key, http_options=types.HttpOptions(**http_opts))
+                if base_url:
+                    logger.info("Initialized async Gemini client with gateway: %s", base_url)
+                else:
+                    logger.info("Initialized async Gemini client with default endpoint")
+            return self._genai_client
 
     async def chat_completion(  # type: ignore[override]  # async override of sync base
         self,

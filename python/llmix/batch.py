@@ -5,12 +5,10 @@ Batch ID encoding/decoding, durable metadata, and provider-specific
 batch submit/status/results dispatch.
 """
 
-from __future__ import annotations
-
 import base64
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -32,18 +30,14 @@ _VALID_PROVIDERS: set[str] = {"openai", "anthropic", "gemini"}
 # Batch ID Encoding / Decoding (Tasks 110, 111)
 # ---------------------------------------------------------------------------
 
+
 def _key_fingerprint(api_key: str) -> str:
     """Compute the key fingerprint: last 8 hex chars of SHA-256(api_key)."""
     h = hashlib.sha256(api_key.encode()).hexdigest()
     return h[-8:]
 
 
-def encode_batch_id(
-    provider: BatchProvider,
-    api_key: str,
-    n_prompts: int,
-    raw_batch_id: str,
-) -> str:
+def encode_batch_id(provider: BatchProvider, api_key: str, n_prompts: int, raw_batch_id: str) -> str:
     """Encode a batch ID from its components.
 
     Format: ``{provider}:{key_fingerprint}:{n_prompts}:{raw_batch_id}``
@@ -55,15 +49,9 @@ def encode_batch_id(
 class DecodedBatchId:
     """Decoded batch ID components."""
 
-    __slots__ = ("provider", "key_fingerprint", "n_prompts", "raw_batch_id")
+    __slots__ = ("key_fingerprint", "n_prompts", "provider", "raw_batch_id")
 
-    def __init__(
-        self,
-        provider: BatchProvider,
-        key_fingerprint: str,
-        n_prompts: int,
-        raw_batch_id: str,
-    ) -> None:
+    def __init__(self, provider: BatchProvider, key_fingerprint: str, n_prompts: int, raw_batch_id: str) -> None:
         self.provider = provider
         self.key_fingerprint = key_fingerprint
         self.n_prompts = n_prompts
@@ -117,19 +105,13 @@ def decode_batch_id(batch_id: str) -> DecodedBatchId:
 # Schemas (Task 113)
 # ---------------------------------------------------------------------------
 
+
 class BatchStatus:
     """Status of a batch job."""
 
-    __slots__ = ("batch_id", "state", "total_requests", "completed_requests", "failed_requests")
+    __slots__ = ("batch_id", "completed_requests", "failed_requests", "state", "total_requests")
 
-    def __init__(
-        self,
-        batch_id: str,
-        state: BatchState,
-        total_requests: int = 0,
-        completed_requests: int = 0,
-        failed_requests: int = 0,
-    ) -> None:
+    def __init__(self, batch_id: str, state: BatchState, total_requests: int = 0, completed_requests: int = 0, failed_requests: int = 0) -> None:
         self.batch_id = batch_id
         self.state = state
         self.total_requests = total_requests
@@ -140,15 +122,9 @@ class BatchStatus:
 class BatchResult:
     """Result of a single request in a batch."""
 
-    __slots__ = ("index", "success", "response", "error")
+    __slots__ = ("error", "index", "response", "success")
 
-    def __init__(
-        self,
-        index: int,
-        success: bool,
-        response: str | None = None,
-        error: str | None = None,
-    ) -> None:
+    def __init__(self, index: int, success: bool, response: str | None = None, error: str | None = None) -> None:
         self.index = index
         self.success = success
         self.response = response
@@ -159,18 +135,13 @@ class BatchResult:
 # Durable Metadata (Task 112)
 # ---------------------------------------------------------------------------
 
+
 class BatchMetadata:
     """Metadata written to disk on batch submit."""
 
-    __slots__ = ("key_fingerprint", "provider", "n_prompts", "submitted_at")
+    __slots__ = ("key_fingerprint", "n_prompts", "provider", "submitted_at")
 
-    def __init__(
-        self,
-        key_fingerprint: str,
-        provider: BatchProvider,
-        n_prompts: int,
-        submitted_at: str,
-    ) -> None:
+    def __init__(self, key_fingerprint: str, provider: BatchProvider, n_prompts: int, submitted_at: str) -> None:
         self.key_fingerprint = key_fingerprint
         self.provider = provider
         self.n_prompts = n_prompts
@@ -191,13 +162,7 @@ def _metadata_path(batch_id: str, state_dir: Path | None = None) -> Path:
     return _batches_dir(state_dir) / _metadata_filename(batch_id)
 
 
-def write_metadata(
-    batch_id: str,
-    api_key: str,
-    provider: BatchProvider,
-    n_prompts: int,
-    state_dir: Path | None = None,
-) -> None:
+def write_metadata(batch_id: str, api_key: str, provider: BatchProvider, n_prompts: int, state_dir: Path | None = None) -> None:
     """Write batch metadata to disk."""
     d = _batches_dir(state_dir)
     d.mkdir(parents=True, exist_ok=True)
@@ -206,24 +171,15 @@ def write_metadata(
         "keyFingerprint": _key_fingerprint(api_key),
         "provider": provider,
         "nPrompts": n_prompts,
-        "submittedAt": datetime.now(timezone.utc).isoformat(),
+        "submittedAt": datetime.now(UTC).isoformat(),
     }
-    _metadata_path(batch_id, state_dir).write_text(
-        json.dumps(metadata), encoding="utf-8"
-    )
+    _metadata_path(batch_id, state_dir).write_text(json.dumps(metadata), encoding="utf-8")
 
 
 def read_metadata(batch_id: str, state_dir: Path | None = None) -> BatchMetadata:
     """Read batch metadata from disk."""
-    raw = json.loads(
-        _metadata_path(batch_id, state_dir).read_text(encoding="utf-8")
-    )
-    return BatchMetadata(
-        key_fingerprint=raw["keyFingerprint"],
-        provider=raw["provider"],
-        n_prompts=raw["nPrompts"],
-        submitted_at=raw["submittedAt"],
-    )
+    raw = json.loads(_metadata_path(batch_id, state_dir).read_text(encoding="utf-8"))
+    return BatchMetadata(key_fingerprint=raw["keyFingerprint"], provider=raw["provider"], n_prompts=raw["nPrompts"], submitted_at=raw["submittedAt"])
 
 
 def delete_metadata(batch_id: str, state_dir: Path | None = None) -> None:
@@ -235,11 +191,7 @@ def delete_metadata(batch_id: str, state_dir: Path | None = None) -> None:
         pass
 
 
-def _validate_batch_request(
-    batch_id: str,
-    api_key: str,
-    state_dir: Path | None = None,
-) -> DecodedBatchId:
+def _validate_batch_request(batch_id: str, api_key: str, state_dir: Path | None = None) -> DecodedBatchId:
     """Validate a batch ID against durable submit-time metadata."""
     decoded = decode_batch_id(batch_id)
     metadata = read_metadata(batch_id, state_dir)
@@ -256,6 +208,7 @@ def _validate_batch_request(
 
 try:
     import httpx
+
     _HAS_HTTPX = True
 except ImportError:
     _HAS_HTTPX = False
@@ -263,22 +216,16 @@ except ImportError:
 
 def _require_httpx() -> Any:
     if not _HAS_HTTPX:
-        raise ImportError(
-            "httpx is required for batch API calls. Install with: pip install httpx"
-        )
+        raise ImportError("httpx is required for batch API calls. Install with: pip install httpx")
     import httpx
+
     return httpx
 
 
 # --- OpenAI (Task 107) ---
 
-def _openai_submit(
-    api_key: str,
-    model: str,
-    prompts: list[str],
-    system_prompt: str | None = None,
-    params: dict[str, Any] | None = None,
-) -> str:
+
+def _openai_submit(api_key: str, model: str, prompts: list[str], system_prompt: str | None = None, params: dict[str, Any] | None = None) -> str:
     httpx = _require_httpx()
 
     lines: list[str] = []
@@ -290,12 +237,7 @@ def _openai_submit(
         body: dict[str, Any] = {"model": model, "messages": messages}
         if params:
             body.update(params)
-        lines.append(json.dumps({
-            "custom_id": f"req-{i}",
-            "method": "POST",
-            "url": "/v1/chat/completions",
-            "body": body,
-        }))
+        lines.append(json.dumps({"custom_id": f"req-{i}", "method": "POST", "url": "/v1/chat/completions", "body": body}))
 
     jsonl_bytes = ("\n".join(lines) + "\n").encode()
 
@@ -311,15 +253,8 @@ def _openai_submit(
 
         batch_res = client.post(
             "https://api.openai.com/v1/batches",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "input_file_id": file_id,
-                "endpoint": "/v1/chat/completions",
-                "completion_window": "24h",
-            },
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"input_file_id": file_id, "endpoint": "/v1/chat/completions", "completion_window": "24h"},
         )
         batch_res.raise_for_status()
         return batch_res.json()["id"]
@@ -329,10 +264,7 @@ def _openai_status(api_key: str, raw_batch_id: str) -> BatchStatus:
     httpx = _require_httpx()
 
     with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
-        res = client.get(
-            f"https://api.openai.com/v1/batches/{raw_batch_id}",
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
+        res = client.get(f"https://api.openai.com/v1/batches/{raw_batch_id}", headers={"Authorization": f"Bearer {api_key}"})
         res.raise_for_status()
         batch = res.json()
 
@@ -357,18 +289,11 @@ def _openai_status(api_key: str, raw_batch_id: str) -> BatchStatus:
     )
 
 
-def _openai_results(
-    api_key: str,
-    raw_batch_id: str,
-    n_prompts: int,
-) -> list[BatchResult]:
+def _openai_results(api_key: str, raw_batch_id: str, n_prompts: int) -> list[BatchResult]:
     httpx = _require_httpx()
 
     with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
-        res = client.get(
-            f"https://api.openai.com/v1/batches/{raw_batch_id}",
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
+        res = client.get(f"https://api.openai.com/v1/batches/{raw_batch_id}", headers={"Authorization": f"Bearer {api_key}"})
         res.raise_for_status()
         batch = res.json()
 
@@ -381,10 +306,7 @@ def _openai_results(
         if not output_file_id:
             raise RuntimeError(f"OpenAI batch {raw_batch_id} completed but no output_file_id")
 
-        content_res = client.get(
-            f"https://api.openai.com/v1/files/{output_file_id}/content",
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
+        content_res = client.get(f"https://api.openai.com/v1/files/{output_file_id}/content", headers={"Authorization": f"Bearer {api_key}"})
         content_res.raise_for_status()
         text = content_res.text
 
@@ -397,27 +319,16 @@ def _openai_results(
         if entry.get("error"):
             result_map[idx] = BatchResult(index=idx, success=False, error=entry["error"]["message"])
         else:
-            content = "".join(
-                c["message"]["content"] or ""
-                for c in entry["response"]["body"]["choices"]
-            )
+            content = "".join(c["message"]["content"] or "" for c in entry["response"]["body"]["choices"])
             result_map[idx] = BatchResult(index=idx, success=True, response=content)
 
-    return [
-        result_map.get(i, BatchResult(index=i, success=False, error="Missing result"))
-        for i in range(n_prompts)
-    ]
+    return [result_map.get(i, BatchResult(index=i, success=False, error="Missing result")) for i in range(n_prompts)]
 
 
 # --- Anthropic (Task 108) ---
 
-def _anthropic_submit(
-    api_key: str,
-    model: str,
-    prompts: list[str],
-    system_prompt: str | None = None,
-    params: dict[str, Any] | None = None,
-) -> str:
+
+def _anthropic_submit(api_key: str, model: str, prompts: list[str], system_prompt: str | None = None, params: dict[str, Any] | None = None) -> str:
     httpx = _require_httpx()
 
     max_tokens = 4096
@@ -428,11 +339,7 @@ def _anthropic_submit(
 
     requests = []
     for i, prompt in enumerate(prompts):
-        req_params: dict[str, Any] = {
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": prompt}],
-        }
+        req_params: dict[str, Any] = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]}
         if system_prompt:
             req_params["system"] = system_prompt
         req_params.update(extra_params)
@@ -441,11 +348,7 @@ def _anthropic_submit(
     with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         res = client.post(
             "https://api.anthropic.com/v1/messages/batches",
-            headers={
-                "x-api-key": api_key,
-                "Content-Type": "application/json",
-                "anthropic-version": "2023-06-01",
-            },
+            headers={"x-api-key": api_key, "Content-Type": "application/json", "anthropic-version": "2023-06-01"},
             json={"requests": requests},
         )
         res.raise_for_status()
@@ -457,11 +360,7 @@ def _anthropic_status(api_key: str, raw_batch_id: str) -> BatchStatus:
 
     with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         res = client.get(
-            f"https://api.anthropic.com/v1/messages/batches/{raw_batch_id}",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-            },
+            f"https://api.anthropic.com/v1/messages/batches/{raw_batch_id}", headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"}
         )
         res.raise_for_status()
         batch = res.json()
@@ -478,38 +377,23 @@ def _anthropic_status(api_key: str, raw_batch_id: str) -> BatchStatus:
         state = "in_progress"
     else:
         state = "in_progress"
-    total = sum(
-        counts.get(k, 0)
-        for k in ("processing", "succeeded", "errored", "canceled", "expired")
-    )
+    total = sum(counts.get(k, 0) for k in ("processing", "succeeded", "errored", "canceled", "expired"))
 
     return BatchStatus(
         batch_id=raw_batch_id,
         state=state,
         total_requests=total,
         completed_requests=counts.get("succeeded", 0),
-        failed_requests=(
-            counts.get("errored", 0)
-            + counts.get("canceled", 0)
-            + counts.get("expired", 0)
-        ),
+        failed_requests=(counts.get("errored", 0) + counts.get("canceled", 0) + counts.get("expired", 0)),
     )
 
 
-def _anthropic_results(
-    api_key: str,
-    raw_batch_id: str,
-    n_prompts: int,
-) -> list[BatchResult]:
+def _anthropic_results(api_key: str, raw_batch_id: str, n_prompts: int) -> list[BatchResult]:
     httpx = _require_httpx()
 
     with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
         res = client.get(
-            f"https://api.anthropic.com/v1/messages/batches/{raw_batch_id}/results",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-            },
+            f"https://api.anthropic.com/v1/messages/batches/{raw_batch_id}/results", headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"}
         )
         res.raise_for_status()
         text = res.text
@@ -521,11 +405,7 @@ def _anthropic_results(
         entry = json.loads(line)
         idx = int(entry["custom_id"].removeprefix("req-"))
         if entry["result"]["type"] == "succeeded" and entry["result"].get("message"):
-            content = "".join(
-                b.get("text", "")
-                for b in entry["result"]["message"]["content"]
-                if b.get("type") == "text"
-            )
+            content = "".join(b.get("text", "") for b in entry["result"]["message"]["content"] if b.get("type") == "text")
             result_map[idx] = BatchResult(index=idx, success=True, response=content)
         else:
             err_msg = "Unknown error"
@@ -533,31 +413,19 @@ def _anthropic_results(
                 err_msg = entry["result"]["error"].get("message", err_msg)
             result_map[idx] = BatchResult(index=idx, success=False, error=err_msg)
 
-    return [
-        result_map.get(i, BatchResult(index=i, success=False, error="Missing result"))
-        for i in range(n_prompts)
-    ]
+    return [result_map.get(i, BatchResult(index=i, success=False, error="Missing result")) for i in range(n_prompts)]
 
 
 # --- Gemini (Task 109) ---
 
-def _gemini_submit(
-    api_key: str,
-    model: str,
-    prompts: list[str],
-    system_prompt: str | None = None,
-    params: dict[str, Any] | None = None,
-) -> str:
+
+def _gemini_submit(api_key: str, model: str, prompts: list[str], system_prompt: str | None = None, params: dict[str, Any] | None = None) -> str:
     httpx = _require_httpx()
 
     requests = []
     for i, prompt in enumerate(prompts):
         req: dict[str, Any] = {
-            "request": {
-                "model": f"models/{model}",
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": params or {},
-            },
+            "request": {"model": f"models/{model}", "contents": [{"parts": [{"text": prompt}]}], "generationConfig": params or {}},
             "metadata": {"id": f"req-{i}"},
         }
         if system_prompt:
@@ -579,10 +447,7 @@ def _gemini_status(api_key: str, raw_batch_id: str) -> BatchStatus:
     httpx = _require_httpx()
 
     with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
-        res = client.get(
-            f"https://generativelanguage.googleapis.com/v1beta/{raw_batch_id}",
-            params={"key": api_key},
-        )
+        res = client.get(f"https://generativelanguage.googleapis.com/v1beta/{raw_batch_id}", params={"key": api_key})
         res.raise_for_status()
         batch = res.json()
 
@@ -599,28 +464,17 @@ def _gemini_status(api_key: str, raw_batch_id: str) -> BatchStatus:
     return BatchStatus(
         batch_id=raw_batch_id,
         state=state_map.get(batch.get("state", ""), "in_progress"),
-        total_requests=(
-            (stats.get("successfulCount", 0) or 0)
-            + (stats.get("failedCount", 0) or 0)
-            + (stats.get("incompleteCount", 0) or 0)
-        ),
+        total_requests=((stats.get("successfulCount", 0) or 0) + (stats.get("failedCount", 0) or 0) + (stats.get("incompleteCount", 0) or 0)),
         completed_requests=stats.get("successfulCount", 0) or 0,
         failed_requests=stats.get("failedCount", 0) or 0,
     )
 
 
-def _gemini_results(
-    api_key: str,
-    raw_batch_id: str,
-    n_prompts: int,
-) -> list[BatchResult]:
+def _gemini_results(api_key: str, raw_batch_id: str, n_prompts: int) -> list[BatchResult]:
     httpx = _require_httpx()
 
     with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
-        res = client.get(
-            f"https://generativelanguage.googleapis.com/v1beta/{raw_batch_id}",
-            params={"key": api_key},
-        )
+        res = client.get(f"https://generativelanguage.googleapis.com/v1beta/{raw_batch_id}", params={"key": api_key})
         res.raise_for_status()
         batch = res.json()
 
@@ -639,9 +493,7 @@ def _gemini_results(
             continue
 
         if resp.get("error"):
-            result_map[idx] = BatchResult(
-                index=idx, success=False, error=resp["error"].get("message", "Unknown error")
-            )
+            result_map[idx] = BatchResult(index=idx, success=False, error=resp["error"].get("message", "Unknown error"))
         else:
             text = ""
             candidates = (resp.get("response") or {}).get("candidates", [])
@@ -651,15 +503,13 @@ def _gemini_results(
                     text = parts[0].get("text", "")
             result_map[idx] = BatchResult(index=idx, success=True, response=text)
 
-    return [
-        result_map.get(i, BatchResult(index=i, success=False, error="Missing result"))
-        for i in range(n_prompts)
-    ]
+    return [result_map.get(i, BatchResult(index=i, success=False, error="Missing result")) for i in range(n_prompts)]
 
 
 # ---------------------------------------------------------------------------
 # BatchProcessor (Task 105)
 # ---------------------------------------------------------------------------
+
 
 class BatchProcessor:
     """Batch processing with provider dispatch and durable metadata."""
@@ -713,12 +563,7 @@ class BatchProcessor:
         else:
             raise ValueError(f"Unsupported batch provider: {decoded.provider}")
 
-    def results(
-        self,
-        batch_id: str,
-        api_key: str,
-        state_dir: Path | None = None,
-    ) -> list[BatchResult]:
+    def results(self, batch_id: str, api_key: str, state_dir: Path | None = None) -> list[BatchResult]:
         """Retrieve batch results.
 
         Metadata is deleted only once the provider returns terminal results.

@@ -9,8 +9,6 @@ Usage:
     client = router.get_provider_client(provider="openai", model="gpt-4o", ...)
 """
 
-from __future__ import annotations
-
 import asyncio
 import inspect
 import logging
@@ -33,8 +31,8 @@ from llmix.env import (
 from llmix.types import ApiKeysConfig, CachingStrategy, HeliconeConfig, Provider, ProviderUrlConfig
 
 if TYPE_CHECKING:
-    from llmix.providers.base import BaseLLMClient
     from lib.telemetry.helicone import Provider as HeliconeProvider
+    from llmix.providers.base import BaseLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -260,13 +258,7 @@ class ProviderRouter:
             return self._create_together_client(model, caching_strategy, cache_key, helicone_module, helicone_enabled_yaml)
         if provider == "novita":
             return self._create_novita_client(
-                model,
-                caching_strategy,
-                cache_key,
-                helicone_module,
-                helicone_enabled_yaml,
-                enable_thinking,
-                thinking_budget,
+                model, caching_strategy, cache_key, helicone_module, helicone_enabled_yaml, enable_thinking, thinking_budget
             )
         if provider == "snogpu":
             return self._create_gpu_client(
@@ -564,12 +556,7 @@ class ProviderRouter:
             )
 
         logger.info("[LLMix] Creating Novita client for model: %s (thinking: %s)", model, bool(enable_thinking))
-        return NovitaClient(
-            api_key=api_key,
-            model=model,
-            enable_thinking=bool(enable_thinking),
-            thinking_budget=thinking_budget,
-        )
+        return NovitaClient(api_key=api_key, model=model, enable_thinking=bool(enable_thinking), thinking_budget=thinking_budget)
 
     def _create_gpu_client(
         self,

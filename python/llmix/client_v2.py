@@ -10,8 +10,6 @@ The provider dispatch (step 11) is a caller-supplied callback.
 This module is pure orchestration -- no direct LLM SDK dependency.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging
