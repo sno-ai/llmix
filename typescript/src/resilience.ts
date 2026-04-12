@@ -17,6 +17,7 @@ import { join } from "node:path";
 
 const DEFAULT_FAILURE_THRESHOLD = 3;
 const DEFAULT_COOLDOWN_MS = 30_000;
+const DEFAULT_PERMITTED_HALF_OPEN_CALLS = 10;
 const DEFAULT_BASE_DELAY_MS = 1_000;
 const DEFAULT_MAX_DELAY_MS = 30_000;
 const DEFAULT_JITTER_MS = 1_000;
@@ -83,18 +84,24 @@ export enum CircuitState {
 export interface CircuitBreakerOptions {
   failureThreshold?: number;
   cooldownMs?: number;
+  permittedHalfOpenCalls?: number;
 }
 
 export class CircuitBreaker {
   readonly provider: string;
   readonly baseUrl: string;
   readonly failureThreshold: number;
-  readonly cooldownMs: number;
+  readonly permittedHalfOpenCalls: number;
+  cooldownMs: number;
 
   private _state = CircuitState.CLOSED;
   private _consecutiveFailures = 0;
   private _openedAt = 0;
-  private _halfOpenProbeInFlight = false;
+  private _baseCooldownMs: number;
+  // HALF_OPEN probe tracking (Resilience4j-style)
+  private _halfOpenActive = 0;
+  private _halfOpenSuccesses = 0;
+  private _halfOpenFailures = 0;
 
   constructor(
     provider: string,
@@ -105,6 +112,8 @@ export class CircuitBreaker {
     this.baseUrl = baseUrl;
     this.failureThreshold = options?.failureThreshold ?? DEFAULT_FAILURE_THRESHOLD;
     this.cooldownMs = options?.cooldownMs ?? DEFAULT_COOLDOWN_MS;
+    this._baseCooldownMs = this.cooldownMs;
+    this.permittedHalfOpenCalls = options?.permittedHalfOpenCalls ?? DEFAULT_PERMITTED_HALF_OPEN_CALLS;
   }
 
   get state(): CircuitState {
@@ -112,6 +121,9 @@ export class CircuitBreaker {
       const elapsed = performance.now() - this._openedAt;
       if (elapsed >= this.cooldownMs) {
         this._state = CircuitState.HALF_OPEN;
+        this._halfOpenActive = 0;
+        this._halfOpenSuccesses = 0;
+        this._halfOpenFailures = 0;
         return CircuitState.HALF_OPEN;
       }
     }
@@ -123,11 +135,10 @@ export class CircuitBreaker {
     if (current === CircuitState.CLOSED) return;
 
     if (current === CircuitState.HALF_OPEN) {
-      if (this._halfOpenProbeInFlight) {
+      if (this._halfOpenActive >= this.permittedHalfOpenCalls) {
         throw new CircuitOpenError(this.provider, this.baseUrl);
       }
-      this._halfOpenProbeInFlight = true;
-      this._state = CircuitState.HALF_OPEN;
+      this._halfOpenActive++;
       return;
     }
 
@@ -135,33 +146,57 @@ export class CircuitBreaker {
     throw new CircuitOpenError(this.provider, this.baseUrl);
   }
 
+  /**
+   * Evaluate HALF_OPEN results once enough probes have completed.
+   *
+   * Uses a fixed window (permittedHalfOpenCalls) so we wait for the full
+   * sample before deciding. If a probe is lost (timeout/crash), the failure
+   * path in cancelProbe() counts it as a failure so the window always completes.
+   */
+  private _evaluateHalfOpen(): void {
+    const totalCompleted = this._halfOpenSuccesses + this._halfOpenFailures;
+    if (totalCompleted < this.permittedHalfOpenCalls) {
+      return; // Need more samples before deciding
+    }
+
+    if (this._halfOpenSuccesses > this._halfOpenFailures) {
+      // Majority success — service recovered
+      this._state = CircuitState.CLOSED;
+      this._consecutiveFailures = 0;
+      this.cooldownMs = this._baseCooldownMs;
+    } else {
+      // Majority failures — re-open with exponential backoff (cap 5 min)
+      this._state = CircuitState.OPEN;
+      this._openedAt = performance.now();
+      this.cooldownMs = Math.min(this.cooldownMs * 2, 300_000);
+    }
+  }
+
   onSuccess(): void {
+    if (this._state === CircuitState.HALF_OPEN) {
+      this._halfOpenSuccesses++;
+      this._evaluateHalfOpen();
+      return;
+    }
+    // CLOSED state — reset failure counter
     this._state = CircuitState.CLOSED;
     this._consecutiveFailures = 0;
-    this._halfOpenProbeInFlight = false;
   }
 
   onFailure(statusCode?: number, networkError = false): void {
-    const current = this.state;
-
     let retryable = networkError;
     if (statusCode !== undefined) {
       retryable = retryable || isRetryableStatus(statusCode);
     }
 
-    // HALF_OPEN probe must always be finalized regardless of retryability.
-    if (current === CircuitState.HALF_OPEN) {
+    if (this._state === CircuitState.HALF_OPEN) {
       if (retryable || networkError) {
-        // Transient failure — re-open the circuit
-        this._state = CircuitState.OPEN;
-        this._openedAt = performance.now();
+        this._halfOpenFailures++;
       } else {
-        // Non-retryable error (400, 401, 404, etc.) means the server is
-        // reachable — close the circuit.
-        this._state = CircuitState.CLOSED;
-        this._consecutiveFailures = 0;
+        // Non-retryable (400, 404) = server is reachable, count as success
+        this._halfOpenSuccesses++;
       }
-      this._halfOpenProbeInFlight = false;
+      this._evaluateHalfOpen();
       return;
     }
 
@@ -187,22 +222,29 @@ export class CircuitBreaker {
 
   /**
    * Cancel an in-flight HALF_OPEN probe without recording success or failure.
-   * Re-opens the circuit so the next cooldown expiry triggers a fresh probe.
-   * Use this in a finally/catch when the caller cannot reach onSuccess/onFailure.
+   *
+   * Safety net for when onSuccess/onFailure were never called (e.g. crash).
+   * No-op if the probe was already finalized — prevents double-counting when
+   * onFailure() and cancelProbe() both fire for the same probe.
    */
   cancelProbe(): void {
-    if (this._halfOpenProbeInFlight) {
-      this._state = CircuitState.OPEN;
-      this._openedAt = performance.now();
-      this._halfOpenProbeInFlight = false;
+    if (this._state !== CircuitState.HALF_OPEN) return;
+    const totalFinalized = this._halfOpenSuccesses + this._halfOpenFailures;
+    if (totalFinalized >= this._halfOpenActive) {
+      return; // All admitted probes already reported — this is a duplicate
     }
+    this._halfOpenFailures++;
+    this._evaluateHalfOpen();
   }
 
   reset(): void {
     this._state = CircuitState.CLOSED;
     this._consecutiveFailures = 0;
     this._openedAt = 0;
-    this._halfOpenProbeInFlight = false;
+    this._halfOpenActive = 0;
+    this._halfOpenSuccesses = 0;
+    this._halfOpenFailures = 0;
+    this.cooldownMs = this._baseCooldownMs;
   }
 }
 
@@ -335,7 +377,7 @@ export function calculateDelay(
   const maxDelayMs = options?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
   const jitterMs = options?.jitterMs ?? DEFAULT_JITTER_MS;
 
-  const exponential = Math.min(Math.pow(2, attempt) * baseMs, maxDelayMs);
+  const exponential = Math.min(2 ** attempt * baseMs, maxDelayMs);
   const jitter = Math.floor(Math.random() * (jitterMs + 1));
   return exponential + jitter;
 }
