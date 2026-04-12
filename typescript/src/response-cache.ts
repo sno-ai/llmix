@@ -209,7 +209,7 @@ export function generateCacheKey(params: CacheKeyParams): string {
  * JSON replacer that sorts object keys at every level for deterministic serialization.
  * Also normalizes non-finite numbers to null for cross-language parity with Python.
  */
-function sortReplacer(_key: string, value: unknown): unknown {
+export function sortReplacer(_key: string, value: unknown): unknown {
   // Normalize NaN/Infinity to null — JS JSON.stringify does this implicitly,
   // but Python raises or serializes differently. Explicit null ensures parity.
   if (typeof value === "number" && !Number.isFinite(value)) {

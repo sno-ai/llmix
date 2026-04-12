@@ -13,7 +13,7 @@
 import { type StripThinkingResult, stripThinking } from "./thinking";
 import { type TransformKwargsCallback, applyTransformKwargs, PROVIDER_KWARGS_REGISTRY } from "./provider-kwargs";
 import { AdaptiveSemaphore, parseOpenAIRatelimitHeaders } from "./adaptive-semaphore";
-import { KeyPool, KeyPoolExhaustedError } from "./key-pool";
+import { type KeyPool, KeyPoolExhaustedError } from "./key-pool";
 import {
   CircuitBreaker,
   CircuitOpenError,
@@ -30,7 +30,7 @@ import type {
   LLMUsage,
   ProviderOptions,
 } from "./types";
-import { TwoTierCache, generateCacheKey, shouldSkipCache } from "./response-cache";
+import { type TwoTierCache, generateCacheKey, shouldSkipCache, sortReplacer } from "./response-cache";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -117,7 +117,7 @@ export class V2CallPipeline {
   private readonly semInitial: number;
   private readonly semMin: number;
 
-  private fileLock: FileLockLike | null = null;
+  private fileLockPromise: Promise<FileLockLike> | null = null;
   private readonly responseCache: TwoTierCache | undefined;
 
   constructor(config: V2PipelineConfig) {
@@ -170,10 +170,8 @@ export class V2CallPipeline {
 
   /** Get or lazy-init the cross-process file lock. */
   private async getFileLock(): Promise<FileLockLike> {
-    if (!this.fileLock) {
-      this.fileLock = await createFileLock();
-    }
-    return this.fileLock;
+    this.fileLockPromise ??= createFileLock();
+    return this.fileLockPromise;
   }
 
   /** Build provider kwargs before dispatch and derive the effective base URL. */
@@ -293,7 +291,7 @@ export class V2CallPipeline {
             seed: config.common?.seed,
             topP: config.common?.topP,
             providerOptions: config.providerOptions,
-          }),
+          }, sortReplacer),
         ));
 
         result = await this.singleflight.do(sfKey, async () => {
