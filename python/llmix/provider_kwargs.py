@@ -8,8 +8,6 @@ isolated from the main client code.
 Ported from repo-reference/llm-provider/src/llm_provider/providers/_registry.py
 """
 
-from __future__ import annotations
-
 import re
 from typing import Any, Protocol, TypedDict
 
@@ -42,11 +40,7 @@ class TransformKwargsCallback(Protocol):
 # =============================================================================
 
 
-def apply_transform_kwargs(
-    ctx: TransformKwargsContext,
-    kwargs: dict[str, Any],
-    callback: TransformKwargsCallback | None,
-) -> dict[str, Any]:
+def apply_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any], callback: TransformKwargsCallback | None) -> dict[str, Any]:
     """Apply a provider's transform_kwargs callback if non-null.
 
     Returns kwargs unchanged when callback is None.
@@ -66,17 +60,16 @@ def _is_reasoning_model(model_id: str) -> bool:
 
     Mirrors logic from model_capabilities._is_reasoning_model without
     pulling in the types.py import chain (which requires lib.infra).
+    # TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
     """
     lower = model_id.lower()
-    if lower.startswith("gpt-5-chat"):
-        return False
-    return lower.startswith(("o1", "o3", "o4", "gpt-5", "codex-", "computer-use"))
+    return bool(re.match(r"^o\d", lower)) or lower.startswith(("gpt-5", "codex-", "computer-use"))
 
 
 def openai_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]) -> dict[str, Any]:
     """Strip temperature and top_p for OpenAI reasoning models.
 
-    Reasoning models (o-series, gpt-5 except gpt-5-chat, codex-, computer-use-)
+    Reasoning models (o-series, gpt-5*, codex-, computer-use-)
     require temperature=1 and do not accept top_p.
     """
     model = ctx.get("model", "")
@@ -102,7 +95,7 @@ def openai_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any])
 _OPENROUTER_DEFAULT_PROVIDER = {"sort": "price"}
 
 
-def openrouter_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+def openrouter_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]) -> dict[str, Any]:
     """Inject default provider sorting config for OpenRouter.
 
     Sets extra_body.provider.sort = "price" when not already present.
@@ -174,9 +167,7 @@ def snogpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any])
         base = base[:-3]
 
     if not base.strip():
-        raise ValueError(
-            "snogpu provider requires a non-empty base_url in config"
-        )
+        raise ValueError("snogpu provider requires a non-empty base_url in config")
 
     if gpu_path:
         if '..' in gpu_path or not re.match(r'^[a-zA-Z0-9_/-]+$', gpu_path):

@@ -58,7 +58,7 @@ export function applyTransformKwargs(
 /**
  * Strip temperature and top_p for OpenAI reasoning models.
  *
- * Reasoning models (o-series, gpt-5 except gpt-5-chat, codex-, computer-use-)
+ * Reasoning models (o-series, gpt-5*, codex-, computer-use-)
  * require temperature=1 and do not accept top_p.
  */
 export function openaiTransformKwargs(

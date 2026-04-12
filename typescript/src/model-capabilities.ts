@@ -9,7 +9,7 @@
  * @see node_modules/@ai-sdk/openai/dist/index.js → isReasoningModel(), getResponsesModelConfig()
  *
  * Model Classes (from AI SDK source):
- * - Reasoning: Models starting with "o", "gpt-5", "codex-", "computer-use" (except gpt-5-chat)
+ * - Reasoning: Models matching /^o\d/ (o1, o3, o4...), "gpt-5*", "codex-", "computer-use"
  * - Standard: Everything else (gpt-4, gpt-4o, gpt-4.1, claude, gemini, etc.)
  *
  * Parameter Support:
@@ -39,20 +39,21 @@ export interface ModelCapabilities {
 /**
  * Check if model is a reasoning model
  *
- * Mirrors AI SDK's isReasoningModel():
+ * Based on AI SDK's isReasoningModel() but narrowed for o-series:
  * ```js
- * return (modelId.startsWith("o") || modelId.startsWith("gpt-5")) && !modelId.startsWith("gpt-5-chat");
+ * // AI SDK original: modelId.startsWith("o")
+ * // Narrowed to: /^o\d/.test(modelId) — matches o1, o3, o4 but not opus, omni, orca
  * ```
  *
  * Extended to also include codex- and computer-use- prefixes from getResponsesModelConfig()
  */
 function isReasoningModel(modelId: string): boolean {
   const lower = modelId.toLowerCase();
-  // gpt-5-chat is explicitly NOT a reasoning model
-  if (lower.startsWith("gpt-5-chat")) return false;
-  // Reasoning models: o*, gpt-5*, codex-*, computer-use-*
+  // TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
+  // Reasoning models: o{digit}* (o1, o3, o4...), gpt-5*, codex-*, computer-use-*
+  // All gpt-5 variants are reasoning models — none support temperature.
   return (
-    lower.startsWith("o") ||
+    /^o\d/.test(lower) ||
     lower.startsWith("gpt-5") ||
     lower.startsWith("codex-") ||
     lower.startsWith("computer-use")
@@ -67,8 +68,7 @@ function isReasoningModel(modelId: string): boolean {
  */
 function supportsTextVerbosity(modelId: string): boolean {
   const lower = modelId.toLowerCase();
-  // Only gpt-5 series (not gpt-5-chat) supports textVerbosity
-  return lower.startsWith("gpt-5") && !lower.startsWith("gpt-5-chat");
+  return lower.startsWith("gpt-5");
 }
 
 /**
@@ -82,9 +82,10 @@ export function getModelCapabilities(modelId: string): ModelCapabilities {
 
   // Determine model class for logging
   let modelClass: ModelCapabilities["modelClass"] = "standard";
-  if (lower.startsWith("gpt-5") && !lower.startsWith("gpt-5-chat")) {
+  if (lower.startsWith("gpt-5")) {
     modelClass = "gpt5";
-  } else if (lower.startsWith("o")) {
+  // TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
+  } else if (/^o\d/.test(lower)) {
     modelClass = "o-series";
   } else if (lower.startsWith("codex-") || lower.startsWith("computer-use")) {
     modelClass = "codex";
