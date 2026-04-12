@@ -46,7 +46,6 @@ from llmix.provider_router import (  # noqa: F401
     _map_anthropic_model,
     _map_deepseek_model,
     _resolve_google_api_key,
-    _resolve_helicone_environment,
     is_embedding_model,
 )
 from llmix.response_handler import (  # noqa: F401
@@ -67,13 +66,13 @@ from llmix.response_handler import (  # noqa: F401
     parse_preset,
     resolve_caching_strategy,
 )
+from llmix.telemetry import TelemetryPlugin
 from llmix.types import (
     OPENAI_PROMPT_CACHE_MIN_TOKENS,
     ApiKeysConfig,
     CachingStrategy,
     CallOptions,
     FallbackTrigger,
-    HeliconeConfig,
     LLMCallEventData,
     LLMixTelemetryProvider,
     LLMResponse,
@@ -120,8 +119,8 @@ class LLMClientConfig:
     provider_urls: ProviderUrlConfig | None = None
     """Provider URL configuration for CF AI Gateway support"""
 
-    helicone: HeliconeConfig | None = None
-    """Helicone configuration for native prompt caching"""
+    telemetry_plugin: TelemetryPlugin | None = None
+    """Optional telemetry plugin for proxy routing (Helicone, Langfuse, etc.)"""
 
     api_keys: ApiKeysConfig | None = None
     """API keys for LLM providers (falls back to environment variables)"""
@@ -170,9 +169,10 @@ class LLMClient:
         self._loader = config.loader
         self._default_scope = config.default_scope
         self._telemetry = config.telemetry
+        self._telemetry_plugin = config.telemetry_plugin
 
         # Delegate provider concerns to ProviderRouter
-        self._router = ProviderRouter(api_keys=config.api_keys, helicone=config.helicone, provider_urls=config.provider_urls)
+        self._router = ProviderRouter(api_keys=config.api_keys, provider_urls=config.provider_urls, telemetry=config.telemetry_plugin)
 
         # Config takes precedence, then env var (DEPRECATED), then default (False)
         if config.capture_telemetry_payload is not None:
@@ -423,11 +423,7 @@ class LLMClient:
 
         fb_ctx = self._resolve_effective_params(fb_config, primary_ctx.options, fallback_config["preset"], primary_ctx.messages, time.time())
         runtime_common = primary_ctx.options.get("overrides", {}).get("common", {})
-        fb_ctx.effective_common = {
-            **primary_ctx.config.get("common", {}),
-            **fb_config.get("common", {}),
-            **runtime_common,
-        }
+        fb_ctx.effective_common = {**primary_ctx.config.get("common", {}), **fb_config.get("common", {}), **runtime_common}
 
         fb_cb = ProviderCircuitBreaker.for_provider(fb_ctx.provider)
         if not await fb_cb.should_attempt_primary_async():
@@ -689,13 +685,8 @@ class LLMClient:
         usage = extract_usage(result.usage if hasattr(result, "usage") else {})
         latency_ms = int((time.time() - ctx.start_time) * 1000)
 
-        try:
-            from lib.telemetry.helicone import log_cache_ratio
-        except ImportError:
-            log_cache_ratio = None
-
-        if log_cache_ratio is not None:
-            log_cache_ratio(
+        if self._telemetry_plugin is not None:
+            self._telemetry_plugin.log_cache_ratio(
                 {
                     "usage": {
                         "prompt_tokens": usage.get("input_tokens", 0),
@@ -724,7 +715,7 @@ class LLMClient:
             )
         )
 
-        resolved_model = (getattr(result, "model", None) or ctx.effective_model)
+        resolved_model = getattr(result, "model", None) or ctx.effective_model
         response_dict: dict[str, Any] = {
             "content": result.content if hasattr(result, "content") else "",
             "model": resolved_model,
@@ -953,7 +944,7 @@ def create_llm_client(
     default_scope: str | None = None,
     telemetry: LLMixTelemetryProvider | None = None,
     provider_urls: ProviderUrlConfig | None = None,
-    helicone: HeliconeConfig | None = None,
+    telemetry_plugin: TelemetryPlugin | None = None,
     api_keys: ApiKeysConfig | None = None,
     capture_telemetry_payload: bool | None = None,
     call_timeout_ms: int | None = None,
@@ -965,7 +956,7 @@ def create_llm_client(
         default_scope=default_scope,
         telemetry=telemetry,
         provider_urls=provider_urls,
-        helicone=helicone,
+        telemetry_plugin=telemetry_plugin,
         api_keys=api_keys,
         capture_telemetry_payload=capture_telemetry_payload,
         call_timeout_ms=call_timeout_ms,

@@ -10,8 +10,6 @@ client injection is needed for Gemini -- the SDK handles it.
 Reference: repo-reference/llm-provider/src/llm_provider/providers/_registry.py
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -55,10 +53,7 @@ PROVIDER_TRANSPORT: dict[str, ProviderTransportConfig] = {
 
 def get_provider_transport(provider: str) -> ProviderTransportConfig:
     """Look up transport config for a provider. Returns http2=False for unknown providers."""
-    return PROVIDER_TRANSPORT.get(
-        provider,
-        ProviderTransportConfig(name=provider, http2=False),
-    )
+    return PROVIDER_TRANSPORT.get(provider, ProviderTransportConfig(name=provider, http2=False))
 
 
 # ---------------------------------------------------------------------------
@@ -100,9 +95,7 @@ def create_client_for_provider(provider: str, **kwargs: Any) -> httpx.AsyncClien
 # ---------------------------------------------------------------------------
 
 
-def create_ratelimit_hook(
-    receiver: HeaderFeedbackReceiver,
-) -> dict[str, list[Any]]:
+def create_ratelimit_hook(receiver: HeaderFeedbackReceiver) -> dict[str, list[Any]]:
     """Create httpx event hooks that extract rate-limit headers.
 
     The hook reads ``x-ratelimit-remaining-requests`` and

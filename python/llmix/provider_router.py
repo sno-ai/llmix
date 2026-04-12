@@ -5,11 +5,9 @@ Encapsulates all provider-specific client creation, Helicone proxy routing,
 and LRU client caching.
 
 Usage:
-    router = ProviderRouter(api_keys=api_keys, helicone=helicone, provider_urls=provider_urls)
+    router = ProviderRouter(api_keys=api_keys, provider_urls=provider_urls, telemetry=plugin)
     client = router.get_provider_client(provider="openai", model="gpt-4o", ...)
 """
-
-from __future__ import annotations
 
 import asyncio
 import inspect
@@ -17,12 +15,10 @@ import logging
 import threading
 from collections import OrderedDict
 from collections.abc import Coroutine
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
 from llmix.env import (
     get_deepinfra_api_key,
-    get_environment,
     get_gemini_api_key,
     get_internal_service_secret,
     get_novita_api_key,
@@ -30,11 +26,11 @@ from llmix.env import (
     get_openrouter_api_key,
     get_together_api_key,
 )
-from llmix.types import ApiKeysConfig, CachingStrategy, HeliconeConfig, Provider, ProviderUrlConfig
+from llmix.telemetry import TelemetryPlugin
+from llmix.types import ApiKeysConfig, CachingStrategy, Provider, ProviderUrlConfig
 
 if TYPE_CHECKING:
     from llmix.providers.base import BaseLLMClient
-    from lib.telemetry.helicone import Provider as HeliconeProvider
 
 logger = logging.getLogger(__name__)
 
@@ -66,28 +62,11 @@ _ANTHROPIC_MODEL_MAPPINGS: dict[str, str] = {
 }
 
 
-@lru_cache(maxsize=1)
-def _import_helicone_module() -> Any | None:
-    """Import Helicone lazily so standalone installs still work."""
-    try:
-        from lib.telemetry import helicone as helicone_module
-    except ImportError:
-        return None
-    return helicone_module
-
-
 def _resolve_google_api_key(api_keys: ApiKeysConfig | None) -> str | None:
     """Resolve the Gemini API key from injected config or the standard env var."""
     if api_keys and api_keys.get("google"):
         return api_keys.get("google")
     return get_gemini_api_key()
-
-
-def _resolve_helicone_environment(helicone: HeliconeConfig | None) -> str:
-    """Resolve the Helicone environment label from config or runtime env vars."""
-    if helicone and helicone.get("environment"):
-        return helicone.get("environment", "dev")
-    return get_environment()
 
 
 def is_embedding_model(model: str) -> bool:
@@ -118,11 +97,11 @@ class ProviderRouter:
     """
 
     def __init__(
-        self, api_keys: ApiKeysConfig | None = None, helicone: HeliconeConfig | None = None, provider_urls: ProviderUrlConfig | None = None
+        self, api_keys: ApiKeysConfig | None = None, provider_urls: ProviderUrlConfig | None = None, telemetry: TelemetryPlugin | None = None
     ) -> None:
         self._api_keys = api_keys
-        self._helicone = helicone
         self._provider_urls = provider_urls
+        self._telemetry = telemetry
         self._client_cache: OrderedDict[ClientCacheKey, BaseLLMClient] = OrderedDict()
         self._client_initializing: dict[ClientCacheKey, threading.Event] = {}
         self._cache_lock = threading.Lock()
@@ -260,13 +239,7 @@ class ProviderRouter:
             return self._create_together_client(model, caching_strategy, cache_key, helicone_module, helicone_enabled_yaml)
         if provider == "novita":
             return self._create_novita_client(
-                model,
-                caching_strategy,
-                cache_key,
-                helicone_module,
-                helicone_enabled_yaml,
-                enable_thinking,
-                thinking_budget,
+                model, caching_strategy, cache_key, helicone_module, helicone_enabled_yaml, enable_thinking, thinking_budget
             )
         if provider == "snogpu":
             return self._create_gpu_client(
@@ -336,31 +309,21 @@ class ProviderRouter:
         with self._cache_lock:
             self._eviction_tasks.discard(task)
 
-    def _resolve_helicone_routing(
-        self, provider: HeliconeProvider, helicone_enabled_yaml: bool, caching_strategy: CachingStrategy, cache_key: str | None, helicone_module: str
+    def _resolve_telemetry_routing(
+        self, provider: str, helicone_enabled_yaml: bool, caching_strategy: CachingStrategy, cache_key: str | None, helicone_module: str
     ) -> tuple[str, dict[str, str]] | None:
-        """Resolve Helicone proxy routing for logging and observability.
+        """Resolve telemetry proxy routing for logging and observability.
 
-        Returns (base_url, headers) if Helicone should be used, None otherwise.
+        Returns (base_url, headers) if telemetry proxy should be used, None otherwise.
         """
-        if not helicone_enabled_yaml:
+        if not helicone_enabled_yaml or self._telemetry is None:
             return None
 
-        helicone_lib = _import_helicone_module()
-        if helicone_lib is None:
-            logger.debug("[LLMix] Helicone module unavailable; skipping proxy routing")
+        if not self._telemetry.is_enabled():
             return None
 
-        helicone_api_key = self._helicone.get("api_key") if self._helicone else None
-        if not helicone_lib.is_helicone_enabled(helicone_api_key):
-            return None
-
-        helicone_base_url = self._helicone.get("base_url") if self._helicone else None
-        if not helicone_base_url:
-            helicone_base_url = helicone_lib.get_helicone_url(provider)
-
-        env = _resolve_helicone_environment(self._helicone)
-        headers = helicone_lib.get_helicone_headers(app="sno-cortex", module=helicone_module, environment=env, api_key=helicone_api_key)
+        base_url = self._telemetry.get_proxy_url(provider)
+        headers = self._telemetry.get_headers(app="sno-cortex", module=helicone_module)
 
         if provider not in _CF_GATEWAY_PROVIDERS or caching_strategy == "disabled":
             headers["Helicone-Skip-CF-Gateway"] = "true"
@@ -371,14 +334,13 @@ class ProviderRouter:
             if cache_key:
                 headers["Helicone-Cache-Key"] = cache_key
 
-        return (helicone_base_url, headers)
+        return (base_url, headers)
 
-    def _create_helicone_http_client(self, provider: HeliconeProvider) -> Any | None:
-        """Create a Helicone-aware HTTP client when the telemetry module is available."""
-        helicone_lib = _import_helicone_module()
-        if helicone_lib is None:
+    def _create_helicone_http_client(self, provider: str) -> Any | None:
+        """Create a telemetry-aware HTTP client when a plugin is available."""
+        if self._telemetry is None:
             return None
-        return helicone_lib.create_helicone_http_client(provider=provider, enable_fallback=True)
+        return self._telemetry.create_http_client(provider=provider, enable_fallback=True)
 
     def _create_openai_client(
         self, model: str, caching_strategy: CachingStrategy, cache_key: str | None, helicone_module: str, helicone_enabled_yaml: bool = True
@@ -393,7 +355,7 @@ class ProviderRouter:
             raise ValueError("[LLMix] OpenAI API key is required. Pass via api_keys config or OPENAI_API_KEY env var.")
 
         if not is_embedding_model(model):
-            helicone = self._resolve_helicone_routing("openai", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
+            helicone = self._resolve_telemetry_routing("openai", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
             if helicone:
                 routing_base_url, headers = helicone
                 logger.info("[LLMix] Routing OpenAI via Helicone (cache: %s, key: %s)", caching_strategy, "custom" if cache_key else "auto")
@@ -420,7 +382,7 @@ class ProviderRouter:
         if not api_key:
             raise ValueError("[LLMix] Google API key is required. Pass via api_keys config or set GEMINI_API_KEY.")
 
-        helicone = self._resolve_helicone_routing("google", helicone_enabled_yaml, caching_strategy, None, helicone_module)
+        helicone = self._resolve_telemetry_routing("google", helicone_enabled_yaml, caching_strategy, None, helicone_module)
         if helicone:
             routing_base_url, headers = helicone
             logger.info("[LLMix] Routing Gemini via Helicone (cache: %s)", caching_strategy)
@@ -452,7 +414,7 @@ class ProviderRouter:
                 f"[LLMix] OpenRouter API key required for {provider_label} provider. Pass via api_keys config or OPENROUTER_API_KEY env var."
             )
 
-        helicone = self._resolve_helicone_routing("openrouter", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
+        helicone = self._resolve_telemetry_routing("openrouter", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
         if helicone:
             base_url, headers = helicone
             logger.info("[LLMix] Routing %s via Helicone/OpenRouter (cache: %s)", provider_label, caching_strategy)
@@ -486,7 +448,7 @@ class ProviderRouter:
         if not api_key:
             raise ValueError("[LLMix] DeepInfra API key is required. Pass via api_keys config or DEEPINFRA_API_KEY env var.")
 
-        helicone = self._resolve_helicone_routing("deepinfra", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
+        helicone = self._resolve_telemetry_routing("deepinfra", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
         if helicone:
             base_url, headers = helicone
             logger.info("[LLMix] Routing DeepInfra via Helicone (cache: %s, key: %s)", caching_strategy, "custom" if cache_key else "auto")
@@ -517,7 +479,7 @@ class ProviderRouter:
         if not api_key:
             raise ValueError("[LLMix] Together API key is required. Pass via api_keys config or TOGETHER_API_KEY env var.")
 
-        helicone = self._resolve_helicone_routing("together", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
+        helicone = self._resolve_telemetry_routing("together", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
         if helicone:
             base_url, headers = helicone
             logger.info("[LLMix] Routing Together via Helicone (cache: %s, key: %s)", caching_strategy, "custom" if cache_key else "auto")
@@ -547,7 +509,7 @@ class ProviderRouter:
         if not api_key:
             raise ValueError("[LLMix] Novita API key is required. Pass via api_keys config or NOVITA_API_KEY env var.")
 
-        helicone = self._resolve_helicone_routing("novita", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
+        helicone = self._resolve_telemetry_routing("novita", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
         if helicone:
             base_url, headers = helicone
             logger.info("[LLMix] Routing Novita via Helicone (cache: %s, key: %s)", caching_strategy, "custom" if cache_key else "auto")
@@ -564,12 +526,7 @@ class ProviderRouter:
             )
 
         logger.info("[LLMix] Creating Novita client for model: %s (thinking: %s)", model, bool(enable_thinking))
-        return NovitaClient(
-            api_key=api_key,
-            model=model,
-            enable_thinking=bool(enable_thinking),
-            thinking_budget=thinking_budget,
-        )
+        return NovitaClient(api_key=api_key, model=model, enable_thinking=bool(enable_thinking), thinking_budget=thinking_budget)
 
     def _create_gpu_client(
         self,
@@ -594,7 +551,7 @@ class ProviderRouter:
         path_suffix = f"/{gpu_path}/v1" if gpu_path else "/v1"
         path_label = gpu_path or "legacy"
 
-        helicone = self._resolve_helicone_routing("snogpu", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
+        helicone = self._resolve_telemetry_routing("snogpu", helicone_enabled_yaml, caching_strategy, cache_key, helicone_module)
         if helicone:
             helicone_base_url, headers = helicone
             base_url = f"{helicone_base_url}{path_suffix}"

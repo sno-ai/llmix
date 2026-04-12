@@ -1,4 +1,4 @@
-"""
+r"""
 Model Capabilities - Provider-specific parameter filtering
 
 Different model families support different parameters. This module provides
@@ -6,7 +6,7 @@ capability detection and parameter filtering to prevent API errors when
 sending unsupported parameters.
 
 Logic mirrors @ai-sdk/openai's internal implementation:
-- Reasoning: Models starting with "o", "gpt-5", "codex-", "computer-use" (except gpt-5-chat)
+- Reasoning: Models matching o\d (o1, o3, o4...), "gpt-5*", "codex-", "computer-use"
 - Standard: Everything else (gpt-4, gpt-4o, gpt-4.1, claude, gemini, etc.)
 
 Parameter Support:
@@ -17,6 +17,7 @@ Parameter Support:
 Ported from package/llmix/src/model-capabilities.ts
 """
 
+import re
 from typing import Literal, TypedDict, cast
 
 from llmix.types import OpenAIProviderOptions
@@ -51,15 +52,12 @@ class FilteredParams(TypedDict, total=False):
 def _is_reasoning_model(model_id: str) -> bool:
     """Check if model is a reasoning model.
 
-    Mirrors AI SDK's isReasoningModel():
-    - gpt-5-chat is explicitly NOT a reasoning model
-    - Reasoning models: o*, gpt-5*, codex-*, computer-use-*
+    Reasoning models: o{digit}* (o1, o3, o4...), gpt-5*, codex-*, computer-use-*
+    All gpt-5 variants are reasoning models — none support temperature.
+    # TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
     """
     lower = model_id.lower()
-    # gpt-5-chat is explicitly NOT a reasoning model
-    if lower.startswith("gpt-5-chat"):
-        return False
-    return lower.startswith(("o", "gpt-5", "codex-", "computer-use"))
+    return bool(re.match(r"^o\d", lower)) or lower.startswith(("gpt-5", "codex-", "computer-use"))
 
 
 def _supports_text_verbosity(model_id: str) -> bool:
@@ -69,7 +67,7 @@ def _supports_text_verbosity(model_id: str) -> bool:
     o-series and other reasoning models do NOT support it.
     """
     lower = model_id.lower()
-    return lower.startswith("gpt-5") and not lower.startswith("gpt-5-chat")
+    return lower.startswith("gpt-5")
 
 
 def get_model_capabilities(model_id: str) -> ModelCapabilities:
@@ -88,9 +86,10 @@ def get_model_capabilities(model_id: str) -> ModelCapabilities:
 
     # Determine model class for logging
     model_class: ModelClass = "standard"
-    if lower.startswith("gpt-5") and not lower.startswith("gpt-5-chat"):
+    if lower.startswith("gpt-5"):
         model_class = "gpt5"
-    elif lower.startswith("o"):
+    # TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
+    elif re.match(r"^o\d", lower):
         model_class = "o-series"
     elif lower.startswith(("codex-", "computer-use")):
         model_class = "codex"

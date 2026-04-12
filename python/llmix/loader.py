@@ -22,7 +22,6 @@ import logging
 import threading
 import time
 from collections import OrderedDict
-from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -32,6 +31,7 @@ import yaml
 
 from llmix.types import (
     CacheStats,
+    ConfigAccessError,
     ConfigNotFoundError,
     ExperimentConfig,
     InvalidConfigError,
@@ -150,7 +150,7 @@ class LRUCache:
     def __init__(self, max_size: int = 100, ttl_seconds: int = 3600) -> None:
         self.max_size = max_size
         self.ttl_seconds = ttl_seconds
-        self.cache: OrderedDict[str, tuple[str, datetime]] = OrderedDict()
+        self.cache: OrderedDict[str, tuple[str, float]] = OrderedDict()
         self.lock = threading.RLock()
         self.hits = 0
         self.misses = 0
@@ -165,7 +165,7 @@ class LRUCache:
             value, timestamp = self.cache[key]
 
             # Check TTL
-            if datetime.now() - timestamp > timedelta(seconds=self.ttl_seconds):
+            if time.monotonic() - timestamp > self.ttl_seconds:
                 del self.cache[key]
                 self.misses += 1
                 return None
@@ -180,7 +180,7 @@ class LRUCache:
         with self.lock:
             if key in self.cache:
                 self.cache.move_to_end(key)
-            self.cache[key] = (value, datetime.now())
+            self.cache[key] = (value, time.monotonic())
 
             # Evict oldest if over limit
             if len(self.cache) > self.max_size:
@@ -297,8 +297,9 @@ class LLMConfigLoader:
             return
 
         try:
-            self.redis_client = redis_lib.from_url(redis_url, decode_responses=True, socket_connect_timeout=5, socket_timeout=5, retry_on_timeout=True)
-            self.redis_client.ping()
+            client = redis_lib.from_url(redis_url, decode_responses=True, socket_connect_timeout=5, socket_timeout=5, retry_on_timeout=True)
+            client.ping()
+            self.redis_client = client
             self.redis_available = True
             self.redis_command_failures = 0
             self._half_open_ping_failures = 0
@@ -310,7 +311,7 @@ class LLMConfigLoader:
                 logger.error(f"Unexpected error initializing Redis: {e}")
             self.redis_client = None
             self.redis_available = False
-            self.circuit_breaker_tripped_at = time.time() * 1000
+            self.circuit_breaker_tripped_at = time.monotonic() * 1000
             self.redis_command_failures = 1
 
     def _drop_redis_client(self, reason: str) -> None:
@@ -330,7 +331,7 @@ class LLMConfigLoader:
             if (
                 not self.redis_available
                 and self.circuit_breaker_tripped_at is not None
-                and (time.time() * 1000 - self.circuit_breaker_tripped_at) >= CIRCUIT_BREAKER_COOLDOWN_MS
+                and (time.monotonic() * 1000 - self.circuit_breaker_tripped_at) >= CIRCUIT_BREAKER_COOLDOWN_MS
             ):
                 if self.redis_client is None and self._redis_url:
                     self._init_redis(self._redis_url)
@@ -350,7 +351,7 @@ class LLMConfigLoader:
                         if self._half_open_ping_failures >= MAX_HALF_OPEN_PING_FAILURES:
                             self._drop_redis_client('repeated half-open probe failures')
                             self._half_open_ping_failures = 0
-                        self.circuit_breaker_tripped_at = time.time() * 1000
+                        self.circuit_breaker_tripped_at = time.monotonic() * 1000
                         logger.debug("Redis circuit breaker half-open probe failed, extending cooldown")
 
     def _handle_redis_failure(self, error: Exception, context: str) -> None:
@@ -366,7 +367,7 @@ class LLMConfigLoader:
                 logger.error("Redis circuit breaker triggered - disabling Redis")
                 self._half_open_ping_failures = 0
                 self._drop_redis_client('circuit breaker triggered')
-                self.circuit_breaker_tripped_at = time.time() * 1000
+                self.circuit_breaker_tripped_at = time.monotonic() * 1000
 
     # =========================================================================
     # PUBLIC API
@@ -436,7 +437,7 @@ class LLMConfigLoader:
             cached = self.local_cache.get(config_id)
             if cached is not None:
                 logger.debug(f"LRU hit: {config_id}")
-                return _normalize_config_keys(json.loads(cached))
+                return json.loads(cached)
 
         # Circuit breaker half-open recovery
         self._try_circuit_breaker_recovery()
@@ -445,10 +446,11 @@ class LLMConfigLoader:
         if not force_refresh and self.redis_available and self.redis_client is not None:
             redis_result = self._try_load_from_redis(config_id)
             if redis_result is not None:
+                normalized = _normalize_config_keys(redis_result)
                 # Store in LRU for faster subsequent access
-                self.local_cache.set(config_id, json.dumps(redis_result))
+                self.local_cache.set(config_id, json.dumps(normalized))
                 logger.debug(f"Redis hit: {config_id}")
-                return _normalize_config_keys(redis_result)
+                return normalized
 
         # Tier 3: File system with cascade resolution
         result = self._resolve_with_cascade(scope, module, normalized_user_id, preset, version)
@@ -778,7 +780,7 @@ class LLMConfigLoader:
         except FileNotFoundError:
             raise ConfigNotFoundError(f"Config file not found: {file_path} (module={module}, preset={preset}, version={version})") from None
         except PermissionError:
-            raise ConfigNotFoundError(f"Permission denied reading config file: {file_path}") from None
+            raise ConfigAccessError(f"Permission denied reading config file: {file_path}") from None
 
         # Parse YAML with safe loader
         try:

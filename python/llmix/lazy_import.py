@@ -13,9 +13,7 @@ Usage:
     client = openai.AsyncOpenAI(...)
 """
 
-from __future__ import annotations
-
-import importlib
+import importlib.util
 import threading
 from types import ModuleType
 from typing import Any
@@ -38,7 +36,7 @@ class _LazyModule:
     thread performs the actual import.
     """
 
-    __slots__ = ("_module_name", "_package_name", "_install_cmd", "_module", "_lock")
+    __slots__ = ("_install_cmd", "_lock", "_module", "_module_name", "_package_name")
 
     def __init__(self, module_name: str, package_name: str, install_cmd: str) -> None:
         object.__setattr__(self, "_module_name", module_name)
@@ -63,9 +61,7 @@ class _LazyModule:
             # Distinguish "not installed" from "installed but broken import"
             spec = importlib.util.find_spec(module_name)
             if spec is None:
-                raise ImportError(
-                    f'"{package_name}" is required. Install with: {install_cmd}'
-                )
+                raise ImportError(f'"{package_name}" is required. Install with: {install_cmd}')
             # Package is installed; if import fails, re-raise the original error
             # so nested ImportErrors (e.g. missing C extensions) aren't swallowed
             mod = importlib.import_module(module_name)
@@ -83,12 +79,7 @@ class _LazyModule:
         return f"<lazy module {module_name!r} (not yet loaded)>"
 
 
-def lazy_import(
-    module_name: str,
-    *,
-    package_name: str | None = None,
-    install_cmd: str | None = None,
-) -> Any:
+def lazy_import(module_name: str, *, package_name: str | None = None, install_cmd: str | None = None) -> Any:
     """Create a lazy proxy for a module import.
 
     The real import is deferred until the first attribute access on the

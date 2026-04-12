@@ -1,17 +1,17 @@
 {
   "_meta": {
     "description": "Model capability classification rules. Both Python and TypeScript consume this file for parity.",
-    "version": 1
+    "version": 1,
+    "patternType": "regex",
+    "note": "All prefix values are regex patterns anchored at start (^). Use ^o\\d to match o1/o2/o3/o4... but NOT opus/omni/orca. TEMP: code still uses inline regex — migrate to consuming this file."
   },
-  "reasoningModelPrefixes": ["o", "gpt-5", "codex-", "computer-use"],
-  "reasoningModelExclusions": ["gpt-5-chat"],
-  "textVerbosityPrefixes": ["gpt-5"],
-  "textVerbosityExclusions": ["gpt-5-chat"],
+  "reasoningModelPrefixes": ["^o\\d", "^gpt-5", "^codex-", "^computer-use"],
+  "textVerbosityPrefixes": ["^gpt-5"],
   "modelClassRules": [
-    { "prefix": "gpt-5", "exclude": "gpt-5-chat", "class": "gpt5" },
-    { "prefix": "o", "class": "o-series" },
-    { "prefix": "codex-", "class": "codex" },
-    { "prefix": "computer-use", "class": "codex" }
+    { "prefix": "^gpt-5", "class": "gpt5" },
+    { "prefix": "^o\\d", "class": "o-series" },
+    { "prefix": "^codex-", "class": "codex" },
+    { "prefix": "^computer-use", "class": "codex" }
   ],
   "defaultModelClass": "standard",
   "fixedTemperatureValue": 1

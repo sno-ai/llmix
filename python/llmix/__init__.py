@@ -4,22 +4,12 @@ LLMix Python Library
 Config-driven LLM configuration utilities for Python.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 __version__ = "2.0.0"
 
 # Pricing is always available (no external deps beyond stdlib + json)
-from llmix.pricing import (
-    MODEL_PRICING,
-    CostBreakdown,
-    ModelPricing,
-    calculate_cost,
-    calculate_rerank_cost,
-    get_model_pricing,
-    normalize_model_name,
-)
+from llmix.pricing import MODEL_PRICING, CostBreakdown, ModelPricing, calculate_cost, calculate_rerank_cost, get_model_pricing, normalize_model_name
 
 # v2 modules are lazy-loaded so that importing llmix never fails when
 # optional dependencies (httpx, cachetools, anthropic SDK, etc.) are
@@ -67,6 +57,8 @@ _LAZY_IMPORTS: dict[str, str] = {
     "TwoTierCache": "llmix.response_cache",
     "generate_cache_key": "llmix.response_cache",
     "should_skip_cache": "llmix.response_cache",
+    # telemetry
+    "TelemetryPlugin": "llmix.telemetry",
 }
 
 if TYPE_CHECKING:
@@ -99,6 +91,7 @@ if TYPE_CHECKING:
     from llmix.resilience import Singleflight as Singleflight
     from llmix.resilience import is_retryable as is_retryable
     from llmix.response_cache import TwoTierCache as TwoTierCache
+    from llmix.telemetry import TelemetryPlugin as TelemetryPlugin
     from llmix.response_cache import generate_cache_key as generate_cache_key
     from llmix.response_cache import should_skip_cache as should_skip_cache
     from llmix.thinking import strip_thinking as strip_thinking
@@ -125,17 +118,11 @@ def __getattr__(name: str) -> object:
         try:
             mod = importlib.import_module(target_module)
         except ImportError as exc:
-            raise ImportError(
-                f"cannot import {name!r} from 'llmix': "
-                f"failed to load {target_module!r} ({exc})"
-            ) from exc
+            raise ImportError(f"cannot import {name!r} from 'llmix': failed to load {target_module!r} ({exc})") from exc
         try:
             attr = getattr(mod, name)
         except AttributeError as exc:
-            raise AttributeError(
-                f"module 'llmix' maps {name!r} to {target_module!r}, "
-                f"but that module has no attribute {name!r}"
-            ) from exc
+            raise AttributeError(f"module 'llmix' maps {name!r} to {target_module!r}, but that module has no attribute {name!r}") from exc
         globals()[name] = attr  # cache for subsequent access
         return attr
     raise AttributeError(f"module 'llmix' has no attribute {name!r}")

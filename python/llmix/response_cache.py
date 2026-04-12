@@ -13,8 +13,6 @@ Three strategies:
 - "memory": L1 only, no Redis attempted
 """
 
-from __future__ import annotations
-
 import asyncio
 import hashlib
 import json
@@ -28,10 +26,9 @@ from typing import TYPE_CHECKING, Any, Literal
 from cachetools import TTLCache
 
 if TYPE_CHECKING:
-    import redis as redis_types  # noqa: F811
+    import redis as redis_types
 
-# Re-declare locally to avoid importing llmix.types at runtime
-# (llmix.types pulls in lib.infra.validation which may not be available)
+# Re-declare locally — lightweight standalone type avoids pulling in full types.py chain
 CachingStrategy = Literal["native", "gateway", "disabled", "redis", "redis-or-memory", "memory"]
 ResponseCacheStrategy = Literal["redis", "redis-or-memory", "memory"]
 CacheHitTier = Literal["l1", "l2"]
@@ -84,10 +81,7 @@ def should_skip_cache(strategy: CachingStrategy) -> bool:
     return strategy in SKIP_STRATEGIES
 
 
-def resolve_response_cache_strategy(
-    strategy: CachingStrategy,
-    redis_url: str | None,
-) -> ResponseCacheStrategy | None:
+def resolve_response_cache_strategy(strategy: CachingStrategy, redis_url: str | None) -> ResponseCacheStrategy | None:
     """Resolve the effective response cache strategy.
 
     Returns None if the strategy doesn't activate the response cache.
@@ -97,14 +91,10 @@ def resolve_response_cache_strategy(
         return None
 
     if strategy == "redis" and not redis_url:
-        raise ValueError(
-            'Response cache strategy "redis" requires REDIS_URL to be set.'
-        )
+        raise ValueError('Response cache strategy "redis" requires REDIS_URL to be set.')
 
     if strategy == "redis-or-memory" and not redis_url:
-        logger.warning(
-            'Response cache strategy "redis-or-memory": REDIS_URL not set, degrading to L1 only.'
-        )
+        logger.warning('Response cache strategy "redis-or-memory": REDIS_URL not set, degrading to L1 only.')
         return "memory"
 
     # At this point strategy is a valid ResponseCacheStrategy
@@ -182,18 +172,14 @@ class TwoTierCache:
         redis_url: str | None = None,
     ) -> None:
         if strategy == "redis" and not redis_url:
-            raise ValueError(
-                'TwoTierCache strategy "redis" requires redis_url to be set.'
-            )
+            raise ValueError('TwoTierCache strategy "redis" requires redis_url to be set.')
 
         self._strategy = strategy
         self._ttl_seconds = ttl_seconds
         self._redis_url = redis_url
 
         # L1: cachetools.TTLCache (LRU eviction + per-entry TTL)
-        self._l1: TTLCache[str, CachedValue] = TTLCache(
-            maxsize=max_items, ttl=ttl_seconds
-        )
+        self._l1: TTLCache[str, CachedValue] = TTLCache(maxsize=max_items, ttl=ttl_seconds)
 
         # L1 lock -- TTLCache is not thread-safe; protects concurrent access
         # between event loop thread (aset) and thread pool workers (aget).
@@ -212,9 +198,7 @@ class TwoTierCache:
     def _can_attempt_l2(self) -> bool:
         if not self._l2_enabled:
             return False
-        return self._l2_healthy or (
-            time.monotonic() - self._l2_last_fail_time >= self._l2_retry_interval
-        )
+        return self._l2_healthy or (time.monotonic() - self._l2_last_fail_time >= self._l2_retry_interval)
 
     def _reset_stale_redis_client(self) -> None:
         with self._redis_lock:
@@ -259,7 +243,8 @@ class TwoTierCache:
 
     def _check_health(self) -> None:
         """Periodic health check via PING (call before L2 ops)."""
-        if not self._redis_client or not self._l2_enabled:
+        client = self._redis_client
+        if not client or not self._l2_enabled:
             return
 
         now = time.monotonic()
@@ -268,7 +253,7 @@ class TwoTierCache:
 
         self._last_ping_time = now
         try:
-            self._redis_client.ping()
+            client.ping()
             if not self._l2_healthy:
                 self._l2_healthy = True
                 self._l2_consecutive_write_failures = 0
@@ -298,14 +283,18 @@ class TwoTierCache:
 
         try:
             connected = self._ensure_redis()
-            if not connected or not self._redis_client:
+            if not connected:
                 return None
 
             self._check_health()
             if not self._l2_healthy:
                 return None
 
-            raw = self._redis_client.get(key)
+            client = self._redis_client
+            if client is None:
+                return None
+
+            raw = client.get(key)
             if raw is None:
                 return None
 
@@ -354,12 +343,16 @@ class TwoTierCache:
         """Write to Redis with SETEX (TTL)."""
         try:
             connected = self._ensure_redis()
-            if not connected or not self._redis_client:
+            if not connected:
+                return
+
+            client = self._redis_client
+            if client is None:
                 return
 
             serialized = json.dumps({"data": entry.data, "cached_at": entry.cached_at})
             ttl = self._ttl_seconds if self._ttl_seconds > 0 else DEFAULT_L2_TTL_SECONDS
-            self._redis_client.setex(key, ttl, serialized)
+            client.setex(key, ttl, serialized)
             self._l2_consecutive_write_failures = 0
         except Exception:
             self._l2_consecutive_write_failures += 1

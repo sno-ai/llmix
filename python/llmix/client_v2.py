@@ -10,8 +10,6 @@ The provider dispatch (step 11) is a caller-supplied callback.
 This module is pure orchestration -- no direct LLM SDK dependency.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging
@@ -22,9 +20,9 @@ from typing import Any, Protocol
 logger = logging.getLogger(__name__)
 
 from llmix.adaptive_semaphore import AdaptiveSemaphore, parse_openai_ratelimit_headers
-from llmix.key_pool import KeyPool
+from llmix.key_pool import KeyPool, KeyPoolExhaustedError
 from llmix.provider_kwargs import PROVIDER_KWARGS_REGISTRY, TransformKwargsCallback, TransformKwargsContext, apply_transform_kwargs
-from llmix.resilience import CircuitBreaker, CircuitOpenError, FileLock, KillSwitch, RetryPolicy, Singleflight, is_retryable
+from llmix.resilience import CircuitBreaker, CircuitOpenError, CircuitState, FileLock, KillSwitch, RetryPolicy, Singleflight, is_retryable
 from llmix.response_cache import TwoTierCache, generate_cache_key, should_skip_cache
 from llmix.thinking import strip_thinking
 
@@ -291,9 +289,8 @@ class V2CallPipeline:
                         cache_hit=hit.tier,
                     )
 
-            # Step 5: Circuit Breaker check
+            # Step 5: Circuit Breaker
             cb = self._get_circuit_breaker(provider, effective_base_url)
-            cb.check()
 
             # Step 6: Singleflight deduplication
             # Default key includes all request-shaping params to prevent
@@ -317,22 +314,41 @@ class V2CallPipeline:
                             "providerOptions": config.get("provider_options"),
                         },
                         default=str,
+                        sort_keys=True,
                     )
                 )
             )
 
             async def _inner() -> ProviderResult:
-                return await self._retry_policy.execute(
-                    lambda: self._execute_retry_body(config, messages, cb), is_retryable_fn=self._is_retryable_error
-                )
+                current_state = cb.state
+                probe_admitted = False
 
-            try:
-                result = await self._singleflight.do(sf_key, _inner)
-            except Exception:
-                # If a HALF_OPEN probe was started by check() but never finalized
-                # by on_success/on_failure, cancel it so the breaker doesn't wedge.
-                cb.cancel_probe()
-                raise
+                try:
+                    cb.check()
+                    probe_admitted = current_state == CircuitState.HALF_OPEN
+
+                    provider_result = await self._retry_policy.execute(
+                        lambda: self._execute_retry_body(config, messages),
+                        is_retryable_fn=self._is_retryable_error,
+                    )
+                    # HALF_OPEN recovery decisions are based on the final probe
+                    # outcome, not intermediate retry attempts.
+                    cb.on_success()
+                    return provider_result
+                except Exception as exc:
+                    status_code = getattr(exc, "status_code", None)
+                    if self._is_local_error(exc):
+                        if probe_admitted:
+                            cb.cancel_probe()
+                    elif not isinstance(exc, CircuitOpenError):
+                        # Count the full retry sequence as one failed probe.
+                        cb.on_failure(
+                            status_code,
+                            network_error=status_code is None,
+                        )
+                    raise
+
+            result = await self._singleflight.do(sf_key, _inner)
 
             # Step 17: Thinking stripping
             if common.get("keep_thinking_output"):
@@ -361,7 +377,7 @@ class V2CallPipeline:
             logger.exception("V2 pipeline call failed")
             return V2CallResponse(content="", model=model, provider=provider, usage=LLMUsage(), success=False, error=str(exc))
 
-    async def _execute_retry_body(self, config: dict[str, Any], messages: list[dict[str, Any]], cb: CircuitBreaker) -> ProviderResult:
+    async def _execute_retry_body(self, config: dict[str, Any], messages: list[dict[str, Any]]) -> ProviderResult:
         """Steps 7-14 inside the retry loop."""
         provider: str = config.get("provider", "unknown")
         semaphore = self._get_semaphore(provider)
@@ -394,9 +410,6 @@ class V2CallPipeline:
 
             # Step 14: Key Pool feedback (success -- no action)
 
-            # Step 15: Circuit Breaker feedback (success)
-            cb.on_success()
-
             return result
 
         except Exception as exc:
@@ -416,11 +429,6 @@ class V2CallPipeline:
                 except Exception:
                     pass
 
-            # Step 15: Circuit Breaker feedback (error)
-            cb.on_failure(
-                status_code, network_error=(not isinstance(exc, CircuitOpenError) and status_code is None and self._is_retryable_error(exc))
-            )
-
             raise
 
         finally:
@@ -428,12 +436,27 @@ class V2CallPipeline:
             semaphore.release()
 
     @staticmethod
+    def _is_local_error(exc: BaseException) -> bool:
+        if isinstance(exc, KeyPoolExhaustedError):
+            return True
+        if isinstance(exc, (ValueError, TypeError, KeyError, SyntaxError)):
+            return True
+        if isinstance(exc, Exception) and str(exc).startswith("No API key pool"):
+            return True
+        if isinstance(exc, Exception) and (
+            str(exc).startswith("Invalid gpuPath")
+            or "requires a non-empty baseUrl" in str(exc)
+            or str(exc) == "AdaptiveSemaphore is closed"
+        ):
+            return True
+        return False
+
+    @staticmethod
     def _is_retryable_error(exc: BaseException) -> bool:
         """Step 16: Determine if an error is retryable."""
         if isinstance(exc, CircuitOpenError):
             return False
-        # Local config/programming errors are not retryable
-        if isinstance(exc, (ValueError, TypeError, KeyError)):
+        if V2CallPipeline._is_local_error(exc):
             return False
         status_code = getattr(exc, "status_code", None)
         if status_code is not None:

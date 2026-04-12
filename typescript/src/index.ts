@@ -122,6 +122,7 @@ export type {
 // =============================================================================
 
 export {
+  ConfigAccessError,
   ConfigNotFoundError,
   InvalidConfigError,
   LLMConfigError,

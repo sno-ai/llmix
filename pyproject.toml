@@ -2,7 +2,7 @@
 name = "llmix"
 version = "2.0.0"
 description = "Cross-runtime LLM orchestration for Python and TypeScript with L2 caching, retries, key rotation, and config-driven client"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
   "openai>=2.0.0",
   "anthropic>=0.40.0",
@@ -39,6 +39,6 @@ requires = ["setuptools>=75.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.pyright]
-pythonVersion = "3.11"
+pythonVersion = "3.14"
 typeCheckingMode = "standard"
 include = ["python/llmix"]

@@ -6,16 +6,15 @@ exponential backoff + jitter. All four primitives live in this single module
 to keep the dependency graph flat.
 """
 
-from __future__ import annotations
-
 import asyncio
 import enum
 import hashlib
 import os
 import random
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, TypeVar
 
 try:
     import fcntl as _fcntl
@@ -41,6 +40,7 @@ _KILLSWITCH_SUBDIR = "llmix2"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _is_retryable_status(status_code: int) -> bool:
     """Return True for 408, 429, and 5xx status codes."""
@@ -70,15 +70,14 @@ def _resolve_state_dir() -> Path:
 # Errors
 # ---------------------------------------------------------------------------
 
+
 class CircuitOpenError(Exception):
     """Raised when the circuit breaker is OPEN and rejecting calls."""
 
     def __init__(self, provider: str, base_url: str) -> None:
         self.provider = provider
         self.base_url = base_url
-        super().__init__(
-            f"Circuit breaker OPEN for ({provider}, {base_url})"
-        )
+        super().__init__(f"Circuit breaker OPEN for ({provider}, {base_url})")
 
 
 class KillSwitchActiveError(Exception):
@@ -86,14 +85,13 @@ class KillSwitchActiveError(Exception):
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        super().__init__(
-            f"Kill switch active: {path} exists. All LLMix calls are blocked."
-        )
+        super().__init__(f"Kill switch active: {path} exists. All LLMix calls are blocked.")
 
 
 # ---------------------------------------------------------------------------
 # Circuit Breaker
 # ---------------------------------------------------------------------------
+
 
 class CircuitState(enum.Enum):
     CLOSED = "CLOSED"
@@ -265,6 +263,7 @@ class CircuitBreaker:
 # Kill Switch
 # ---------------------------------------------------------------------------
 
+
 class KillSwitch:
     """File-based kill switch.
 
@@ -300,6 +299,7 @@ class KillSwitch:
 # ---------------------------------------------------------------------------
 # Singleflight
 # ---------------------------------------------------------------------------
+
 
 class Singleflight:
     """Deduplicates concurrent identical async calls.
@@ -359,27 +359,20 @@ class Singleflight:
 # Retry with Exponential Backoff + Jitter
 # ---------------------------------------------------------------------------
 
+
 def calculate_delay(
-    attempt: int,
-    *,
-    base_ms: int = _DEFAULT_BASE_DELAY_MS,
-    max_delay_ms: int = _DEFAULT_MAX_DELAY_MS,
-    jitter_ms: int = _DEFAULT_JITTER_MS,
+    attempt: int, *, base_ms: int = _DEFAULT_BASE_DELAY_MS, max_delay_ms: int = _DEFAULT_MAX_DELAY_MS, jitter_ms: int = _DEFAULT_JITTER_MS
 ) -> int:
     """Calculate retry delay in milliseconds.
 
     Formula: min(2^attempt * base_ms, max_delay_ms) + random(0, jitter_ms)
     """
-    exponential = min((2 ** attempt) * base_ms, max_delay_ms)
+    exponential = min((2**attempt) * base_ms, max_delay_ms)
     jitter = random.randint(0, jitter_ms)
     return exponential + jitter
 
 
-def parse_retry_after(
-    header_value: str | None,
-    *,
-    max_ms: int = _DEFAULT_MAX_RETRY_AFTER_MS,
-) -> int | None:
+def parse_retry_after(header_value: str | None, *, max_ms: int = _DEFAULT_MAX_RETRY_AFTER_MS) -> int | None:
     """Parse Retry-After header value to milliseconds.
 
     Supports integer seconds and HTTP-date (RFC 7231) formats.
@@ -434,35 +427,19 @@ class RetryPolicy:
         self.jitter_ms = jitter_ms
         self.max_retry_after_ms = max_retry_after_ms
 
-    def get_delay_ms(
-        self,
-        attempt: int,
-        retry_after_header: str | None = None,
-    ) -> int:
+    def get_delay_ms(self, attempt: int, retry_after_header: str | None = None) -> int:
         """Get the delay for a given attempt in milliseconds.
 
         If a Retry-After header is provided and valid, it takes precedence
         (capped at max_retry_after_ms).
         """
-        retry_after = parse_retry_after(
-            retry_after_header, max_ms=self.max_retry_after_ms
-        )
+        retry_after = parse_retry_after(retry_after_header, max_ms=self.max_retry_after_ms)
         if retry_after is not None:
             return retry_after
 
-        return calculate_delay(
-            attempt,
-            base_ms=self.base_ms,
-            max_delay_ms=self.max_delay_ms,
-            jitter_ms=self.jitter_ms,
-        )
+        return calculate_delay(attempt, base_ms=self.base_ms, max_delay_ms=self.max_delay_ms, jitter_ms=self.jitter_ms)
 
-    async def execute(
-        self,
-        fn: Callable[[], Awaitable[T]],
-        *,
-        is_retryable_fn: Callable[[BaseException], bool] | None = None,
-    ) -> T:
+    async def execute(self, fn: Callable[[], Awaitable[T]], *, is_retryable_fn: Callable[[BaseException], bool] | None = None) -> T:
         """Execute fn with retries.
 
         Args:
@@ -495,6 +472,7 @@ class RetryPolicy:
 # ---------------------------------------------------------------------------
 # Cross-Process File Lock (opt-in via LLM_GLOBAL_CONCURRENCY env var)
 # ---------------------------------------------------------------------------
+
 
 class FileLock:
     """Cross-process file lock using fcntl.flock().

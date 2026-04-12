@@ -9,8 +9,6 @@ Provides async Anthropic API support with:
 - Error classification (retryable vs non-retryable)
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import random
@@ -34,13 +32,12 @@ def _get_anthropic():
             if _anthropic_module is None:
                 try:
                     import anthropic
+
                     _anthropic_module = anthropic
                 except ImportError:
-                    raise ImportError(
-                        "Anthropic provider requires the 'anthropic' package. "
-                        "Install with: uv add anthropic"
-                    )
+                    raise ImportError("Anthropic provider requires the 'anthropic' package. Install with: uv add anthropic")
     return _anthropic_module
+
 
 _DEFAULT_MAX_OUTPUT_TOKENS = 16384
 _DEFAULT_MODEL = "claude-sonnet-4-20250514"
@@ -63,12 +60,7 @@ def _jittered_delay(delay: float) -> float:
 
 def _build_retry_config() -> dict[str, Any]:
     """Build retry configuration from environment."""
-    from llmix.env import (
-        get_llm_retry_attempts,
-        get_llm_retry_delay_seconds,
-        get_llm_retry_max_delay,
-        get_llm_retry_multiplier,
-    )
+    from llmix.env import get_llm_retry_attempts, get_llm_retry_delay_seconds, get_llm_retry_max_delay, get_llm_retry_multiplier
 
     return {
         "attempts": get_llm_retry_attempts(),
@@ -78,9 +70,7 @@ def _build_retry_config() -> dict[str, Any]:
     }
 
 
-def _extract_system_message(
-    messages: list[dict[str, str]],
-) -> tuple[str | None, list[dict[str, str]]]:
+def _extract_system_message(messages: list[dict[str, str]]) -> tuple[str | None, list[dict[str, str]]]:
     """Extract system message from messages list.
 
     Anthropic API requires system as a separate parameter, not in the messages array.
@@ -141,9 +131,7 @@ def _extract_content(response: Any) -> str:
     return "".join(parts)
 
 
-def _inject_cache_control(
-    messages: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+def _inject_cache_control(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Inject cache_control on the last user message for native prompt caching.
 
     Anthropic's prompt caching requires cache_control: {"type": "ephemeral"}
@@ -159,16 +147,7 @@ def _inject_cache_control(
             content = result[i].get("content", "")
             # If content is a string, convert to content block format
             if isinstance(content, str):
-                result[i] = {
-                    **result[i],
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": content,
-                            "cache_control": {"type": "ephemeral"},
-                        }
-                    ],
-                }
+                result[i] = {**result[i], "content": [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]}
             elif isinstance(content, list):
                 # Content is already blocks - add cache_control to the last block
                 new_content = list(content)
@@ -244,9 +223,7 @@ class AsyncAnthropicClient(BaseLLMClient):
         self._caching_strategy = caching_strategy
 
         if not self.api_key:
-            raise ValueError(
-                "Anthropic API key is required. Set ANTHROPIC_API_KEY environment variable or pass api_key parameter."
-            )
+            raise ValueError("Anthropic API key is required. Set ANTHROPIC_API_KEY environment variable or pass api_key parameter.")
 
         self._client: AsyncAnthropic | None = None
         self._client_lock = threading.Lock()
@@ -272,12 +249,7 @@ class AsyncAnthropicClient(BaseLLMClient):
         return self._client
 
     async def chat_completion(
-        self,
-        messages: list[dict[str, str]],
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        **kwargs: Any,
+        self, messages: list[dict[str, str]], model: str | None = None, temperature: float | None = None, max_tokens: int | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Execute async Anthropic message completion.
 
@@ -305,13 +277,7 @@ class AsyncAnthropicClient(BaseLLMClient):
         if system_text is not None:
             # For native caching, wrap system in cache-controlled block
             if self._caching_strategy == "native":
-                api_kwargs["system"] = [
-                    {
-                        "type": "text",
-                        "text": system_text,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ]
+                api_kwargs["system"] = [{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}]
             else:
                 api_kwargs["system"] = system_text
 
@@ -322,30 +288,18 @@ class AsyncAnthropicClient(BaseLLMClient):
 
             budget = thinking_config.get("budget_tokens", 10000)
             if not isinstance(budget, int) or budget < ANTHROPIC_MIN_BUDGET_TOKENS:
-                raise ValueError(
-                    f"budget_tokens must be an int >= {ANTHROPIC_MIN_BUDGET_TOKENS}, got {budget}"
-                )
-            api_kwargs["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": budget,
-            }
+                raise ValueError(f"budget_tokens must be an int >= {ANTHROPIC_MIN_BUDGET_TOKENS}, got {budget}")
+            api_kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
             # Anthropic requires temperature=1 for extended thinking
             api_kwargs["temperature"] = 1.0
 
         return await self._execute_with_retry(api_kwargs, model)
 
-    async def call(
-        self,
-        messages: list[dict[str, str]],
-        model: str | None = None,
-        **kwargs: Any,
-    ) -> LLMResponse:
+    async def call(self, messages: list[dict[str, str]], model: str | None = None, **kwargs: Any) -> LLMResponse:
         """Simplified call interface matching task spec."""
         return await self.chat_completion(messages, model=model, **kwargs)
 
-    async def _execute_with_retry(
-        self, api_kwargs: dict[str, Any], model: str
-    ) -> LLMResponse:
+    async def _execute_with_retry(self, api_kwargs: dict[str, Any], model: str) -> LLMResponse:
         """Execute API call with retry logic and exponential backoff."""
         retry_config = _build_retry_config()
         delay = retry_config["initial_delay"]
@@ -358,19 +312,10 @@ class AsyncAnthropicClient(BaseLLMClient):
                 usage = _extract_usage(response)
 
                 logger.info(
-                    "Anthropic %s attempt %d: input=%d output=%d",
-                    model,
-                    attempt,
-                    usage.get("input_tokens", 0),
-                    usage.get("output_tokens", 0),
+                    "Anthropic %s attempt %d: input=%d output=%d", model, attempt, usage.get("input_tokens", 0), usage.get("output_tokens", 0)
                 )
 
-                return LLMResponse(
-                    content=content,
-                    usage=usage,
-                    model=getattr(response, "model", model),
-                    success=True,
-                )
+                return LLMResponse(content=content, usage=usage, model=getattr(response, "model", model), success=True)
 
             except Exception as err:
                 is_retryable = classify_anthropic_error(err)
@@ -379,19 +324,10 @@ class AsyncAnthropicClient(BaseLLMClient):
                     return self._handle_error(err, model)
 
                 if attempt == retry_config["attempts"]:
-                    logger.error(
-                        "Anthropic generation failed after %d attempts: %s",
-                        retry_config["attempts"],
-                        err,
-                    )
+                    logger.error("Anthropic generation failed after %d attempts: %s", retry_config["attempts"], err)
                     return self._handle_error(err, model)
 
-                logger.warning(
-                    "Anthropic attempt %d failed: %s. Retrying in %.1fs...",
-                    attempt,
-                    err,
-                    delay,
-                )
+                logger.warning("Anthropic attempt %d failed: %s. Retrying in %.1fs...", attempt, err, delay)
                 await asyncio.sleep(_jittered_delay(delay))
                 delay = min(delay * retry_config["multiplier"], retry_config["max_delay"])
 
@@ -444,18 +380,13 @@ class AsyncAnthropicClient(BaseLLMClient):
         if instructions is not None:
             messages.insert(0, {"role": "system", "content": instructions})
 
-        return await self.chat_completion(
-            messages=messages,
-            model=model,
-            temperature=resolved_temperature,
-            max_tokens=max_tokens,
-        )
+        return await self.chat_completion(messages=messages, model=model, temperature=resolved_temperature, max_tokens=max_tokens)
 
     def _get_default_model(self) -> str:
         return _DEFAULT_MODEL
 
     @classmethod
-    def from_env(cls) -> "AsyncAnthropicClient":
+    def from_env(cls) -> AsyncAnthropicClient:
         """Create Anthropic client from environment variables."""
         return cls()
 

@@ -13,10 +13,11 @@
 import { type StripThinkingResult, stripThinking } from "./thinking";
 import { type TransformKwargsCallback, applyTransformKwargs, PROVIDER_KWARGS_REGISTRY } from "./provider-kwargs";
 import { AdaptiveSemaphore, parseOpenAIRatelimitHeaders } from "./adaptive-semaphore";
-import { KeyPool, KeyPoolExhaustedError } from "./key-pool";
+import { type KeyPool, KeyPoolExhaustedError } from "./key-pool";
 import {
   CircuitBreaker,
   CircuitOpenError,
+  CircuitState,
   KillSwitch,
   type FileLockLike,
   RetryPolicy,
@@ -30,7 +31,7 @@ import type {
   LLMUsage,
   ProviderOptions,
 } from "./types";
-import { TwoTierCache, generateCacheKey, shouldSkipCache } from "./response-cache";
+import { type TwoTierCache, generateCacheKey, shouldSkipCache, sortReplacer } from "./response-cache";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -117,7 +118,7 @@ export class V2CallPipeline {
   private readonly semInitial: number;
   private readonly semMin: number;
 
-  private fileLock: FileLockLike | null = null;
+  private fileLockPromise: Promise<FileLockLike> | null = null;
   private readonly responseCache: TwoTierCache | undefined;
 
   constructor(config: V2PipelineConfig) {
@@ -170,10 +171,8 @@ export class V2CallPipeline {
 
   /** Get or lazy-init the cross-process file lock. */
   private async getFileLock(): Promise<FileLockLike> {
-    if (!this.fileLock) {
-      this.fileLock = await createFileLock();
-    }
-    return this.fileLock;
+    this.fileLockPromise ??= createFileLock();
+    return this.fileLockPromise;
   }
 
   /** Build provider kwargs before dispatch and derive the effective base URL. */
@@ -271,46 +270,60 @@ export class V2CallPipeline {
         }
       }
 
-      // Step 5: Circuit Breaker check
+      // Step 5: Circuit Breaker
       const cb = this.getCircuitBreaker(provider, effectiveBaseUrl);
-      cb.check();
+      // Step 6: Singleflight deduplication
+      // Default key includes all request-shaping params to prevent cross-config
+      // result sharing (same identity as cache key).
+      const sfKey = input.singleflightKey ?? (cacheKey || Singleflight.makeKey(
+        JSON.stringify({
+          provider,
+          model,
+          messages,
+          baseUrl: effectiveBaseUrl || undefined,
+          enableThinking: config.common?.enableThinking,
+          temperature: config.common?.temperature,
+          maxOutputTokens: config.common?.maxOutputTokens,
+          responseFormat: (config as unknown as Record<string, unknown>)["responseFormat"],
+          seed: config.common?.seed,
+          topP: config.common?.topP,
+          providerOptions: config.providerOptions,
+        }, sortReplacer),
+      ));
 
-      let result: ProviderResult;
-      try {
-        // Step 6: Singleflight deduplication
-        // Default key includes all request-shaping params to prevent cross-config
-        // result sharing (same identity as cache key).
-        const sfKey = input.singleflightKey ?? (cacheKey || Singleflight.makeKey(
-          JSON.stringify({
-            provider,
-            model,
-            messages,
-            baseUrl: effectiveBaseUrl || undefined,
-            enableThinking: config.common?.enableThinking,
-            temperature: config.common?.temperature,
-            maxOutputTokens: config.common?.maxOutputTokens,
-            responseFormat: (config as unknown as Record<string, unknown>)["responseFormat"],
-            seed: config.common?.seed,
-            topP: config.common?.topP,
-            providerOptions: config.providerOptions,
-          }),
-        ));
+      const result = await this.singleflight.do(sfKey, async () => {
+        const currentState = cb.state;
+        let probeAdmitted = false;
 
-        result = await this.singleflight.do(sfKey, async () => {
-          // Steps 7-16: Retry loop
-          return this.retryPolicy.execute(
-            () => this.executeRetryBody(config, messages, cb),
+        try {
+          cb.check();
+          probeAdmitted = currentState === CircuitState.HALF_OPEN;
+
+          const providerResult = await this.retryPolicy.execute(
+            () => this.executeRetryBody(config, messages),
             (err) => this.isRetryableError(err),
           );
-        });
-      } catch (err: unknown) {
-        // If a HALF_OPEN probe was started by check() but never finalized by
-        // onSuccess/onFailure (e.g. singleflight key computation threw, or
-        // getFileLock/semaphore.acquire failed before reaching the retry body),
-        // cancel the probe so the breaker doesn't get stuck forever.
-        cb.cancelProbe();
-        throw err;
-      }
+
+          // HALF_OPEN recovery decisions are based on the final probe outcome,
+          // not intermediate retry attempts within a single admitted execution.
+          cb.onSuccess();
+          return providerResult;
+        } catch (err: unknown) {
+          const statusCode = (err as ProviderError).statusCode;
+          if (this.isLocalError(err)) {
+            if (probeAdmitted) {
+              cb.cancelProbe();
+            }
+          } else if (!(err instanceof CircuitOpenError)) {
+            // Count the full retry sequence as one failed probe.
+            cb.onFailure(
+              statusCode,
+              statusCode === undefined,
+            );
+          }
+          throw err;
+        }
+      });
 
       // Step 17: Thinking stripping
       const { content, thinkingContent } = this.applyThinkingStrip(
@@ -350,7 +363,6 @@ export class V2CallPipeline {
   private async executeRetryBody(
     config: LLMConfig,
     messages: unknown[],
-    cb: CircuitBreaker,
   ): Promise<ProviderResult> {
     const provider = config.provider;
     const semaphore = this.getSemaphore(provider);
@@ -408,9 +420,6 @@ export class V2CallPipeline {
 
       // Step 14: Key Pool feedback (success — no action needed)
 
-      // Step 15: Circuit Breaker feedback (success)
-      cb.onSuccess();
-
       return result;
     } catch (err: unknown) {
       // Step 12: AIMD feedback (error path)
@@ -427,17 +436,6 @@ export class V2CallPipeline {
         } else if (statusCode === 401 || statusCode === 403) {
           pool.markDead(apiKey);
         }
-      }
-
-      // Step 15: Circuit Breaker feedback (error)
-      // Skip breaker feedback for local/config errors — the provider was never
-      // contacted, so counting these as failures would falsely open the breaker.
-      const isLocalError = this.isLocalError(err);
-      if (!isLocalError) {
-        cb.onFailure(
-          statusCode,
-          !(err instanceof CircuitOpenError) && statusCode === undefined,
-        );
       }
 
       throw err;
