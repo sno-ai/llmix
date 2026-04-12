@@ -41,6 +41,10 @@ class ConfigNotFoundError(LLMConfigError):
     """Raised when a config cannot be found in the cascade"""
 
 
+class ConfigAccessError(LLMConfigError):
+    """Raised when a config exists but cannot be accessed"""
+
+
 class InvalidConfigError(LLMConfigError):
     """Raised when a config file is invalid (schema validation failed)"""
 

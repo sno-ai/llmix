@@ -31,6 +31,7 @@ import yaml
 
 from llmix.types import (
     CacheStats,
+    ConfigAccessError,
     ConfigNotFoundError,
     ExperimentConfig,
     InvalidConfigError,
@@ -445,10 +446,11 @@ class LLMConfigLoader:
         if not force_refresh and self.redis_available and self.redis_client is not None:
             redis_result = self._try_load_from_redis(config_id)
             if redis_result is not None:
+                normalized = _normalize_config_keys(redis_result)
                 # Store in LRU for faster subsequent access
-                self.local_cache.set(config_id, json.dumps(redis_result))
+                self.local_cache.set(config_id, json.dumps(normalized))
                 logger.debug(f"Redis hit: {config_id}")
-                return redis_result
+                return normalized
 
         # Tier 3: File system with cascade resolution
         result = self._resolve_with_cascade(scope, module, normalized_user_id, preset, version)
@@ -778,7 +780,7 @@ class LLMConfigLoader:
         except FileNotFoundError:
             raise ConfigNotFoundError(f"Config file not found: {file_path} (module={module}, preset={preset}, version={version})") from None
         except PermissionError:
-            raise ConfigNotFoundError(f"Permission denied reading config file: {file_path}") from None
+            raise ConfigAccessError(f"Permission denied reading config file: {file_path}") from None
 
         # Parse YAML with safe loader
         try:
