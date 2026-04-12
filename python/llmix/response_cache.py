@@ -15,18 +15,16 @@ Three strategies:
 
 import asyncio
 import hashlib
+import importlib
 import json
 import logging
 import math
 import threading
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal, Protocol
 
 from cachetools import TTLCache
-
-if TYPE_CHECKING:
-    import redis as redis_types
 
 # Re-declare locally — lightweight standalone type avoids pulling in full types.py chain
 CachingStrategy = Literal["native", "gateway", "disabled", "redis", "redis-or-memory", "memory"]
@@ -34,6 +32,26 @@ ResponseCacheStrategy = Literal["redis", "redis-or-memory", "memory"]
 CacheHitTier = Literal["l1", "l2"]
 
 logger = logging.getLogger("llmix.cache")
+
+
+class RedisClientProtocol(Protocol):
+    """Minimal redis client surface used by the response cache."""
+
+    def close(self) -> object: ...
+
+    def get(self, key: str) -> object: ...
+
+    def ping(self) -> object: ...
+
+    def setex(self, key: str, ttl: int, value: str) -> object: ...
+
+
+def _import_redis_module() -> Any | None:
+    """Import redis lazily so type checking doesn't require the redis extra."""
+    try:
+        return importlib.import_module("redis")
+    except ImportError:
+        return None
 
 # =============================================================================
 # CONSTANTS
@@ -188,7 +206,7 @@ class TwoTierCache:
         # L2 state
         self._l2_enabled = strategy != "memory" and bool(redis_url)
         self._l2_healthy = True
-        self._redis_client: redis_types.Redis | None = None  # type: ignore[type-arg]
+        self._redis_client: RedisClientProtocol | None = None
         self._redis_lock = threading.Lock()
         self._last_ping_time: float = 0.0
         self._l2_last_fail_time: float = 0.0
@@ -221,7 +239,12 @@ class TwoTierCache:
             if self._redis_client is not None:
                 return self._l2_healthy
             try:
-                import redis as redis_lib
+                redis_lib = _import_redis_module()
+                if redis_lib is None:
+                    logger.warning('Response cache strategy requires the "redis" extra, operating L1-only.')
+                    self._l2_healthy = False
+                    self._l2_last_fail_time = time.monotonic()
+                    return False
 
                 client = redis_lib.Redis.from_url(
                     self._redis_url,  # type: ignore[arg-type]

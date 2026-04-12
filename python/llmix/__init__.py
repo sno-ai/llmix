@@ -97,7 +97,6 @@ if TYPE_CHECKING:
     from llmix.thinking import strip_thinking as strip_thinking
 
 __all__ = [
-    # pricing (eager)
     "MODEL_PRICING",
     "CostBreakdown",
     "ModelPricing",
@@ -105,8 +104,39 @@ __all__ = [
     "calculate_rerank_cost",
     "get_model_pricing",
     "normalize_model_name",
-    # v2 (lazy)
-    *_LAZY_IMPORTS,
+    "V2CallPipeline",
+    "V2PipelineConfig",
+    "V2CallInput",
+    "V2CallResponse",
+    "DispatchInput",
+    "DispatchContext",
+    "ProviderResult",
+    "ProviderError",
+    "LLMUsage",
+    "CircuitBreaker",
+    "CircuitOpenError",
+    "CircuitState",
+    "KillSwitch",
+    "KillSwitchActiveError",
+    "RetryPolicy",
+    "Singleflight",
+    "FileLock",
+    "is_retryable",
+    "AdaptiveSemaphore",
+    "parse_openai_ratelimit_headers",
+    "KeyPool",
+    "KeyPoolExhaustedError",
+    "load_keys_from_env",
+    "strip_thinking",
+    "PROVIDER_KWARGS_REGISTRY",
+    "apply_transform_kwargs",
+    "get_provider_transport",
+    "PROVIDER_TRANSPORT",
+    "create_client_for_provider",
+    "TwoTierCache",
+    "generate_cache_key",
+    "should_skip_cache",
+    "TelemetryPlugin",
 ]
 
 

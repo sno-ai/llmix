@@ -18,13 +18,14 @@ Redis key: llm:{scope}:{module}:{userId}:{preset}:v{version}
 """
 
 import json
+import importlib
 import logging
 import threading
 import time
 from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 from urllib.parse import urlparse, urlunparse
 
 import yaml
@@ -47,8 +48,17 @@ from llmix.types import (
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    import redis as redis_types
+
+class RedisClientProtocol(Protocol):
+    """Minimal redis client surface used by the config loader."""
+
+    def close(self) -> object: ...
+
+    def get(self, key: str) -> object: ...
+
+    def ping(self) -> object: ...
+
+    def setex(self, key: str, ttl: int, value: str) -> object: ...
 
 # =============================================================================
 # DEFAULT CONFIGURATION
@@ -107,10 +117,9 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
 def _import_redis_module() -> Any | None:
     """Import redis lazily so llmix.loader works without the redis extra."""
     try:
-        import redis as redis_lib
+        return importlib.import_module("redis")
     except ImportError:
         return None
-    return redis_lib
 
 
 def _is_redis_connection_error(error: BaseException) -> bool:
@@ -256,7 +265,7 @@ class LLMConfigLoader:
         self._warned_config_ids_lock = threading.RLock()
 
         # Redis state (type: ignore for generic - redis-py typing is complex)
-        self.redis_client: redis_types.Redis | None = None  # type: ignore[type-arg]
+        self.redis_client: RedisClientProtocol | None = None
         self.redis_available = False
         self._redis_url = redis_url
 
