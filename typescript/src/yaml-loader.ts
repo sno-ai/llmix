@@ -33,7 +33,7 @@ import {
   type Provider,
   type ProviderOptions,
   SecurityError,
-  type SnogpuProviderOptions,
+  type SnoGpuProviderOptions,
   type TimeoutConfig,
   VALID_MODULE_PATTERN,
   VALID_PRESET_PATTERN,
@@ -409,13 +409,13 @@ export const DeepSeekProviderOptionsSchema = z
 /**
  * Sno GPU provider options schema
  */
-export const SnogpuProviderOptionsSchema = z
+export const SnoGpuProviderOptionsSchema = z
   .object({
     enableThinking: z.boolean().optional(),
     thinkingBudget: z.number().int().positive().optional(),
     gpuPath: z.string().optional(),
   })
-  .strict() satisfies z.ZodType<SnogpuProviderOptions>;
+  .strict() satisfies z.ZodType<SnoGpuProviderOptions>;
 
 /**
  * Combined provider options schema
@@ -426,7 +426,7 @@ export const ProviderOptionsSchema = z
     anthropic: AnthropicProviderOptionsSchema.optional(),
     google: GoogleProviderOptionsSchema.optional(),
     deepseek: DeepSeekProviderOptionsSchema.optional(),
-    snogpu: SnogpuProviderOptionsSchema.optional(),
+    "sno-gpu": SnoGpuProviderOptionsSchema.optional(),
   })
   .strict() satisfies z.ZodType<ProviderOptions>;
 
@@ -438,6 +438,7 @@ export const ProviderSchema = z.enum([
   "anthropic",
   "google",
   "deepseek",
+  "sno-gpu",
 ]) satisfies z.ZodType<Provider>;
 
 /**
@@ -509,7 +510,7 @@ export const LLMConfigSchema = z
     }
 
     // LH: caching.key is now optional when using native strategy.
-    // The cache key can be provided at call time via CallOptions.promptCacheKey
+    // The native cache key is provided via caching.key
     // (typically from Promptix). Config key is used as fallback if call-time key is not provided.
 
     // Warn if both bypassGateway and caching are set (potential conflict)
