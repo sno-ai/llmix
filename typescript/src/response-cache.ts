@@ -5,7 +5,7 @@
  * L2: Redis with TTL via SETEX (ioredis, optional)
  *
  * Cache key: SHA-256 of canonical JSON (sorted keys, deterministic).
- * Prefix: "llmix2:resp:"
+ * Prefix: "llmix:resp:"
  *
  * Three strategies:
  * - "redis": strict — fail if no REDIS_URL
@@ -25,7 +25,7 @@ const getIoredis = lazyImport<typeof import("ioredis")>("ioredis", "ioredis");
 // CONSTANTS
 // =============================================================================
 
-const CACHE_KEY_PREFIX = "llmix2:resp:";
+const CACHE_KEY_PREFIX = "llmix:resp:";
 const DEFAULT_L1_MAX = 1000;
 const DEFAULT_TTL_SECONDS = 3600;
 const DEFAULT_L2_TTL_SECONDS = 3600;
@@ -186,7 +186,7 @@ export function resolveResponseCacheStrategy(
  *
  * - Canonical JSON with sorted keys
  * - Null/undefined fields excluded
- * - Prefixed with "llmix2:resp:"
+ * - Prefixed with "llmix:resp:"
  */
 export function generateCacheKey(params: CacheKeyParams): string {
   const canonical: Record<string, unknown> = {};
