@@ -1,73 +1,53 @@
 /**
- * LLMix - LLM Config Loader Package
+ * LLMix
  *
- * Three-tier caching system for LLM configurations with AI SDK v6 alignment.
- *
- * Architecture:
- * 1. Local LRU cache (0.1ms)
- * 2. Shared Redis (1-2ms)
- * 3. File system with cascade resolution (5-10ms)
+ * Config-driven LLM calls for TypeScript.
  *
  * @example
  * ```typescript
- * import { createLLMConfigLoader, createLLMClient } from '@sno-cortex/llmix';
+ * import { CallPipeline, loadConfigPreset } from "llmix";
  *
- * // Create and initialize loader
- * const loader = createLLMConfigLoader({
- *   configDir: '/app/config/llm',
- *   redisUrl: process.env.REDIS_KV_URL,
- * });
- * await loader.init();
+ * const config = await loadConfigPreset("extraction", "./config/llm/_default");
+ * const pipeline = new CallPipeline({ dispatch: async (ctx) => {
+ *   return {
+ *     content: "ok",
+ *     model: ctx.model,
+ *     usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+ *   };
+ * }});
  *
- * // Create client
- * const client = createLLMClient({ loader });
- *
- * // Make LLM call
- * const response = await client.call({
- *   preset: 'hrkg:extraction',
- *   messages: [{ role: 'user', content: 'Extract entities from: ...' }],
- * });
- *
- * // Get config + capabilities without making a call
- * const { config, capabilities } = await client.getResolvedConfig({
- *   preset: 'hrkg:topic-analysis',
- * });
- *
- * if (capabilities.supportsOpenAIBatch) {
- *   // Use batch API for efficiency
- * }
+ * const response = await pipeline.call({ config, messages: [{ role: "user", content: "hi" }] });
  * ```
  */
 
 // =============================================================================
-// MAIN CLASSES & FACTORIES
+// PUBLIC API
+// =============================================================================
+
+export { loadConfig, loadConfigPreset, resolveConfigDir, type LLMixPathConfig, type ResolvedConfigDir } from "./config";
+
+// =============================================================================
+// CALL PIPELINE
 // =============================================================================
 
 export {
-  createLLMClient,
-  LLMClient,
-  type ApiKeysConfig,
-  type HeliconeConfig,
-  type LLMClientConfig,
-  type ProviderUrlConfig,
-} from "./client";
-export { resolveConfigDir, type LLMixPathConfig, type ResolvedConfigDir } from "./config";
-export { createLLMConfigLoader, LLMConfigLoader } from "./config-loader";
-
-// =============================================================================
-// V2 CALL PIPELINE
-// =============================================================================
-
-export {
-  V2CallPipeline,
+  CallPipeline,
   type DispatchContext,
   type ProviderDispatchFn,
   type ProviderError,
   type ProviderResult,
-  type V2CallInput,
-  type V2CallResponse,
-  type V2PipelineConfig,
-} from "./client-v2";
+  type CallInput,
+  type CallResponse,
+  type PipelineConfig,
+} from "./pipeline";
+
+export {
+  anthropicDispatch,
+  geminiDispatch,
+  openaiDispatch,
+  openrouterDispatch,
+  snoGpuDispatch,
+} from "./dispatchers";
 
 // =============================================================================
 // TYPES
@@ -86,9 +66,7 @@ export type {
   CacheStats,
   CachingConfig,
   CachingStrategy,
-  CallOptions,
   CommonParams,
-  ConfigCapabilities,
   DeepSeekProviderOptions,
   DeepSeekThinkingConfig,
   ExperimentConfig,
@@ -97,22 +75,16 @@ export type {
   GoogleThinkingConfig,
   LLMCallEventData,
   LLMConfig,
-  LLMConfigLoaderConfig,
-  LLMConfigLoaderLogger,
   LLMixTelemetryProvider,
-  LLMResponse,
   LLMUsage,
-  LoadConfigOptions,
   LRUCacheStats,
   OpenAIProviderOptions,
   Provider,
   ProviderOptions,
   ProviderOrUnknown,
   ResponseCacheStrategy,
-  ResolvedConfigResult,
-  ResolvedLLMConfig,
   RuntimeOverrides,
-  SnogpuProviderOptions,
+  SnoGpuProviderOptions,
   TelemetryContext,
   TimeoutConfig,
 } from "./types";
@@ -157,7 +129,7 @@ export {
 } from "./model-capabilities";
 
 // =============================================================================
-// V2 FEATURE MODULES
+// FEATURE MODULES
 // =============================================================================
 
 export {
@@ -198,7 +170,7 @@ export {
   geminiTransformKwargs,
   openaiTransformKwargs,
   openrouterTransformKwargs,
-  snogpuTransformKwargs,
+  snoGpuTransformKwargs,
   PROVIDER_KWARGS_REGISTRY,
   type TransformKwargsCallback,
   type TransformKwargsContext,
@@ -254,7 +226,7 @@ export {
   loadConfigFromFile,
   OpenAIProviderOptionsSchema,
   ProviderOptionsSchema,
-  SnogpuProviderOptionsSchema,
+  SnoGpuProviderOptionsSchema,
   validateModule,
   validatePreset,
   validateScope,
