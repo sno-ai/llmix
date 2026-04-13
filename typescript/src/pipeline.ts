@@ -49,6 +49,7 @@ export interface ProviderResult {
   model: string;
   usage: LLMUsage;
   headers?: Record<string, string | undefined>;
+  toolCalls?: unknown[] | undefined;
 }
 
 /** Context passed into the provider dispatch callback. */
@@ -81,6 +82,7 @@ export interface CallResponse {
   error?: string | undefined;
   thinkingContent?: string | undefined;
   cacheHit?: CacheHitTier | undefined;
+  toolCalls?: unknown[] | undefined;
 }
 
 /** Configuration for the call pipeline. */
@@ -345,6 +347,7 @@ export class CallPipeline {
         usage: result.usage,
         success: true,
         thinkingContent: thinkingContent ?? undefined,
+        toolCalls: result.toolCalls,
       };
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -458,12 +461,12 @@ export class CallPipeline {
     if (err instanceof Error && err.message.startsWith("No API key pool")) {
       return true;
     }
-    // Transform errors (e.g. snogpu missing baseUrl, invalid gpuPath)
+    // Transform errors (e.g. sno-gpu missing base_url, invalid gpu_path)
     // and infrastructure errors (semaphore closed, lock setup)
     if (
       err instanceof Error &&
-      (err.message.startsWith("Invalid gpuPath") ||
-        err.message.includes("requires a non-empty baseUrl") ||
+      (err.message.startsWith("Invalid gpu_path") ||
+        err.message.includes("requires a non-empty base_url") ||
         err.message === "AdaptiveSemaphore is closed")
     ) {
       return true;
