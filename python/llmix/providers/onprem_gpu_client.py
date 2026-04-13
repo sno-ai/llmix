@@ -17,7 +17,7 @@ from typing import Any
 import httpx
 from openai import APIConnectionError, APITimeoutError, AsyncOpenAI, InternalServerError, RateLimitError
 
-from llmix.provider_urls import GPU_BASE_URL
+from llmix.provider_urls import SNO_GPU_BASE_URL
 from llmix.providers.base import BaseLLMClient, LLMResponse
 from llmix.providers.openai_common import build_retry_config, jittered_delay
 
@@ -31,23 +31,25 @@ def build_gpu_base_url(gpu_path: str | None = None) -> str:
     """Build GPU base URL with optional path routing.
 
     Args:
-        gpu_path: 'extract' (GPU 0, SMR), 'reason' (GPU 1, EKG), or None (legacy /v1).
+        gpu_path: 'extract', 'reason', or None (legacy /v1).
 
     Returns:
         Full base URL for AsyncOpenAI (e.g. https://llm.example.com/extract/v1).
     """
+    if not SNO_GPU_BASE_URL:
+        raise ValueError("GPU_BASE_URL is required for sno-gpu provider.")
     if gpu_path:
         if gpu_path not in VALID_GPU_PATHS:
             raise ValueError(f"Invalid gpu_path: {gpu_path!r}. Must be one of {sorted(VALID_GPU_PATHS)!r}")
-        return f"{GPU_BASE_URL}/{gpu_path}/v1"
-    return f"{GPU_BASE_URL}/v1"
+        return f"{SNO_GPU_BASE_URL}/{gpu_path}/v1"
+    return f"{SNO_GPU_BASE_URL}/v1"
 
 
-class GpuClient(BaseLLMClient):
+class SnoGpuClient(BaseLLMClient):
     """
     Async on-prem GPU Client via OpenAI-compatible Chat Completions API.
 
-    Authenticates with X-Internal-Token header (INTERNAL_SERVICE_SECRET).
+    Authenticates with X-Sno-LLM-Key header (SNO_LLM_API_KEY).
     The API does not support OpenAI's Response API, so response_completion()
     maps parameters to chat_completion() format internally.
 
@@ -70,17 +72,16 @@ class GpuClient(BaseLLMClient):
     ):
         super().__init__(model=model, **kwargs)
         if not service_secret:
-            raise ValueError("GPU service secret is required. Set INTERNAL_SERVICE_SECRET environment variable or pass service_secret parameter.")
+            raise ValueError("Sno GPU API key is required. Set SNO_LLM_API_KEY or pass service_secret.")
         self._service_secret = service_secret
         self.base_url = base_url or build_gpu_base_url()
         self.enable_thinking = enable_thinking
         self.thinking_budget = thinking_budget
         # Merge auth header AFTER caller-supplied headers so auth always wins
-        self._default_headers = {**(default_headers or {}), "X-Internal-Token": service_secret}
+        self._default_headers = {**(default_headers or {}), "X-Sno-LLM-Key": service_secret}
         self._http_client = http_client
         self._client: AsyncOpenAI | None = None
         self._client_lock = threading.Lock()
-
     @property
     def client(self) -> AsyncOpenAI:
         """Lazy-initialize AsyncOpenAI client for GPU inference (thread-safe)."""
@@ -306,3 +307,6 @@ class GpuClient(BaseLLMClient):
 
         if client_to_close is not None:
             await client_to_close.close()
+
+
+GpuClient = SnoGpuClient
