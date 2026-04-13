@@ -212,6 +212,10 @@ class CallPipeline:
             "temperature": common.get("temperature"),
             "top_p": common.get("top_p"),
             "max_tokens": common.get("max_output_tokens"),
+            "top_k": common.get("top_k"),
+            "presence_penalty": common.get("presence_penalty"),
+            "frequency_penalty": common.get("frequency_penalty"),
+            "stop": common.get("stop_sequences"),
             "seed": common.get("seed"),
             "response_format": common.get("response_format"),
         }
@@ -266,6 +270,10 @@ class CallPipeline:
                     "enableThinking": common.get("enable_thinking"),
                     "temperature": common.get("temperature"),
                     "maxOutputTokens": common.get("max_output_tokens"),
+                    "topK": common.get("top_k"),
+                    "presencePenalty": common.get("presence_penalty"),
+                    "frequencyPenalty": common.get("frequency_penalty"),
+                    "stopSequences": common.get("stop_sequences"),
                     "responseFormat": common.get("response_format"),
                     "seed": common.get("seed"),
                     "topP": common.get("top_p"),
@@ -308,6 +316,10 @@ class CallPipeline:
                             "enableThinking": common.get("enable_thinking"),
                             "temperature": common.get("temperature"),
                             "maxOutputTokens": common.get("max_output_tokens"),
+                            "topK": common.get("top_k"),
+                            "presencePenalty": common.get("presence_penalty"),
+                            "frequencyPenalty": common.get("frequency_penalty"),
+                            "stopSequences": common.get("stop_sequences"),
                             "responseFormat": common.get("response_format"),
                             "seed": common.get("seed"),
                             "topP": common.get("top_p"),
@@ -444,8 +456,8 @@ class CallPipeline:
         if isinstance(exc, Exception) and str(exc).startswith("No API key pool"):
             return True
         if isinstance(exc, Exception) and (
-            str(exc).startswith("Invalid gpuPath")
-            or "requires a non-empty baseUrl" in str(exc)
+            str(exc).startswith("Invalid gpu_path")
+            or "requires a non-empty base_url" in str(exc)
             or str(exc) == "AdaptiveSemaphore is closed"
         ):
             return True
