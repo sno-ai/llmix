@@ -23,3 +23,6 @@ __pycache__/
 
 # Test environment secrets
 .env.test
+
+# Rust
+rust/llmix-rs/target/
