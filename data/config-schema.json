@@ -10,7 +10,7 @@
       "description": "Common parameters shared across providers",
       "properties": {
         "model": { "type": "string" },
-        "provider": { "type": "string", "enum": ["openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "snogpu"] },
+        "provider": { "type": "string", "enum": ["openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "sno-gpu"] },
         "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
         "maxOutputTokens": { "type": "integer", "minimum": 1 },
         "enableThinking": { "type": "boolean" },
