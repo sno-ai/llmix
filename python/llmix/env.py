@@ -22,6 +22,10 @@ def get_openai_base_url() -> str:
     return os.getenv("OPENAI_BASE_URL", "")
 
 
+def get_anthropic_api_key() -> str | None:
+    return os.getenv("ANTHROPIC_API_KEY")
+
+
 def get_gemini_api_key() -> str | None:
     return os.getenv("GEMINI_API_KEY")
 
@@ -42,8 +46,8 @@ def get_novita_api_key() -> str | None:
     return os.getenv("NOVITA_API_KEY")
 
 
-def get_internal_service_secret() -> str | None:
-    return os.getenv("INTERNAL_SERVICE_SECRET")
+def get_sno_llm_api_key() -> str | None:
+    return os.getenv("SNO_LLM_API_KEY")
 
 
 # =============================================================================
@@ -52,7 +56,7 @@ def get_internal_service_secret() -> str | None:
 
 
 def get_gpu_base_url() -> str:
-    return os.getenv("GPU_BASE_URL", "https://rt3-llm.sno.ai")
+    return os.getenv("GPU_BASE_URL", "")
 
 
 # =============================================================================
