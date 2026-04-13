@@ -11,22 +11,37 @@ __version__ = "2.0.0"
 # Pricing is always available (no external deps beyond stdlib + json)
 from llmix.pricing import MODEL_PRICING, CostBreakdown, ModelPricing, calculate_cost, calculate_rerank_cost, get_model_pricing, normalize_model_name
 
-# v2 modules are lazy-loaded so that importing llmix never fails when
+# Pipeline-era modules are lazy-loaded so that importing llmix never fails when
 # optional dependencies (httpx, cachetools, anthropic SDK, etc.) are
 # not installed.  Only the module actually used at runtime needs its
 # dependencies present.
 
 _LAZY_IMPORTS: dict[str, str] = {
-    # client_v2
-    "V2CallPipeline": "llmix.client_v2",
-    "V2PipelineConfig": "llmix.client_v2",
-    "V2CallInput": "llmix.client_v2",
-    "V2CallResponse": "llmix.client_v2",
-    "DispatchInput": "llmix.client_v2",
-    "DispatchContext": "llmix.client_v2",
-    "ProviderResult": "llmix.client_v2",
-    "ProviderError": "llmix.client_v2",
-    "LLMUsage": "llmix.client_v2",
+    # pipeline
+    "CallPipeline": "llmix.pipeline",
+    "PipelineConfig": "llmix.pipeline",
+    "CallInput": "llmix.pipeline",
+    "CallResponse": "llmix.pipeline",
+    "DispatchInput": "llmix.pipeline",
+    "DispatchContext": "llmix.pipeline",
+    "ProviderResult": "llmix.pipeline",
+    "ProviderError": "llmix.pipeline",
+    "LLMUsage": "llmix.pipeline",
+    # dispatchers
+    "openai_dispatch": "llmix.dispatchers",
+    "anthropic_dispatch": "llmix.dispatchers",
+    "deepinfra_dispatch": "llmix.dispatchers",
+    "gemini_dispatch": "llmix.dispatchers",
+    "novita_dispatch": "llmix.dispatchers",
+    "openrouter_dispatch": "llmix.dispatchers",
+    "sno_gpu_dispatch": "llmix.dispatchers",
+    "together_dispatch": "llmix.dispatchers",
+    # config
+    "LLMixPathConfig": "llmix.config",
+    "ResolvedConfigDir": "llmix.config",
+    "resolve_config_dir": "llmix.config",
+    "load_config": "llmix.config",
+    "load_config_preset": "llmix.config",
     # resilience
     "CircuitBreaker": "llmix.resilience",
     "CircuitOpenError": "llmix.resilience",
@@ -64,15 +79,28 @@ _LAZY_IMPORTS: dict[str, str] = {
 if TYPE_CHECKING:
     from llmix.adaptive_semaphore import AdaptiveSemaphore as AdaptiveSemaphore
     from llmix.adaptive_semaphore import parse_openai_ratelimit_headers as parse_openai_ratelimit_headers
-    from llmix.client_v2 import DispatchContext as DispatchContext
-    from llmix.client_v2 import DispatchInput as DispatchInput
-    from llmix.client_v2 import LLMUsage as LLMUsage
-    from llmix.client_v2 import ProviderError as ProviderError
-    from llmix.client_v2 import ProviderResult as ProviderResult
-    from llmix.client_v2 import V2CallInput as V2CallInput
-    from llmix.client_v2 import V2CallPipeline as V2CallPipeline
-    from llmix.client_v2 import V2CallResponse as V2CallResponse
-    from llmix.client_v2 import V2PipelineConfig as V2PipelineConfig
+    from llmix.config import LLMixPathConfig as LLMixPathConfig
+    from llmix.config import ResolvedConfigDir as ResolvedConfigDir
+    from llmix.config import load_config as load_config
+    from llmix.config import load_config_preset as load_config_preset
+    from llmix.config import resolve_config_dir as resolve_config_dir
+    from llmix.dispatchers import anthropic_dispatch as anthropic_dispatch
+    from llmix.dispatchers import deepinfra_dispatch as deepinfra_dispatch
+    from llmix.dispatchers import gemini_dispatch as gemini_dispatch
+    from llmix.dispatchers import novita_dispatch as novita_dispatch
+    from llmix.dispatchers import openai_dispatch as openai_dispatch
+    from llmix.dispatchers import openrouter_dispatch as openrouter_dispatch
+    from llmix.dispatchers import sno_gpu_dispatch as sno_gpu_dispatch
+    from llmix.dispatchers import together_dispatch as together_dispatch
+    from llmix.pipeline import CallInput as CallInput
+    from llmix.pipeline import CallPipeline as CallPipeline
+    from llmix.pipeline import CallResponse as CallResponse
+    from llmix.pipeline import DispatchContext as DispatchContext
+    from llmix.pipeline import DispatchInput as DispatchInput
+    from llmix.pipeline import LLMUsage as LLMUsage
+    from llmix.pipeline import PipelineConfig as PipelineConfig
+    from llmix.pipeline import ProviderError as ProviderError
+    from llmix.pipeline import ProviderResult as ProviderResult
     from llmix.http2 import PROVIDER_TRANSPORT as PROVIDER_TRANSPORT
     from llmix.http2 import create_client_for_provider as create_client_for_provider
     from llmix.http2 import get_provider_transport as get_provider_transport
@@ -104,15 +132,28 @@ __all__ = [
     "calculate_rerank_cost",
     "get_model_pricing",
     "normalize_model_name",
-    "V2CallPipeline",
-    "V2PipelineConfig",
-    "V2CallInput",
-    "V2CallResponse",
+    "CallPipeline",
+    "PipelineConfig",
+    "CallInput",
+    "CallResponse",
     "DispatchInput",
     "DispatchContext",
     "ProviderResult",
     "ProviderError",
     "LLMUsage",
+    "openai_dispatch",
+    "anthropic_dispatch",
+    "deepinfra_dispatch",
+    "gemini_dispatch",
+    "novita_dispatch",
+    "openrouter_dispatch",
+    "sno_gpu_dispatch",
+    "together_dispatch",
+    "LLMixPathConfig",
+    "ResolvedConfigDir",
+    "resolve_config_dir",
+    "load_config",
+    "load_config_preset",
     "CircuitBreaker",
     "CircuitOpenError",
     "CircuitState",
