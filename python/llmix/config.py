@@ -13,7 +13,43 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 from typing import Literal
+
+import yaml
+
+from llmix.types import ConfigAccessError, ConfigNotFoundError, InvalidConfigError, SecurityError, validate_module, validate_preset, validate_version
+
+# Legacy compatibility mapping reused from the retired config loader.
+_CAMEL_TO_SNAKE: dict[str, str] = {
+    "maxOutputTokens": "max_output_tokens",
+    "maxRetries": "max_retries",
+    "topP": "top_p",
+    "topK": "top_k",
+    "presencePenalty": "presence_penalty",
+    "frequencyPenalty": "frequency_penalty",
+    "stopSequences": "stop_sequences",
+    "totalTime": "total_time",
+    "streamFirstChunkTime": "stream_first_chunk_time",
+    "providerOptions": "provider_options",
+    "bypassGateway": "bypass_gateway",
+    "configId": "config_id",
+    "enableThinking": "enable_thinking",
+    "keepThinkingOutput": "keep_thinking_output",
+    "thinkingBudget": "thinking_budget",
+    "reasoningEffort": "reasoning_effort",
+    "textVerbosity": "text_verbosity",
+    "structuredOutputs": "structured_outputs",
+    "parallelToolCalls": "parallel_tool_calls",
+    "logitBias": "logit_bias",
+    "strictJsonSchema": "strict_json_schema",
+    "maxCompletionTokens": "max_completion_tokens",
+    "serviceTier": "service_tier",
+    "promptCacheKey": "prompt_cache_key",
+    "promptCacheRetention": "prompt_cache_retention",
+    "gpuPath": "gpu_path",
+    "maxItems": "max_items",
+}
 
 # ---------------------------------------------------------------------------
 # Project root detection
@@ -124,3 +160,130 @@ def resolve_config_dir(options: LLMixPathConfig | None = None) -> ResolvedConfig
     # Priority 3: Default relative to project root (use find_project_root, not cwd)
     actual_project_root = find_project_root() if project_root == Path.cwd() else project_root
     return ResolvedConfigDir(config_dir=str((actual_project_root / default_relative_path).resolve()), source="default")
+
+
+def _verify_path_containment(resolved_path: Path, base_dir: Path) -> None:
+    """Verify that a resolved file path stays within an allowed base directory."""
+    normalized_base = base_dir.resolve()
+    normalized_path = resolved_path.resolve()
+
+    try:
+        real_base = normalized_base.resolve()
+    except (OSError, RuntimeError):
+        real_base = normalized_base
+
+    try:
+        real_path = normalized_path.resolve()
+    except (OSError, RuntimeError):
+        real_path = normalized_path
+
+    try:
+        real_path.relative_to(real_base)
+    except ValueError:
+        raise SecurityError(f"Path traversal detected: {resolved_path} escapes base directory {base_dir}") from None
+
+
+def _load_yaml_file(file_path: Path) -> dict[str, Any]:
+    """Load a YAML config file using the same safety/error semantics as the legacy loader."""
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise ConfigNotFoundError(f"Config file not found: {file_path}") from None
+    except PermissionError:
+        raise ConfigAccessError(f"Permission denied reading config file: {file_path}") from None
+
+    try:
+        parsed = yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        raise InvalidConfigError(f"YAML parsing failed for {file_path}: {exc}") from exc
+
+    if not isinstance(parsed, dict):
+        raise InvalidConfigError(f"Config must be a dictionary, got {type(parsed).__name__}")
+
+    config = _normalize_config_shape(cast(dict[str, Any], parsed))
+    if "provider" not in config:
+        raise InvalidConfigError(f"Missing required field 'provider' in {file_path}")
+    if "model" not in config:
+        raise InvalidConfigError(f"Missing required field 'model' in {file_path}")
+
+    return config
+
+
+def _normalize_config_keys(value: Any) -> Any:
+    """Normalize known legacy camelCase keys to the public Python snake_case shape."""
+    if isinstance(value, dict):
+        normalized: dict[str, Any] = {}
+        for raw_key, item in value.items():
+            key = raw_key if isinstance(raw_key, str) else str(raw_key)
+            normalized_key = _CAMEL_TO_SNAKE.get(key, key)
+            normalized[normalized_key] = _normalize_config_keys(item)
+        return normalized
+
+    if isinstance(value, list):
+        return [_normalize_config_keys(item) for item in value]
+
+    return value
+
+
+def _normalize_config_shape(config: dict[str, Any]) -> dict[str, Any]:
+    """
+    Normalize legacy YAML layouts into the public Python config shape.
+
+    v1 presets frequently stored provider/model inside ``common``. The public
+    loader lifts those fields to the top level and removes them from
+    ``common`` so the returned config matches the documented contract.
+    """
+    normalized = cast(dict[str, Any], _normalize_config_keys(config))
+    common_value = normalized.get("common")
+    if not isinstance(common_value, dict):
+        return normalized
+
+    common = dict(common_value)
+    provider = common.pop("provider", None)
+    model = common.pop("model", None)
+
+    if provider is not None and "provider" not in normalized:
+        normalized["provider"] = provider
+    if model is not None and "model" not in normalized:
+        normalized["model"] = model
+
+    if common:
+        normalized["common"] = common
+    else:
+        normalized.pop("common", None)
+
+    return normalized
+
+
+def load_config(path: str | Path) -> dict[str, Any]:
+    """
+    Load a YAML config from an explicit path.
+
+    The public API stays intentionally simple: one file in, one validated config out.
+    """
+    file_path = Path(path).expanduser().resolve()
+    return _load_yaml_file(file_path)
+
+
+def load_config_preset(name: str, base_dir: str | Path, *, version: int = 1) -> dict[str, Any]:
+    """
+    Load a preset file from ``{base_dir}/{name}.v{version}.yaml``.
+
+    ``name`` may be a bare preset (`"extraction"`) or include a `.yaml` suffix.
+    """
+    preset_name = Path(name).name
+    if preset_name.endswith(".yaml"):
+        preset_name = preset_name[:-5]
+    elif preset_name.endswith(".yml"):
+        preset_name = preset_name[:-4]
+
+    validate_preset(preset_name)
+    validate_version(version)
+
+    presets_dir = Path(base_dir).expanduser().resolve()
+    module_name = presets_dir.name
+    validate_module(module_name)
+
+    file_path = presets_dir / f"{preset_name}.v{version}.yaml"
+    _verify_path_containment(file_path, presets_dir)
+    return load_config(file_path)
