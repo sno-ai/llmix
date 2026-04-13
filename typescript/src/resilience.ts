@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { statSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -23,7 +23,8 @@ const DEFAULT_MAX_DELAY_MS = 30_000;
 const DEFAULT_JITTER_MS = 1_000;
 const DEFAULT_MAX_RETRY_AFTER_MS = 60_000;
 const KILLSWITCH_FILENAME = "killswitch";
-const KILLSWITCH_SUBDIR = "llmix2";
+const KILLSWITCH_SUBDIR = "llmix";
+const LEGACY_KILLSWITCH_SUBDIR = "llmix2";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -41,6 +42,32 @@ function resolveStateDir(): string {
   if (xdg) return join(xdg, KILLSWITCH_SUBDIR);
 
   return join(homedir(), ".local", "state", KILLSWITCH_SUBDIR);
+}
+
+function resolveLegacyStateDir(currentStateDir: string): string | null {
+  const parts = currentStateDir.split(/[/\\]+/);
+  if (parts.at(-1) !== KILLSWITCH_SUBDIR) {
+    return null;
+  }
+  return join(currentStateDir, "..", LEGACY_KILLSWITCH_SUBDIR);
+}
+
+function migrateLegacyKillSwitch(currentStateDir: string): string {
+  const currentPath = join(currentStateDir, KILLSWITCH_FILENAME);
+  const legacyStateDir = resolveLegacyStateDir(currentStateDir);
+  if (legacyStateDir === null || existsSync(currentPath)) {
+    return currentPath;
+  }
+
+  const legacyPath = join(legacyStateDir, KILLSWITCH_FILENAME);
+  if (!existsSync(legacyPath)) {
+    return currentPath;
+  }
+
+  mkdirSync(currentStateDir, { recursive: true });
+  renameSync(legacyPath, currentPath);
+  console.warn(`[llmix] migrated legacy kill switch from ${legacyPath} to ${currentPath}`);
+  return currentPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +284,7 @@ export class KillSwitch {
 
   constructor(stateDir?: string) {
     const base = stateDir ?? resolveStateDir();
-    this.path = join(base, KILLSWITCH_FILENAME);
+    this.path = migrateLegacyKillSwitch(base);
   }
 
   check(): void {
