@@ -8,6 +8,7 @@ build/
 
 # Python
 python/llmix/__pycache__/
+python/llmix/dispatchers/__pycache__/
 python/llmix/providers/__pycache__/
 __pycache__/
 *.pyc
