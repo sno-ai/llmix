@@ -24,9 +24,10 @@ _LAZY_IMPORTS: dict[str, str] = {
     'AsyncAnthropicClient': 'llmix.providers.anthropic_client',
     'DeepInfraClient': 'llmix.providers.deepinfra_client',
     'AsyncGeminiClient': 'llmix.providers.gemini_async_client',
+    'NovitaClient': 'llmix.providers.novita_client',
     'AsyncOpenAIClient': 'llmix.providers.openai_async_client',
     'GpuClient': 'llmix.providers.onprem_gpu_client',
-    'NovitaClient': 'llmix.providers.novita_client',
+    'SnoGpuClient': 'llmix.providers.onprem_gpu_client',
     'TogetherClient': 'llmix.providers.together_client',
     'get_async_openai_client': 'llmix.providers.client_factory',
     'reset_async_openai_client': 'llmix.providers.client_factory',
@@ -34,12 +35,13 @@ _LAZY_IMPORTS: dict[str, str] = {
 
 if TYPE_CHECKING:
     from llmix.providers.anthropic_client import AsyncAnthropicClient as AsyncAnthropicClient
-    from llmix.providers.deepinfra_client import DeepInfraClient as DeepInfraClient
     from llmix.providers.client_factory import get_async_openai_client as get_async_openai_client
     from llmix.providers.client_factory import reset_async_openai_client as reset_async_openai_client
+    from llmix.providers.deepinfra_client import DeepInfraClient as DeepInfraClient
     from llmix.providers.gemini_async_client import AsyncGeminiClient as AsyncGeminiClient
     from llmix.providers.novita_client import NovitaClient as NovitaClient
     from llmix.providers.onprem_gpu_client import GpuClient as GpuClient
+    from llmix.providers.onprem_gpu_client import SnoGpuClient as SnoGpuClient
     from llmix.providers.openai_async_client import AsyncOpenAIClient as AsyncOpenAIClient
     from llmix.providers.together_client import TogetherClient as TogetherClient
 
@@ -57,13 +59,14 @@ def __getattr__(name: str):
 
 __all__ = [
     'AsyncAnthropicClient',
+    'DeepInfraClient',
     'AsyncGeminiClient',
+    'NovitaClient',
     'AsyncOpenAIClient',
     'BaseLLMClient',
-    'DeepInfraClient',
     'GpuClient',
     'LLMResponse',
-    'NovitaClient',
+    'SnoGpuClient',
     'TogetherClient',
     'get_async_openai_client',
     'reset_async_openai_client',
