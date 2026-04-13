@@ -71,7 +71,7 @@ export interface CallInput {
   singleflightKey?: string;
 }
 
-/** Full response from the v2 pipeline. */
+/** Full response from the call pipeline. */
 export interface CallResponse {
   content: string;
   model: string;
@@ -83,7 +83,7 @@ export interface CallResponse {
   cacheHit?: CacheHitTier | undefined;
 }
 
-/** Configuration for the v2 pipeline. */
+/** Configuration for the call pipeline. */
 export interface PipelineConfig {
   dispatch: ProviderDispatchFn;
   maxRetries?: number;
