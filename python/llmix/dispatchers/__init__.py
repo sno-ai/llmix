@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import warnings
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
@@ -64,26 +63,30 @@ def _require_api_key(api_key: str | None, env_value: str | None, *, env_name: st
     raise ProviderError(f"{provider} provider requires {env_name}")
 
 
-def _warn_client_opts_out(client: object | None, provider: str) -> None:
-    """Warn once per factory creation when the caller supplies a prebuilt
-    provider client.
+BYPASS_KEY_POOL_ATTR = "__llmix_bypass_key_pool_providers__"
 
-    When a prebuilt client is used its baked-in ``api_key`` is what actually
-    authenticates every request. The pipeline still treats ``ctx.api_key``
-    (selected from ``KeyPool``) as live, so 401/403 responses cause
-    ``KeyPool.mark_dead(ctx.api_key)`` to silently delete a **different** key
-    from the pool. Callers that supply ``client=`` SHOULD also skip
-    ``CallPipeline.set_key_pool()`` for this provider to avoid pool corruption.
+
+def _mark_bypass(dispatch: ProviderDispatchFn, client: object | None, provider: str) -> ProviderDispatchFn:
+    """Tag a dispatch function so the pipeline rejects KeyPool registration
+    for providers whose dispatch was built with a prebuilt ``client=``.
+
+    A prebuilt client's baked-in ``api_key`` authenticates every request, but
+    the pipeline would still treat ``ctx.api_key`` (from ``KeyPool.select``)
+    as live — so a 401/403 would call ``KeyPool.mark_dead(ctx.api_key)`` and
+    silently kill an unrelated pool key. Hard-gating ``set_key_pool`` for
+    these providers eliminates that corruption path.
     """
     if client is None:
-        return
-    warnings.warn(
-        f"{provider}_dispatch(client=...) opts out of KeyPool rotation: the "
-        "prebuilt client's api_key is used on every call and ctx.api_key is "
-        "ignored. Do NOT register a KeyPool for this provider, or 401/403 "
-        "responses will mark unrelated keys dead.",
-        stacklevel=3,
-    )
+        return dispatch
+    existing: frozenset[str] = getattr(dispatch, BYPASS_KEY_POOL_ATTR, frozenset())
+    try:
+        setattr(dispatch, BYPASS_KEY_POOL_ATTR, existing | frozenset({provider}))
+    except (AttributeError, TypeError):
+        # Some callables (e.g. builtins) don't accept arbitrary attrs. The
+        # factories below always return fresh closures, so this path is
+        # defensive only.
+        pass
+    return dispatch
 
 
 def _coerce_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -277,8 +280,6 @@ def _map_deepseek_model(model: str) -> str:
 
 
 def openai_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDispatchFn:
-    _warn_client_opts_out(client, "openai")
-
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         openai_client_cls = cast("type[AsyncOpenAIClient]", _load_provider_attr("AsyncOpenAIClient"))
         resolved_client = client or openai_client_cls(
@@ -295,12 +296,10 @@ def openai_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDispatch
         )
         return _normalize_response(response, ctx.model)
 
-    return dispatch
+    return _mark_bypass(dispatch, client, "openai")
 
 
 def anthropic_dispatch(client: AsyncAnthropicClient | None = None) -> ProviderDispatchFn:
-    _warn_client_opts_out(client, "anthropic")
-
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         anthropic_client_cls = cast("type[AsyncAnthropicClient]", _load_provider_attr("AsyncAnthropicClient"))
         api_key = _require_api_key(ctx.api_key, get_anthropic_api_key(), env_name="ANTHROPIC_API_KEY", provider="anthropic")
@@ -315,12 +314,10 @@ def anthropic_dispatch(client: AsyncAnthropicClient | None = None) -> ProviderDi
         )
         return _normalize_response(response, ctx.model)
 
-    return dispatch
+    return _mark_bypass(dispatch, client, "anthropic")
 
 
 def gemini_dispatch(client: AsyncGeminiClient | None = None) -> ProviderDispatchFn:
-    _warn_client_opts_out(client, "gemini")
-
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         gemini_client_cls = cast("type[AsyncGeminiClient]", _load_provider_attr("AsyncGeminiClient"))
         resolved_client = client or gemini_client_cls(
@@ -339,12 +336,10 @@ def gemini_dispatch(client: AsyncGeminiClient | None = None) -> ProviderDispatch
         )
         return _normalize_response(response, ctx.model)
 
-    return dispatch
+    return _mark_bypass(dispatch, client, "gemini")
 
 
 def deepinfra_dispatch(client: DeepInfraClient | None = None) -> ProviderDispatchFn:
-    _warn_client_opts_out(client, "deepinfra")
-
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         deepinfra_options = _resolve_provider_options(ctx, "deepinfra")
         common = _resolve_common(ctx)
@@ -369,12 +364,10 @@ def deepinfra_dispatch(client: DeepInfraClient | None = None) -> ProviderDispatc
         )
         return _normalize_response(response, ctx.model)
 
-    return dispatch
+    return _mark_bypass(dispatch, client, "deepinfra")
 
 
 def openrouter_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDispatchFn:
-    _warn_client_opts_out(client, "openrouter")
-
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         resolved_model = _map_deepseek_model(ctx.model)
         openai_client_cls = cast("type[AsyncOpenAIClient]", _load_provider_attr("AsyncOpenAIClient"))
@@ -392,12 +385,10 @@ def openrouter_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDisp
         )
         return _normalize_response(response, resolved_model)
 
-    return dispatch
+    return _mark_bypass(dispatch, client, "openrouter")
 
 
 def novita_dispatch(client: NovitaClient | None = None) -> ProviderDispatchFn:
-    _warn_client_opts_out(client, "novita")
-
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         novita_options = _resolve_provider_options(ctx, "novita")
         common = _resolve_common(ctx)
@@ -422,12 +413,10 @@ def novita_dispatch(client: NovitaClient | None = None) -> ProviderDispatchFn:
         )
         return _normalize_response(response, ctx.model)
 
-    return dispatch
+    return _mark_bypass(dispatch, client, "novita")
 
 
 def sno_gpu_dispatch(client: SnoGpuClient | None = None) -> ProviderDispatchFn:
-    _warn_client_opts_out(client, "sno_gpu")
-
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         sno_gpu_options = _resolve_provider_options(ctx, "sno-gpu")
         common = _resolve_common(ctx)
@@ -452,12 +441,10 @@ def sno_gpu_dispatch(client: SnoGpuClient | None = None) -> ProviderDispatchFn:
         )
         return _normalize_response(response, ctx.model)
 
-    return dispatch
+    return _mark_bypass(dispatch, client, "sno-gpu")
 
 
 def together_dispatch(client: TogetherClient | None = None) -> ProviderDispatchFn:
-    _warn_client_opts_out(client, "together")
-
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         together_client_cls = cast("type[TogetherClient]", _load_provider_attr("TogetherClient"))
         resolved_client = client or together_client_cls(
@@ -474,4 +461,4 @@ def together_dispatch(client: TogetherClient | None = None) -> ProviderDispatchF
         )
         return _normalize_response(response, ctx.model)
 
-    return dispatch
+    return _mark_bypass(dispatch, client, "together")
