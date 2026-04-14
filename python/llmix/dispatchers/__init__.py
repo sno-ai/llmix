@@ -66,15 +66,22 @@ def _require_api_key(api_key: str | None, env_value: str | None, *, env_name: st
 
 def _warn_client_opts_out(client: object | None, provider: str) -> None:
     """Warn once per factory creation when the caller supplies a prebuilt
-    provider client: its baked-in ``api_key`` bypasses the pipeline's KeyPool
-    rotation (``rotate()``/``mark_dead()`` still run but have no effect).
+    provider client.
+
+    When a prebuilt client is used its baked-in ``api_key`` is what actually
+    authenticates every request. The pipeline still treats ``ctx.api_key``
+    (selected from ``KeyPool``) as live, so 401/403 responses cause
+    ``KeyPool.mark_dead(ctx.api_key)`` to silently delete a **different** key
+    from the pool. Callers that supply ``client=`` SHOULD also skip
+    ``CallPipeline.set_key_pool()`` for this provider to avoid pool corruption.
     """
     if client is None:
         return
     warnings.warn(
         f"{provider}_dispatch(client=...) opts out of KeyPool rotation: the "
         "prebuilt client's api_key is used on every call and ctx.api_key is "
-        "ignored.",
+        "ignored. Do NOT register a KeyPool for this provider, or 401/403 "
+        "responses will mark unrelated keys dead.",
         stacklevel=3,
     )
 

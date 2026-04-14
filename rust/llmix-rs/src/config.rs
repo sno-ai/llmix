@@ -163,7 +163,7 @@ fn load_yaml_file(file_path: &Path) -> LlmixResult<Value> {
         Err(error) => return Err(error.into()),
     };
 
-    let parsed: Value = serde_yaml::from_str(&content).map_err(|error| InvalidConfigError {
+    let parsed: Value = serde_yaml_ng::from_str(&content).map_err(|error| InvalidConfigError {
         message: format!("YAML parsing failed for {}: {error}", file_path.display()),
     })?;
 

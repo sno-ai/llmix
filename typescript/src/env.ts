@@ -32,6 +32,15 @@ export function getOpenrouterApiKey(): string | undefined {
 export function getSnoLlmApiKey(): string | undefined {
   return process.env["SNO_LLM_API_KEY"];
 }
+export function getDeepinfraApiKey(): string | undefined {
+  return process.env["DEEPINFRA_API_KEY"];
+}
+export function getNovitaApiKey(): string | undefined {
+  return process.env["NOVITA_API_KEY"];
+}
+export function getTogetherApiKey(): string | undefined {
+  return process.env["TOGETHER_API_KEY"];
+}
 
 // Environment
 export function getNodeEnv(): string | undefined {

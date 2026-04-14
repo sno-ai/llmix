@@ -2,11 +2,14 @@ import type { JSONValue, SharedV3ProviderOptions as AiProviderOptions } from "@a
 import type { LanguageModel, ModelMessage, ToolSet } from "ai";
 import {
   getAnthropicApiKey,
+  getDeepinfraApiKey,
   getGeminiApiKey,
   getGpuBaseUrl,
+  getNovitaApiKey,
   getOpenaiApiKey,
   getOpenrouterApiKey,
   getSnoLlmApiKey,
+  getTogetherApiKey,
 } from "./env";
 import { lazyImport } from "./lazy-import";
 import type { DispatchContext, ProviderDispatchFn, ProviderResult } from "./pipeline";
@@ -16,6 +19,9 @@ const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
 const GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com/v1";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai";
+const NOVITA_BASE_URL = "https://api.novita.ai/v3/openai";
+const TOGETHER_BASE_URL = "https://api.together.xyz/v1";
 const VALID_GPU_PATHS = new Set(["extract", "reason"]);
 
 const DEEPSEEK_MODEL_MAPPINGS: Record<string, string> = {
@@ -342,6 +348,39 @@ export function openrouterDispatch(): ProviderDispatchFn {
       baseURL: resolveBaseUrl(ctx, OPENROUTER_BASE_URL),
     });
     return generateWithModel(ctx, openrouter(mapDeepseekModel(ctx.model)), resolveProviderOptions(ctx.config, "deepseek"));
+  };
+}
+
+export function deepinfraDispatch(): ProviderDispatchFn {
+  return async (ctx) => {
+    const { createOpenAI } = await getOpenAiSdk();
+    const deepinfra = createOpenAI({
+      apiKey: requireApiKey(ctx.apiKey, getDeepinfraApiKey(), "DEEPINFRA_API_KEY", "deepinfra"),
+      baseURL: resolveBaseUrl(ctx, DEEPINFRA_BASE_URL),
+    });
+    return generateWithModel(ctx, deepinfra(ctx.model), resolveProviderOptions(ctx.config, "deepinfra"));
+  };
+}
+
+export function novitaDispatch(): ProviderDispatchFn {
+  return async (ctx) => {
+    const { createOpenAI } = await getOpenAiSdk();
+    const novita = createOpenAI({
+      apiKey: requireApiKey(ctx.apiKey, getNovitaApiKey(), "NOVITA_API_KEY", "novita"),
+      baseURL: resolveBaseUrl(ctx, NOVITA_BASE_URL),
+    });
+    return generateWithModel(ctx, novita(ctx.model), resolveProviderOptions(ctx.config, "novita"));
+  };
+}
+
+export function togetherDispatch(): ProviderDispatchFn {
+  return async (ctx) => {
+    const { createOpenAI } = await getOpenAiSdk();
+    const together = createOpenAI({
+      apiKey: requireApiKey(ctx.apiKey, getTogetherApiKey(), "TOGETHER_API_KEY", "together"),
+      baseURL: resolveBaseUrl(ctx, TOGETHER_BASE_URL),
+    });
+    return generateWithModel(ctx, together(ctx.model), resolveProviderOptions(ctx.config, "together"));
   };
 }
 

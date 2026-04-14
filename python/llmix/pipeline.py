@@ -41,6 +41,15 @@ class ProviderError(Exception):
 
 
 @dataclass
+class LLMUsage:
+    """Token usage statistics."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass
 class ProviderResult:
     """Result returned from the provider dispatch callback."""
 
@@ -49,15 +58,6 @@ class ProviderResult:
     usage: LLMUsage
     headers: dict[str, str] | None = None
     tool_calls: list[dict[str, Any]] | None = None
-
-
-@dataclass
-class LLMUsage:
-    """Token usage statistics."""
-
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
 
 
 class DispatchContext(Protocol):

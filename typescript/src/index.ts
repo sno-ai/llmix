@@ -43,10 +43,13 @@ export {
 
 export {
   anthropicDispatch,
+  deepinfraDispatch,
   geminiDispatch,
+  novitaDispatch,
   openaiDispatch,
   openrouterDispatch,
   snoGpuDispatch,
+  togetherDispatch,
 } from "./dispatchers";
 
 // =============================================================================

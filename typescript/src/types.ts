@@ -364,6 +364,9 @@ export interface ProviderOptions {
   google?: GoogleProviderOptions | undefined;
   deepseek?: DeepSeekProviderOptions | undefined;
   "sno-gpu"?: SnoGpuProviderOptions | undefined;
+  deepinfra?: Record<string, unknown> | undefined;
+  novita?: Record<string, unknown> | undefined;
+  together?: Record<string, unknown> | undefined;
 }
 
 /**
