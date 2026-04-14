@@ -19,7 +19,7 @@ The crate is usable today, but it should still be treated as beta. The public su
 - Default features: core crate only
 - `redis`: enable Redis-backed L2 response cache
 - `helpers-openai`: enable the OpenAI chat helper
-- `helpers-snogpu`: enable the `sno-gpu` helper
+- `helpers-sno-gpu`: enable the `sno-gpu` helper
 - `helpers-anthropic`: enable the Anthropic chat helper
 - `helpers-gemini`: enable the Gemini chat helper
 
