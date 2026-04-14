@@ -39,7 +39,7 @@ def build_gpu_base_url(gpu_path: str | None = None) -> str:
     if not SNO_GPU_BASE_URL:
         raise ValueError("GPU_BASE_URL is required for sno-gpu provider.")
     if gpu_path:
-        if gpu_path not in VALID_GPU_PATHS:
+        if len(gpu_path) > 256 or gpu_path not in VALID_GPU_PATHS:
             raise ValueError(f"Invalid gpu_path: {gpu_path!r}. Must be one of {sorted(VALID_GPU_PATHS)!r}")
         return f"{SNO_GPU_BASE_URL}/{gpu_path}/v1"
     return f"{SNO_GPU_BASE_URL}/v1"

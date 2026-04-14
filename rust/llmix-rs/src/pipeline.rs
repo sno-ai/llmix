@@ -46,6 +46,11 @@ pub struct PipelineConfig {
     pub kill_switch_state_dir: Option<PathBuf>,
     pub transform_kwargs_overrides: HashMap<String, TransformKwargsCallback>,
     pub response_cache: Option<Arc<TwoTierCache>>,
+    /// When true (default), `CallPipeline::close()` also closes
+    /// `response_cache`. Set to false when sharing one `TwoTierCache` across
+    /// multiple pipelines so the first `close()` does not tear down Redis for
+    /// the others.
+    pub close_response_cache: bool,
 }
 
 impl PipelineConfig {
@@ -67,6 +72,7 @@ impl PipelineConfig {
             kill_switch_state_dir: None,
             transform_kwargs_overrides: HashMap::new(),
             response_cache: None,
+            close_response_cache: true,
         }
     }
 }
@@ -82,6 +88,7 @@ pub struct CallPipeline {
     key_pools: Mutex<HashMap<String, Arc<KeyPool>>>,
     transform_kwargs: HashMap<String, TransformKwargsCallback>,
     response_cache: Option<Arc<TwoTierCache>>,
+    close_response_cache: bool,
     circuit_breaker_threshold: u32,
     circuit_breaker_cooldown: Duration,
     semaphore_initial: usize,
@@ -120,6 +127,7 @@ impl CallPipeline {
             key_pools: Mutex::new(HashMap::new()),
             transform_kwargs,
             response_cache: config.response_cache,
+            close_response_cache: config.close_response_cache,
             circuit_breaker_threshold: config.circuit_breaker_threshold,
             circuit_breaker_cooldown: config.circuit_breaker_cooldown,
             semaphore_initial: config.semaphore_initial,
@@ -147,8 +155,10 @@ impl CallPipeline {
             semaphore.close();
         }
 
-        if let Some(cache) = self.response_cache.as_ref() {
-            cache.close().await;
+        if self.close_response_cache {
+            if let Some(cache) = self.response_cache.as_ref() {
+                cache.close().await;
+            }
         }
     }
 
