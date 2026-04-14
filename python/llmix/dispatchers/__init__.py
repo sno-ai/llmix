@@ -336,7 +336,7 @@ def gemini_dispatch(client: AsyncGeminiClient | None = None) -> ProviderDispatch
         )
         return _normalize_response(response, ctx.model)
 
-    return _mark_bypass(dispatch, client, "gemini")
+    return _mark_bypass(dispatch, client, "google")
 
 
 def deepinfra_dispatch(client: DeepInfraClient | None = None) -> ProviderDispatchFn:
@@ -385,7 +385,7 @@ def openrouter_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDisp
         )
         return _normalize_response(response, resolved_model)
 
-    return _mark_bypass(dispatch, client, "openrouter")
+    return _mark_bypass(dispatch, client, "deepseek")
 
 
 def novita_dispatch(client: NovitaClient | None = None) -> ProviderDispatchFn:

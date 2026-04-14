@@ -130,6 +130,7 @@ class PipelineConfig:
     # multiple pipelines so the first ``close()`` does not tear down Redis for
     # the others.
     close_response_cache: bool = True
+    bypass_key_pool_providers: frozenset[str] = frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +143,7 @@ class CallPipeline:
 
     def __init__(self, config: PipelineConfig) -> None:
         self._dispatch = config.dispatch
+        self._bypass_key_pool_providers = config.bypass_key_pool_providers
         from pathlib import Path
 
         state_dir = Path(config.kill_switch_state_dir) if config.kill_switch_state_dir else None
@@ -174,6 +176,7 @@ class CallPipeline:
         wrong key dead and silently corrupt the pool.
         """
         bypass: frozenset[str] = getattr(self._dispatch, "__llmix_bypass_key_pool_providers__", frozenset())
+        bypass = bypass | self._bypass_key_pool_providers
         if provider in bypass:
             raise ValueError(
                 f"Cannot register a KeyPool for provider {provider!r}: its dispatch "
