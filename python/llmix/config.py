@@ -235,22 +235,20 @@ def _normalize_config_shape(config: dict[str, Any]) -> dict[str, Any]:
     """
     normalized = cast(dict[str, Any], _normalize_config_keys(config))
     common_value = normalized.get("common")
-    if not isinstance(common_value, dict):
-        return normalized
+    if isinstance(common_value, dict):
+        common = dict(common_value)
+        provider = common.pop("provider", None)
+        model = common.pop("model", None)
 
-    common = dict(common_value)
-    provider = common.pop("provider", None)
-    model = common.pop("model", None)
+        if provider is not None and "provider" not in normalized:
+            normalized["provider"] = provider
+        if model is not None and "model" not in normalized:
+            normalized["model"] = model
 
-    if provider is not None and "provider" not in normalized:
-        normalized["provider"] = provider
-    if model is not None and "model" not in normalized:
-        normalized["model"] = model
-
-    if common:
-        normalized["common"] = common
-    else:
-        normalized.pop("common", None)
+        if common:
+            normalized["common"] = common
+        else:
+            normalized.pop("common", None)
 
     return normalized
 
