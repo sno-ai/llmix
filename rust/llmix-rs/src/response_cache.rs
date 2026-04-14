@@ -118,10 +118,10 @@ pub struct CacheResult {
     pub tier: CacheHitTier,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct CachedValue {
     data: String,
-    cached_at: u64,
+    cached_at: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -144,7 +144,7 @@ impl Default for TwoTierCacheConfig {
 #[derive(Debug, Serialize)]
 struct RedisPayload<'a> {
     data: &'a str,
-    cached_at: u64,
+    cached_at: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -323,8 +323,7 @@ impl TwoTierCache {
         };
         let parsed = serde_json::from_str::<StoredPayload>(&raw).ok()?;
         let cached_at = normalize_cached_at_seconds(parsed.cached_at);
-        let age_seconds = now_seconds().saturating_sub(cached_at);
-        if age_seconds >= self.ttl_seconds {
+        if cache_age_seconds(cached_at) >= self.ttl_seconds as f64 {
             return None;
         }
 
@@ -343,7 +342,7 @@ impl TwoTierCache {
     pub async fn set(&self, key: &str, value: &str) {
         let entry = CachedValue {
             data: value.to_owned(),
-            cached_at: now_seconds(),
+            cached_at: now_seconds_f64(),
         };
         self.put_l1(key, entry.clone()).await;
 
@@ -403,8 +402,7 @@ impl TwoTierCache {
     async fn get_l1(&self, key: &str) -> Option<CachedValue> {
         let mut l1 = self.l1.lock().await;
         let cached = l1.get(key).cloned()?;
-        let age_seconds = now_seconds().saturating_sub(cached.cached_at);
-        if age_seconds >= self.ttl_seconds {
+        if cache_age_seconds(cached.cached_at) >= self.ttl_seconds as f64 {
             l1.pop(key);
             return None;
         }
@@ -500,24 +498,33 @@ fn canonical_number_from_f64(value: f64) -> Option<Number> {
     Number::from_f64(value)
 }
 
-fn normalize_cached_at_seconds(raw: Option<f64>) -> u64 {
+fn normalize_cached_at_seconds(raw: Option<f64>) -> f64 {
     let Some(raw) = raw else {
-        return now_seconds();
+        return now_seconds_f64();
     };
     if !raw.is_finite() || raw <= 0.0 {
-        return now_seconds();
+        return now_seconds_f64();
     }
     if raw > 1_000_000_000_000.0 {
-        return (raw / 1000.0).floor() as u64;
+        return raw / 1000.0;
     }
-    raw.floor() as u64
+    raw
 }
 
-fn now_seconds() -> u64 {
+fn cache_age_seconds(cached_at: f64) -> f64 {
+    let age = now_seconds_f64() - cached_at;
+    if age.is_sign_negative() {
+        0.0
+    } else {
+        age
+    }
+}
+
+fn now_seconds_f64() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock should be after unix epoch")
-        .as_secs()
+        .as_secs_f64()
 }
 
 #[cfg(feature = "redis")]
@@ -594,16 +601,16 @@ mod tests {
         let payload: Value = serde_json::from_str(&raw).expect("payload should be valid json");
         assert_eq!(payload["data"], "value");
         let cached_at = payload["cached_at"]
-            .as_u64()
+            .as_f64()
             .expect("cached_at should be seconds");
-        assert!(cached_at > 1_000_000_000);
-        assert!(cached_at < 1_000_000_000_000);
+        assert!(cached_at > 1_000_000_000.0);
+        assert!(cached_at < 1_000_000_000_000.0);
     }
 
     #[tokio::test]
     async fn l2_get_accepts_legacy_millisecond_timestamps() {
         let backend = Arc::new(MockBackend::default());
-        let fresh_legacy_ms = super::now_seconds().saturating_sub(1) * 1000;
+        let fresh_legacy_ms = (super::now_seconds_f64() as u64).saturating_sub(1) * 1000;
         backend.store.lock().await.insert(
             "legacy-ms".to_owned(),
             format!(
