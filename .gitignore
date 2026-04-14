@@ -8,6 +8,7 @@ build/
 
 # Python
 python/llmix/__pycache__/
+python/llmix/dispatchers/__pycache__/
 python/llmix/providers/__pycache__/
 __pycache__/
 *.pyc
@@ -23,3 +24,7 @@ __pycache__/
 
 # Test environment secrets
 .env.test
+
+# Rust
+rust/llmix-rs/target/
+.claude/scheduled_tasks.lock

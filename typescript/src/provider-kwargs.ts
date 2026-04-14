@@ -9,6 +9,7 @@
  * Ported from repo-reference/llm-provider/src/llm_provider/providers/_registry.py
  */
 
+import { getGpuBaseUrl } from "./env";
 import { getModelCapabilities } from "./model-capabilities";
 import type { ProviderOptions } from "./types";
 
@@ -145,41 +146,84 @@ export function geminiTransformKwargs(
 }
 
 // =============================================================================
-// Sno GPU: construct base URL from providerOptions.snogpu.gpuPath
+// Sno GPU: construct base URL and carry thinking settings
 // =============================================================================
 
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
 /**
- * Construct base URL from providerOptions.snogpu.gpuPath.
+ * Construct base URL from providerOptions["sno-gpu"].gpuPath and surface
+ * effective thinking settings so dispatchers can forward them consistently.
  *
  * Builds: {base}/{gpuPath}/v1 when gpuPath is present.
  * Falls back to {base}/v1 when gpuPath is absent.
  */
-export function snogpuTransformKwargs(
+export function snoGpuTransformKwargs(
   ctx: TransformKwargsContext,
   kwargs: Record<string, unknown>
 ): Record<string, unknown> {
   const result = { ...kwargs };
 
-  const snogpuOpts = ctx.providerOptions?.snogpu;
-  const gpuPath = snogpuOpts?.gpuPath;
+  const snoGpuOpts = ctx.providerOptions?.["sno-gpu"];
+  const gpuPath = snoGpuOpts?.gpuPath;
 
   let base = (ctx.baseUrl ?? "").replace(/\/+$/, "");
+  if (!base) {
+    base = (getGpuBaseUrl() ?? "").replace(/\/+$/, "");
+  }
   if (base.endsWith("/v1")) {
     base = base.slice(0, -3);
   }
 
   if (!base) {
-    throw new Error("snogpu provider requires a non-empty baseUrl");
+    throw new Error(
+      "sno-gpu provider requires a non-empty base_url in config or GPU_BASE_URL env var",
+    );
   }
 
   if (gpuPath) {
-    // Validate gpuPath: no traversal, alphanumeric + hyphens/underscores/slashes only
-    if (gpuPath.includes("..") || !/^[a-zA-Z0-9_/-]+$/.test(gpuPath)) {
-      throw new Error(`Invalid gpuPath: "${gpuPath}"`);
+    // Validate gpuPath: length cap, no traversal, alphanumeric + hyphens/underscores/slashes only
+    if (
+      gpuPath.length > 256 ||
+      gpuPath.includes("..") ||
+      !/^[a-zA-Z0-9_/-]+$/.test(gpuPath)
+    ) {
+      throw new Error(`Invalid gpu_path: "${gpuPath}"`);
     }
     result["baseUrl"] = `${base}/${gpuPath}/v1`;
   } else {
     result["baseUrl"] = `${base}/v1`;
+  }
+
+  const enableThinking =
+    asBoolean(result["enableThinking"]) ??
+    asBoolean(result["enable_thinking"]) ??
+    snoGpuOpts?.enableThinking ??
+    ctx.enableThinking;
+  if (
+    enableThinking !== undefined &&
+    result["enableThinking"] === undefined &&
+    result["enable_thinking"] === undefined
+  ) {
+    result["enableThinking"] = enableThinking;
+  }
+
+  const thinkingBudget =
+    asNumber(result["thinkingBudget"]) ??
+    asNumber(result["thinking_budget"]) ??
+    snoGpuOpts?.thinkingBudget;
+  if (
+    thinkingBudget !== undefined &&
+    result["thinkingBudget"] === undefined &&
+    result["thinking_budget"] === undefined
+  ) {
+    result["thinkingBudget"] = thinkingBudget;
   }
 
   return result;
@@ -194,5 +238,5 @@ export const PROVIDER_KWARGS_REGISTRY: Record<string, TransformKwargsCallback> =
   deepseek: openrouterTransformKwargs,
   google: geminiTransformKwargs,
   gemini: geminiTransformKwargs,
-  snogpu: snogpuTransformKwargs,
+  "sno-gpu": snoGpuTransformKwargs,
 };

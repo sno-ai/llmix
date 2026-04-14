@@ -1,5 +1,5 @@
 """
-LLMix v2 Call Pipeline
+LLMix Call Pipeline
 
 Orchestrates the 19-step call flow using feature modules:
   1. Kill Switch -> 2. Config -> 3-4. Cache -> 5. Circuit Breaker ->
@@ -41,6 +41,15 @@ class ProviderError(Exception):
 
 
 @dataclass
+class LLMUsage:
+    """Token usage statistics."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass
 class ProviderResult:
     """Result returned from the provider dispatch callback."""
 
@@ -49,15 +58,6 @@ class ProviderResult:
     usage: LLMUsage
     headers: dict[str, str] | None = None
     tool_calls: list[dict[str, Any]] | None = None
-
-
-@dataclass
-class LLMUsage:
-    """Token usage statistics."""
-
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
 
 
 class DispatchContext(Protocol):
@@ -87,7 +87,7 @@ ProviderDispatchFn = Callable[[DispatchInput], Awaitable[ProviderResult]]
 
 
 @dataclass
-class V2CallInput:
+class CallInput:
     """Input for a single call through the pipeline."""
 
     config: dict[str, Any]
@@ -96,8 +96,8 @@ class V2CallInput:
 
 
 @dataclass
-class V2CallResponse:
-    """Full response from the v2 pipeline."""
+class CallResponse:
+    """Full response from the call pipeline."""
 
     content: str
     model: str
@@ -111,8 +111,8 @@ class V2CallResponse:
 
 
 @dataclass
-class V2PipelineConfig:
-    """Configuration for the v2 pipeline."""
+class PipelineConfig:
+    """Configuration for the call pipeline."""
 
     dispatch: ProviderDispatchFn
     max_retries: int = 3
@@ -125,6 +125,11 @@ class V2PipelineConfig:
     kill_switch_state_dir: str | None = None
     transform_kwargs_overrides: dict[str, TransformKwargsCallback] | None = None
     response_cache: TwoTierCache | None = None
+    # When True (default), ``CallPipeline.close()`` also closes
+    # ``response_cache``. Set to False when sharing one ``TwoTierCache`` across
+    # multiple pipelines so the first ``close()`` does not tear down Redis for
+    # the others.
+    close_response_cache: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -132,10 +137,10 @@ class V2PipelineConfig:
 # ---------------------------------------------------------------------------
 
 
-class V2CallPipeline:
-    """Orchestrates the 19-step v2 call flow."""
+class CallPipeline:
+    """Orchestrates the 19-step call flow."""
 
-    def __init__(self, config: V2PipelineConfig) -> None:
+    def __init__(self, config: PipelineConfig) -> None:
         self._dispatch = config.dispatch
         from pathlib import Path
 
@@ -157,6 +162,7 @@ class V2CallPipeline:
         self._transform_kwargs: dict[str, TransformKwargsCallback] = {**PROVIDER_KWARGS_REGISTRY, **(config.transform_kwargs_overrides or {})}
 
         self._response_cache = config.response_cache
+        self._close_response_cache = config.close_response_cache
 
     def set_key_pool(self, provider: str, pool: KeyPool) -> None:
         """Register a key pool for a provider."""
@@ -164,7 +170,7 @@ class V2CallPipeline:
 
     def close(self) -> None:
         """Release pipeline-owned resources."""
-        if self._response_cache is not None:
+        if self._response_cache is not None and self._close_response_cache:
             self._response_cache.close()
 
     def _get_circuit_breaker(self, provider: str, base_url: str = "") -> CircuitBreaker:
@@ -212,6 +218,10 @@ class V2CallPipeline:
             "temperature": common.get("temperature"),
             "top_p": common.get("top_p"),
             "max_tokens": common.get("max_output_tokens"),
+            "top_k": common.get("top_k"),
+            "presence_penalty": common.get("presence_penalty"),
+            "frequency_penalty": common.get("frequency_penalty"),
+            "stop": common.get("stop_sequences"),
             "seed": common.get("seed"),
             "response_format": common.get("response_format"),
         }
@@ -227,7 +237,7 @@ class V2CallPipeline:
             "top_p": common.get("top_p"),
             "enable_thinking": common.get("enable_thinking"),
             "provider_options": config.get("provider_options") or {},
-            "base_url": config.get("baseUrl", ""),
+            "base_url": config.get("base_url", config.get("baseUrl", "")),
         }
         return apply_transform_kwargs(ctx, kwargs, transform_fn)
 
@@ -237,9 +247,9 @@ class V2CallPipeline:
         base_url = kwargs.get("base_url")
         if isinstance(base_url, str) and base_url.strip():
             return base_url
-        return str(config.get("baseUrl", "") or "")
+        return str(config.get("base_url", config.get("baseUrl", "")) or "")
 
-    async def call(self, call_input: V2CallInput) -> V2CallResponse:
+    async def call(self, call_input: CallInput) -> CallResponse:
         """Execute the 19-step call flow."""
         config = call_input.config
         messages = call_input.messages
@@ -266,6 +276,10 @@ class V2CallPipeline:
                     "enableThinking": common.get("enable_thinking"),
                     "temperature": common.get("temperature"),
                     "maxOutputTokens": common.get("max_output_tokens"),
+                    "topK": common.get("top_k"),
+                    "presencePenalty": common.get("presence_penalty"),
+                    "frequencyPenalty": common.get("frequency_penalty"),
+                    "stopSequences": common.get("stop_sequences"),
                     "responseFormat": common.get("response_format"),
                     "seed": common.get("seed"),
                     "topP": common.get("top_p"),
@@ -279,7 +293,7 @@ class V2CallPipeline:
                         thinking_content = None
                     else:
                         content, thinking_content = strip_thinking(raw_content)
-                    return V2CallResponse(
+                    return CallResponse(
                         content=content,
                         model=model,
                         provider=provider,
@@ -308,6 +322,10 @@ class V2CallPipeline:
                             "enableThinking": common.get("enable_thinking"),
                             "temperature": common.get("temperature"),
                             "maxOutputTokens": common.get("max_output_tokens"),
+                            "topK": common.get("top_k"),
+                            "presencePenalty": common.get("presence_penalty"),
+                            "frequencyPenalty": common.get("frequency_penalty"),
+                            "stopSequences": common.get("stop_sequences"),
                             "responseFormat": common.get("response_format"),
                             "seed": common.get("seed"),
                             "topP": common.get("top_p"),
@@ -363,7 +381,7 @@ class V2CallPipeline:
 
             # Step 19: Telemetry -- placeholder
 
-            return V2CallResponse(
+            return CallResponse(
                 content=content,
                 model=result.model,
                 provider=provider,
@@ -374,8 +392,8 @@ class V2CallPipeline:
             )
 
         except Exception as exc:
-            logger.exception("V2 pipeline call failed")
-            return V2CallResponse(content="", model=model, provider=provider, usage=LLMUsage(), success=False, error=str(exc))
+            logger.exception("pipeline call failed")
+            return CallResponse(content="", model=model, provider=provider, usage=LLMUsage(), success=False, error=str(exc))
 
     async def _execute_retry_body(self, config: dict[str, Any], messages: list[dict[str, Any]]) -> ProviderResult:
         """Steps 7-14 inside the retry loop."""
@@ -444,8 +462,8 @@ class V2CallPipeline:
         if isinstance(exc, Exception) and str(exc).startswith("No API key pool"):
             return True
         if isinstance(exc, Exception) and (
-            str(exc).startswith("Invalid gpuPath")
-            or "requires a non-empty baseUrl" in str(exc)
+            str(exc).startswith("Invalid gpu_path")
+            or "requires a non-empty base_url" in str(exc)
             or str(exc) == "AdaptiveSemaphore is closed"
         ):
             return True
@@ -456,7 +474,7 @@ class V2CallPipeline:
         """Step 16: Determine if an error is retryable."""
         if isinstance(exc, CircuitOpenError):
             return False
-        if V2CallPipeline._is_local_error(exc):
+        if CallPipeline._is_local_error(exc):
             return False
         status_code = getattr(exc, "status_code", None)
         if status_code is not None:

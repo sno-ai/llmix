@@ -11,6 +11,8 @@ Ported from repo-reference/llm-provider/src/llm_provider/providers/_registry.py
 import re
 from typing import Any, Protocol, TypedDict
 
+from llmix.env import get_gpu_base_url
+
 # =============================================================================
 # Types
 # =============================================================================
@@ -144,12 +146,12 @@ def gemini_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any])
 
 
 # =============================================================================
-# Sno GPU: construct base URL from providerOptions.snogpu.gpuPath
+# Sno GPU: construct base URL from providerOptions["sno-gpu"].gpuPath
 # =============================================================================
 
 
-def snogpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Construct base URL from providerOptions.snogpu.gpuPath.
+def sno_gpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Construct base URL from providerOptions["sno-gpu"].gpuPath.
 
     Builds: {base_url}/{gpuPath}/v1 when gpuPath is present.
     Falls back to {base_url}/v1 when gpuPath is absent.
@@ -157,17 +159,21 @@ def snogpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any])
     kwargs = dict(kwargs)
 
     provider_options = ctx.get("provider_options") or {}
-    snogpu_opts = provider_options.get("snogpu") or {}
-    gpu_path: str | None = snogpu_opts.get("gpu_path")
+    sno_gpu_opts = provider_options.get("sno-gpu") or {}
+    gpu_path: str | None = sno_gpu_opts.get("gpu_path")
 
     base_url = ctx.get("base_url") or ""
-    # Strip trailing /v1 if present so we can reconstruct cleanly
     base = base_url.rstrip("/")
+    if not base:
+        base = get_gpu_base_url().rstrip("/")
+    # Strip trailing /v1 if present so we can reconstruct cleanly
     if base.endswith("/v1"):
         base = base[:-3]
 
     if not base.strip():
-        raise ValueError("snogpu provider requires a non-empty base_url in config")
+        raise ValueError(
+            "sno-gpu provider requires a non-empty base_url in config or GPU_BASE_URL env var"
+        )
 
     if gpu_path:
         if '..' in gpu_path or not re.match(r'^[a-zA-Z0-9_/-]+$', gpu_path):
@@ -188,5 +194,5 @@ PROVIDER_KWARGS_REGISTRY: dict[str, TransformKwargsCallback] = {
     "deepseek": openrouter_transform_kwargs,
     "google": gemini_transform_kwargs,
     "gemini": gemini_transform_kwargs,
-    "snogpu": snogpu_transform_kwargs,
+    "sno-gpu": sno_gpu_transform_kwargs,
 }

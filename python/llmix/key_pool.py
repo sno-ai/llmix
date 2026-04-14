@@ -97,7 +97,10 @@ def load_keys_from_env(provider: str) -> KeyPool:
     Raises:
         ValueError: If neither env var is set.
     """
-    provider_upper = provider.upper()
+    # Normalize non-identifier characters (e.g. '-' in "sno-gpu") to '_' so
+    # env var names are valid POSIX/Kubernetes identifiers (SNO_GPU_KEYS,
+    # SNO_GPU_API_KEY).
+    provider_upper = provider.upper().replace("-", "_")
 
     # Try {PROVIDER}_KEYS first (comma-separated pool)
     keys_var = f"{provider_upper}_KEYS"

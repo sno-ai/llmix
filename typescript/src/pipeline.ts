@@ -1,5 +1,5 @@
 /**
- * LLMix v2 Call Pipeline
+ * LLMix Call Pipeline
  *
  * Orchestrates the 19-step call flow using feature modules:
  *   1. Kill Switch → 2. Config → 3-4. Cache → 5. Circuit Breaker →
@@ -49,6 +49,7 @@ export interface ProviderResult {
   model: string;
   usage: LLMUsage;
   headers?: Record<string, string | undefined>;
+  toolCalls?: unknown[] | undefined;
 }
 
 /** Context passed into the provider dispatch callback. */
@@ -65,14 +66,14 @@ export interface DispatchContext {
 export type ProviderDispatchFn = (ctx: DispatchContext) => Promise<ProviderResult>;
 
 /** Input for a single call through the pipeline. */
-export interface V2CallInput {
+export interface CallInput {
   config: LLMConfig;
   messages: unknown[];
   singleflightKey?: string;
 }
 
-/** Full response from the v2 pipeline. */
-export interface V2CallResponse {
+/** Full response from the call pipeline. */
+export interface CallResponse {
   content: string;
   model: string;
   provider: string;
@@ -81,10 +82,11 @@ export interface V2CallResponse {
   error?: string | undefined;
   thinkingContent?: string | undefined;
   cacheHit?: CacheHitTier | undefined;
+  toolCalls?: unknown[] | undefined;
 }
 
-/** Configuration for the v2 pipeline. */
-export interface V2PipelineConfig {
+/** Configuration for the call pipeline. */
+export interface PipelineConfig {
   dispatch: ProviderDispatchFn;
   maxRetries?: number;
   retryBaseMs?: number;
@@ -96,13 +98,20 @@ export interface V2PipelineConfig {
   killSwitchStateDir?: string;
   transformKwargsOverrides?: Record<string, TransformKwargsCallback>;
   responseCache?: TwoTierCache;
+  /**
+   * When true (default), ``CallPipeline.close()`` also closes
+   * ``responseCache``. Set to false when sharing one ``TwoTierCache`` across
+   * multiple pipelines so the first ``close()`` does not tear down Redis for
+   * the others.
+   */
+  closeResponseCache?: boolean;
 }
 
 // ---------------------------------------------------------------------------
 // Pipeline
 // ---------------------------------------------------------------------------
 
-export class V2CallPipeline {
+export class CallPipeline {
   private readonly dispatch: ProviderDispatchFn;
   private readonly killSwitch: KillSwitch;
   private readonly singleflight = new Singleflight();
@@ -120,8 +129,9 @@ export class V2CallPipeline {
 
   private fileLockPromise: Promise<FileLockLike> | null = null;
   private readonly responseCache: TwoTierCache | undefined;
+  private readonly closeResponseCacheOnShutdown: boolean = true;
 
-  constructor(config: V2PipelineConfig) {
+  constructor(config: PipelineConfig) {
     this.dispatch = config.dispatch;
     this.killSwitch = new KillSwitch(config.killSwitchStateDir);
     this.retryPolicy = new RetryPolicy({
@@ -138,6 +148,7 @@ export class V2CallPipeline {
       ...(config.transformKwargsOverrides ?? {}),
     };
     this.responseCache = config.responseCache;
+    this.closeResponseCacheOnShutdown = config.closeResponseCache ?? true;
   }
 
   /** Register a key pool for a provider. */
@@ -226,7 +237,7 @@ export class V2CallPipeline {
   /**
    * Execute the 19-step call flow.
    */
-  async call(input: V2CallInput): Promise<V2CallResponse> {
+  async call(input: CallInput): Promise<CallResponse> {
     const { config, messages } = input;
     const provider = config.provider;
     const model = config.model;
@@ -253,6 +264,10 @@ export class V2CallPipeline {
           responseFormat: (config as unknown as Record<string, unknown>)["responseFormat"],
           seed: config.common?.seed,
           topP: config.common?.topP,
+          topK: config.common?.topK,
+          presencePenalty: config.common?.presencePenalty,
+          frequencyPenalty: config.common?.frequencyPenalty,
+          stopSequences: config.common?.stopSequences,
           providerOptions: config.providerOptions as Record<string, unknown> | undefined,
         });
         const hit = await this.responseCache.get(cacheKey);
@@ -287,6 +302,10 @@ export class V2CallPipeline {
           responseFormat: (config as unknown as Record<string, unknown>)["responseFormat"],
           seed: config.common?.seed,
           topP: config.common?.topP,
+          topK: config.common?.topK,
+          presencePenalty: config.common?.presencePenalty,
+          frequencyPenalty: config.common?.frequencyPenalty,
+          stopSequences: config.common?.stopSequences,
           providerOptions: config.providerOptions,
         }, sortReplacer),
       ));
@@ -345,6 +364,7 @@ export class V2CallPipeline {
         usage: result.usage,
         success: true,
         thinkingContent: thinkingContent ?? undefined,
+        toolCalls: result.toolCalls,
       };
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -458,12 +478,12 @@ export class V2CallPipeline {
     if (err instanceof Error && err.message.startsWith("No API key pool")) {
       return true;
     }
-    // Transform errors (e.g. snogpu missing baseUrl, invalid gpuPath)
+    // Transform errors (e.g. sno-gpu missing base_url, invalid gpu_path)
     // and infrastructure errors (semaphore closed, lock setup)
     if (
       err instanceof Error &&
-      (err.message.startsWith("Invalid gpuPath") ||
-        err.message.includes("requires a non-empty baseUrl") ||
+      (err.message.startsWith("Invalid gpu_path") ||
+        err.message.includes("requires a non-empty base_url") ||
         err.message === "AdaptiveSemaphore is closed")
     ) {
       return true;
@@ -492,10 +512,13 @@ export class V2CallPipeline {
     return stripThinking(content);
   }
 
-  /** Release all semaphores and clean up resources. */
-  close(): void {
+  /** Release all semaphores and clean up resources (including Redis L2). */
+  async close(): Promise<void> {
     for (const sem of this.semaphores.values()) {
       sem.close();
+    }
+    if (this.responseCache && this.closeResponseCacheOnShutdown) {
+      await this.responseCache.close();
     }
   }
 

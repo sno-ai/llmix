@@ -29,10 +29,27 @@ export function getGeminiApiKey(): string | undefined {
 export function getOpenrouterApiKey(): string | undefined {
   return process.env["OPENROUTER_API_KEY"];
 }
+export function getSnoLlmApiKey(): string | undefined {
+  return process.env["SNO_LLM_API_KEY"];
+}
+export function getDeepinfraApiKey(): string | undefined {
+  return process.env["DEEPINFRA_API_KEY"];
+}
+export function getNovitaApiKey(): string | undefined {
+  return process.env["NOVITA_API_KEY"];
+}
+export function getTogetherApiKey(): string | undefined {
+  return process.env["TOGETHER_API_KEY"];
+}
 
 // Environment
 export function getNodeEnv(): string | undefined {
   return process.env["NODE_ENV"];
+}
+
+// GPU / Self-Hosted
+export function getGpuBaseUrl(): string | undefined {
+  return process.env["GPU_BASE_URL"];
 }
 
 // Client Config (env fallbacks for constructor defaults)

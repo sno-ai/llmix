@@ -97,7 +97,10 @@ export class KeyPool {
  * @throws Error if neither env var is set.
  */
 export function loadKeysFromEnv(provider: string): KeyPool {
-  const providerUpper = provider.toUpperCase();
+  // Normalize non-identifier characters (e.g. '-' in "sno-gpu") to '_' so
+  // env var names are valid POSIX/Kubernetes identifiers (SNO_GPU_KEYS,
+  // SNO_GPU_API_KEY).
+  const providerUpper = provider.toUpperCase().replace(/-/g, "_");
 
   // Try {PROVIDER}_KEYS first (comma-separated pool)
   const keysVar = `${providerUpper}_KEYS`;

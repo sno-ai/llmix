@@ -127,8 +127,8 @@ class CachingConfig(TypedDict, total=False):
 # PROVIDER TYPES
 # =============================================================================
 
-Provider = Literal["openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "snogpu"]
-ProviderOrUnknown = Literal["openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "snogpu", "unknown"]
+Provider = Literal["openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "sno-gpu"]
+ProviderOrUnknown = Literal["openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "sno-gpu", "unknown"]
 
 
 # =============================================================================
@@ -295,7 +295,7 @@ class NovitaProviderOptions(TypedDict, total=False):
     """Token budget for thinking/reasoning. Only applies when enable_thinking=True."""
 
 
-class SnogpuProviderOptions(TypedDict, total=False):
+class SnoGpuProviderOptions(TypedDict, total=False):
     """Sno on-prem GPU-specific provider options."""
 
     enable_thinking: bool
@@ -305,20 +305,23 @@ class SnogpuProviderOptions(TypedDict, total=False):
     """Token budget for thinking/reasoning. Only applies when enable_thinking=True."""
 
     gpu_path: str
-    """GPU routing path: 'extract' (GPU 0, SMR) or 'reason' (GPU 1, EKG). Omit for legacy /v1."""
+    """GPU routing path: 'extract' or 'reason'. Omit for legacy /v1."""
 
-
-class ProviderOptions(TypedDict, total=False):
-    """Union type for all provider options."""
-
-    openai: OpenAIProviderOptions
-    anthropic: AnthropicProviderOptions
-    google: GoogleProviderOptions
-    deepseek: DeepSeekProviderOptions
-    deepinfra: DeepInfraProviderOptions
-    together: TogetherProviderOptions
-    novita: NovitaProviderOptions
-    snogpu: SnogpuProviderOptions
+ProviderOptions = TypedDict(
+    "ProviderOptions",
+    {
+        "openai": OpenAIProviderOptions,
+        "anthropic": AnthropicProviderOptions,
+        "google": GoogleProviderOptions,
+        "deepseek": DeepSeekProviderOptions,
+        "deepinfra": DeepInfraProviderOptions,
+        "together": TogetherProviderOptions,
+        "novita": NovitaProviderOptions,
+        "sno-gpu": SnoGpuProviderOptions,
+    },
+    total=False,
+)
+"""Union type for all provider options."""
 
 
 # =============================================================================
@@ -375,29 +378,6 @@ class LLMConfig(TypedDict, total=False):
     """Optional fallback configuration for automatic provider failover on failure."""
 
 
-class ResolvedLLMConfig(LLMConfig):
-    """
-    Resolved LLM configuration.
-
-    Represents a fully parsed and validated config ready for use.
-    """
-
-    config_id: str
-    """ConfigId that was resolved (canonical format)"""
-
-    scope: str
-    """The scope used in resolution"""
-
-    module: str
-    """The module used in resolution"""
-
-    preset: str
-    """The preset used in resolution"""
-
-    version: int
-    """The version used in resolution"""
-
-
 # =============================================================================
 # EXPERIMENT CONFIG
 # =============================================================================
@@ -409,8 +389,8 @@ class ExperimentConfig(TypedDict):
     Redis key format: experiment:llm:{module}:{preset}
     Example: experiment:llm:hrkg:extraction
 
-    When enabled=True, 100% traffic goes to experiment version.
-    When enabled=False, 100% traffic goes to control (v1).
+    When enabled=True, 100% traffic goes to the experiment version.
+    When enabled=False, 100% traffic goes to the control version.
     """
 
     enabled: bool
@@ -561,64 +541,6 @@ class RuntimeOverrides(TypedDict, total=False):
     """Bypass AI Gateway for native provider features"""
 
 
-# =============================================================================
-# CALL OPTIONS
-# =============================================================================
-
-
-class _CallOptionsRequired(TypedDict):
-    """Required fields for LLMClient.call()."""
-
-    preset: str
-    """
-    Preset string in format "module:preset" or just "preset"
-    - "hrkg:extraction" -> module=hrkg, preset=extraction
-    - "extraction" -> module=_default, preset=extraction
-    """
-
-    messages: list[Any]
-    """Messages to send to the LLM"""
-
-
-class CallOptions(_CallOptionsRequired, total=False):
-    """Options for LLMClient.call()."""
-
-    scope: str
-    """Deployment scope (default: defaultScope from config)"""
-
-    user_id: str
-    """User ID for per-user config overrides"""
-
-    version: int
-    """Config version (default: 1)"""
-
-    overrides: RuntimeOverrides
-    """Runtime overrides (merged with config)"""
-
-    telemetry: TelemetryContext
-    """Telemetry context"""
-
-    prompt_cache_key: str
-    """
-    Cache key for native prompt caching (OpenAI/Anthropic).
-    Usually obtained from Promptix: prompt.promptCacheKey
-    Format: "{category}:{promptName}:v{version}"
-    """
-
-    response_format: dict[str, Any]
-    """Response format for structured output (e.g. {"type": "json_schema", "schema": {...}})"""
-
-    # Python-only: parse_json and parsed_data are not mirrored in package/llmix/src/types.ts
-    # TypeScript services use AI SDK structured outputs instead
-    parse_json: bool
-    """When True, LLMix parses response content as JSON (with json_repair + retry). Default False."""
-
-
-# =============================================================================
-# RESPONSE TYPES
-# =============================================================================
-
-
 class LLMUsage(TypedDict, total=False):
     """Token usage statistics from LLM call."""
 
@@ -633,164 +555,6 @@ class LLMUsage(TypedDict, total=False):
 
     cached_input_tokens: int
     """Cached input tokens (provider-dependent, may be undefined)"""
-
-
-class LLMResponse(TypedDict, total=False):
-    """Response from LLMClient.call()."""
-
-    content: str
-    """Generated content"""
-
-    model: str
-    """Model used for generation"""
-
-    provider: ProviderOrUnknown
-    """Provider used for generation. 'unknown' when config load fails."""
-
-    usage: LLMUsage
-    """Token usage statistics"""
-
-    config: ResolvedLLMConfig
-    """The resolved config that was used. Undefined when config load fails."""
-
-    success: bool
-    """Whether the call succeeded"""
-
-    error: str
-    """Error message if success is false"""
-
-    retryable: bool
-    """Whether a failed call is retryable"""
-
-    output: list[Any]
-    """Full output array for Response API caching optimization"""
-
-    tool_calls: list[Any]
-    """Tool calls if present"""
-
-    fallback_used: bool
-    """Whether a fallback provider was used for this response"""
-
-    fallback_reason: str
-    """Reason for fallback if used (e.g., 'timeout', 'connection_error', '5xx')"""
-
-    parsed_data: dict[str, Any] | list[Any] | None
-    """Parsed JSON when parse_json=True. dict or list only (scalars trigger retry)."""
-
-    thinking_content: str
-    """Captured thinking content stripped from response (when keep_thinking_output is False)."""
-
-    cache_hit: CacheHitTier
-    """Indicates which cache tier served this response, if any."""
-
-
-# =============================================================================
-# CONFIG CAPABILITIES
-# =============================================================================
-
-
-class ConfigCapabilities(TypedDict):
-    """Config capabilities for runtime decisions."""
-
-    provider: Provider
-    """The provider (openai, anthropic, google, deepseek)"""
-
-    is_proprietary: bool
-    """Whether the provider is proprietary (not open-source)"""
-
-    supports_openai_batch: bool
-    """
-    Whether the model supports OpenAI Batch API.
-    True IFF: provider === 'openai' AND model is in BATCH_CAPABLE_MODELS
-    """
-
-
-class ResolvedConfigWithCapabilities(TypedDict):
-    """Result from get_resolved_config() in LLMClient."""
-
-    config: ResolvedLLMConfig
-    """The resolved configuration"""
-
-    capabilities: ConfigCapabilities
-    """Capabilities derived from the config"""
-
-
-class ResolvedConfigResult(TypedDict):
-    """Result of config resolution for dry-run testing (from LLMConfigLoader)."""
-
-    config: dict[str, Any]
-    """The resolved configuration dictionary"""
-
-    version: int
-    """The resolved version number"""
-
-    experiment_active: bool
-    """Whether an A/B experiment was active"""
-
-
-# =============================================================================
-# CLIENT CONFIG
-# =============================================================================
-
-
-class ProviderUrlConfig(TypedDict, total=False):
-    """Provider base URL configuration."""
-
-    openai_base_url: str
-    """OpenAI base URL override"""
-
-    anthropic_base_url: str
-    """Anthropic base URL override"""
-
-    gemini_base_url: str
-    """Google/Gemini base URL override"""
-
-    openrouter_base_url: str
-    """OpenRouter base URL override"""
-
-    openrouter_api_key: str
-    """OpenRouter API key (falls back to env var)"""
-
-
-class HeliconeConfig(TypedDict, total=False):
-    """Helicone configuration for LLM call logging and observability."""
-
-    api_key: str
-    """Helicone API key (required for native caching)"""
-
-    base_url: str
-    """Helicone base URL (default: http://sno-main-1:8585)"""
-
-    environment: str
-    """Environment name for Helicone property headers (default: dev)"""
-
-
-class ApiKeysConfig(TypedDict, total=False):
-    """API keys configuration for LLM providers."""
-
-    openai: str
-    """OpenAI API key"""
-
-    anthropic: str
-    """Anthropic API key"""
-
-    google: str
-    """Google Generative AI API key"""
-
-    openrouter: str
-    """OpenRouter API key (used for DeepSeek)"""
-
-    deepinfra: str
-    """DeepInfra API key"""
-
-    together: str
-    """Together AI API key"""
-
-    novita: str
-    """Novita AI API key"""
-
-    snogpu: str
-    """Sno on-prem GPU service secret (INTERNAL_SERVICE_SECRET)"""
 
 
 # =============================================================================
@@ -818,7 +582,7 @@ class LRUCacheStats(TypedDict):
 
 
 class CacheStats(TypedDict):
-    """Combined cache statistics for LLMConfigLoader."""
+    """Combined cache statistics for config-related caches."""
 
     local_cache: LRUCacheStats
     """LRU cache statistics"""
@@ -850,7 +614,7 @@ MIN_VERSION = 1
 MAX_VERSION = 9999
 
 # Valid providers list
-VALID_PROVIDERS: tuple[Provider, ...] = ("openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "snogpu")
+VALID_PROVIDERS: tuple[Provider, ...] = ("openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "sno-gpu")
 
 # Anthropic minimum budget tokens for extended thinking
 ANTHROPIC_MIN_BUDGET_TOKENS = 1024

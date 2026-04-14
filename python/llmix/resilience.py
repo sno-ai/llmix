@@ -12,6 +12,7 @@ import hashlib
 import os
 import random
 import time
+import warnings
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, TypeVar
@@ -34,7 +35,7 @@ _DEFAULT_BASE_DELAY_MS = 1_000
 _DEFAULT_JITTER_MS = 1_000
 _DEFAULT_MAX_RETRY_AFTER_MS = 60_000
 _KILLSWITCH_FILENAME = "killswitch"
-_KILLSWITCH_SUBDIR = "llmix2"
+_KILLSWITCH_SUBDIR = "llmix"
 
 
 # ---------------------------------------------------------------------------
@@ -52,8 +53,8 @@ def _resolve_state_dir() -> Path:
 
     Priority:
     1. LLMIX_STATE_DIR env var
-    2. XDG_STATE_HOME/llmix2
-    3. ~/.local/state/llmix2
+    2. XDG_STATE_HOME/llmix
+    3. ~/.local/state/llmix
     """
     env_dir = os.environ.get("LLMIX_STATE_DIR")
     if env_dir:
@@ -267,7 +268,7 @@ class CircuitBreaker:
 class KillSwitch:
     """File-based kill switch.
 
-    Checks for the existence of ``{stateDir}/llmix2/killswitch``.
+    Checks for the existence of ``{stateDir}/llmix/killswitch``.
     If the file exists, all calls are blocked.
     """
 

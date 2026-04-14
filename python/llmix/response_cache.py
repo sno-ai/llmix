@@ -5,7 +5,7 @@ L1: In-memory LRU with TTL (cachetools.TTLCache)
 L2: Redis with TTL via SETEX (redis-py, optional)
 
 Cache key: SHA-256 of canonical JSON (sorted keys, deterministic).
-Prefix: "llmix2:resp:"
+Prefix: "llmix:resp:"
 
 Three strategies:
 - "redis": strict -- fail if no REDIS_URL
@@ -57,7 +57,7 @@ def _import_redis_module() -> Any | None:
 # CONSTANTS
 # =============================================================================
 
-CACHE_KEY_PREFIX = "llmix2:resp:"
+CACHE_KEY_PREFIX = "llmix:resp:"
 DEFAULT_L1_MAX = 1000
 DEFAULT_TTL_SECONDS = 3600
 DEFAULT_L2_TTL_SECONDS = 3600
@@ -72,14 +72,18 @@ SKIP_STRATEGIES: frozenset[str] = frozenset({"native", "gateway", "disabled"})
 CACHE_KEY_FIELDS = (
     "baseUrl",
     "enableThinking",
+    "frequencyPenalty",
     "maxOutputTokens",
     "messages",
     "model",
+    "presencePenalty",
     "provider",
     "providerOptions",
     "responseFormat",
     "seed",
+    "stopSequences",
     "temperature",
+    "topK",
     "topP",
 )
 
@@ -129,7 +133,7 @@ def generate_cache_key(params: dict[str, Any]) -> str:
 
     - Canonical JSON with sorted keys
     - Null/None fields excluded
-    - Prefixed with "llmix2:resp:"
+    - Prefixed with "llmix:resp:"
     """
     canonical: dict[str, Any] = {}
     for field_name in CACHE_KEY_FIELDS:

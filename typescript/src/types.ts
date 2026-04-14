@@ -71,67 +71,6 @@ export interface CachingConfig {
 // CONFIGURATION
 // =============================================================================
 
-/**
- * Configuration for LLMConfigLoader
- *
- * @example
- * ```typescript
- * const config: LLMConfigLoaderConfig = {
- *   configDir: '/app/config/llm',
- *   redisUrl: 'redis://localhost:6379',
- *   cacheSize: 100,
- *   cacheTtlSeconds: 21600,
- * };
- * ```
- */
-export interface LLMConfigLoaderConfig {
-  /** Base directory for LLM config files (required) */
-  configDir: string;
-
-  /** Redis URL - optional, works without Redis */
-  redisUrl?: string | undefined;
-
-  /** LRU cache max size (default: 100) */
-  cacheSize?: number | undefined;
-
-  /** Local cache TTL in seconds (default: 21600 = 6 hours) */
-  cacheTtlSeconds?: number | undefined;
-
-  /** Redis cache TTL in seconds (default: 86400 = 24 hours) */
-  redisTtlSeconds?: number | undefined;
-
-  /** Redis connection timeout in ms (default: 5000) */
-  redisConnectTimeoutMs?: number | undefined;
-
-  /** Redis command timeout in ms (default: 5000) */
-  redisCommandTimeoutMs?: number | undefined;
-
-  /** Max retries per Redis request (default: 3) */
-  redisMaxRetries?: number | undefined;
-
-  /** Default scope for config resolution (default: "default") */
-  defaultScope?: string | undefined;
-
-  /** Custom logger - uses console if not provided */
-  logger?: LLMConfigLoaderLogger | undefined;
-}
-
-// =============================================================================
-// LOGGER INTERFACE
-// =============================================================================
-
-/**
- * Logger interface for LLMConfigLoader
- *
- * Compatible with console, pino, winston, etc.
- */
-export interface LLMConfigLoaderLogger {
-  debug(message: string, ...args: unknown[]): void;
-  info(message: string, ...args: unknown[]): void;
-  warn(message: string, ...args: unknown[]): void;
-  error(message: string, ...args: unknown[]): void;
-}
-
 // =============================================================================
 // TIMEOUT CONFIGURATION
 // =============================================================================
@@ -176,7 +115,7 @@ export interface TimeoutConfig {
 /**
  * Supported LLM providers
  */
-export type Provider = "openai" | "anthropic" | "google" | "deepseek";
+export type Provider = "openai" | "anthropic" | "google" | "deepseek" | "sno-gpu";
 
 /** Provider type with unknown for error cases (config load failures) */
 export type ProviderOrUnknown = Provider | "unknown";
@@ -403,7 +342,7 @@ export interface DeepSeekProviderOptions {
 /**
  * Sno on-prem GPU-specific provider options
  */
-export interface SnogpuProviderOptions {
+export interface SnoGpuProviderOptions {
   /** Enable thinking mode for Qwen3.5. Default: false. */
   enableThinking?: boolean | undefined;
 
@@ -424,7 +363,10 @@ export interface ProviderOptions {
   anthropic?: AnthropicProviderOptions | undefined;
   google?: GoogleProviderOptions | undefined;
   deepseek?: DeepSeekProviderOptions | undefined;
-  snogpu?: SnogpuProviderOptions | undefined;
+  "sno-gpu"?: SnoGpuProviderOptions | undefined;
+  deepinfra?: Record<string, unknown> | undefined;
+  novita?: Record<string, unknown> | undefined;
+  together?: Record<string, unknown> | undefined;
 }
 
 /**
@@ -468,8 +410,8 @@ export interface LLMConfig {
    *
    * Controls how LLM responses and prompts are cached:
    * - "native": Use provider's native caching (OpenAI/Anthropic prompt caching)
-   *             Routes through Helicone for OpenAI, provides 90% cost savings
-   *             Key can be provided via caching.key OR CallOptions.promptCacheKey (from Promptix)
+   *             Routes through Helicone for OpenAI and provides 90% cost savings
+   *             Key is provided via caching.key
    * - "gateway": Use AI Gateway response caching (CF AI Gateway)
    *              Exact match only, good for identical requests
    * - "disabled": No caching, always fresh calls
@@ -483,62 +425,6 @@ export interface LLMConfig {
    * Legacy flag: true maps to caching.strategy="native"
    */
   bypassGateway?: boolean | undefined;
-}
-
-/**
- * Resolved LLM configuration
- *
- * Represents a fully parsed and validated config ready for use.
- */
-export interface ResolvedLLMConfig extends LLMConfig {
-  /** ConfigId that was resolved (canonical format) */
-  configId: string;
-
-  /** The scope used in resolution */
-  scope: string;
-
-  /** The module used in resolution */
-  module: string;
-
-  /** The preset used in resolution */
-  preset: string;
-
-  /** The version used in resolution */
-  version: number;
-}
-
-// =============================================================================
-// LOADING OPTIONS
-// =============================================================================
-
-/**
- * Options for loading a config from the cascade
- *
- * Used internally by LLMConfigLoader.
- */
-export interface LoadConfigOptions {
-  /** Deployment scope (default: "default") */
-  scope?: string | undefined;
-
-  /** Functional module (e.g., "hrkg", "memobase") */
-  module: string;
-
-  /** User ID for user-specific overrides ("_" for global) */
-  userId?: string | undefined;
-
-  /** Config preset name (e.g., "extraction", "search") */
-  preset: string;
-
-  /** Config version (default: 1) */
-  version?: number | undefined;
-
-  /**
-   * Bypass LRU cache and load fresh from file
-   *
-   * Used by A/B experiment switching to ensure fresh config when experiment is active.
-   * @default false
-   */
-  forceRefresh?: boolean | undefined;
 }
 
 // =============================================================================
@@ -567,7 +453,7 @@ export interface ExperimentConfig {
 /**
  * Telemetry context for LLM calls
  *
- * Pass to LLMClient.call() for attribution tracking.
+ * Pass to LLMix telemetry hooks for attribution tracking.
  */
 export interface TelemetryContext {
   /** User identifier */
@@ -679,16 +565,12 @@ export interface LLMCallEventData {
  * ```typescript
  * const telemetryProvider: LLMixTelemetryProvider = {
  *   async trackLLMCall(event) {
- *     // Send to your telemetry system (PostHog or equivalent)
- *     await posthog.capture('llm_call', event);
+ *     await posthog.capture("llm_call", event);
  *   },
  *   calculateCost(model, inputTokens, outputTokens) {
- *     // Return cost breakdown or null to skip cost tracking
  *     return { inputCostUsd: 0.001, outputCostUsd: 0.002, totalCostUsd: 0.003 };
- *   }
+ *   },
  * };
- *
- * const client = createLLMClient({ loader, telemetry: telemetryProvider });
  * ```
  */
 export interface LLMixTelemetryProvider {
@@ -733,58 +615,6 @@ export interface RuntimeOverrides {
 }
 
 /**
- * Options for LLMClient.call()
- *
- * @example
- * ```typescript
- * const response = await client.call({
- *   preset: 'hrkg:extraction',
- *   messages: modelMessages,
- *   userId: 'user123',
- *   overrides: { common: { temperature: 0.5 } },
- * });
- * ```
- */
-export interface CallOptions {
-  /**
-   * Preset string in format "module:preset" or just "preset"
-   *
-   * - "hrkg:extraction" -> module=hrkg, preset=extraction
-   * - "extraction" -> module=_default, preset=extraction
-   */
-  preset: string;
-
-  /** Messages to send to the LLM */
-  messages: unknown[];
-
-  /** Deployment scope (default: defaultScope from config) */
-  scope?: string | undefined;
-
-  /** User ID for per-user config overrides */
-  userId?: string | undefined;
-
-  /** Config version (default: 1) */
-  version?: number | undefined;
-
-  /** Runtime overrides (merged with config) */
-  overrides?: RuntimeOverrides | undefined;
-
-  /** Telemetry context */
-  telemetry?: TelemetryContext | undefined;
-
-  /**
-   * Cache key for native prompt caching (OpenAI/Anthropic).
-   * Usually obtained from Promptix: prompt.promptCacheKey
-   * Format: "{category}:{promptName}:v{version}"
-   */
-  promptCacheKey?: string | undefined;
-}
-
-// =============================================================================
-// RESPONSE TYPES
-// =============================================================================
-
-/**
  * Token usage statistics from LLM call
  */
 export interface LLMUsage {
@@ -799,76 +629,6 @@ export interface LLMUsage {
 
   /** Cached input tokens (provider-dependent, may be undefined) */
   cachedInputTokens?: number | undefined;
-}
-
-/**
- * Response from LLMClient.call()
- */
-export interface LLMResponse {
-  /** Generated content */
-  content: string;
-
-  /** Model used for generation */
-  model: string;
-
-  /**
-   * Provider used for generation
-   * LH: "unknown" when config load fails (before provider is resolved)
-   */
-  provider: ProviderOrUnknown;
-
-  /** Token usage statistics */
-  usage: LLMUsage;
-
-  /**
-   * The resolved config that was used
-   * LH: undefined when config load fails (before config is resolved)
-   */
-  config?: ResolvedLLMConfig | undefined;
-
-  /** Whether the call succeeded */
-  success: boolean;
-
-  /** Error message if success is false */
-  error?: string | undefined;
-
-  /** Captured thinking content stripped from response (when keepThinkingOutput is false) */
-  thinkingContent?: string | undefined;
-
-  /** Indicates which cache tier served this response, if any. */
-  cacheHit?: CacheHitTier | undefined;
-}
-
-/**
- * Config capabilities for runtime decisions
- *
- * Replaces env-based model detection (isProprietaryModel, getModelForTask).
- */
-export interface ConfigCapabilities {
-  /** The provider (openai, anthropic, google, deepseek) */
-  provider: Provider;
-
-  /** Whether the provider is proprietary (not open-source) */
-  isProprietary: boolean;
-
-  /**
-   * Whether the model supports OpenAI Batch API
-   *
-   * True IFF: provider === 'openai' AND model is in BATCH_CAPABLE_MODELS
-   * HRKG uses this for topic-analysis batching.
-   */
-  supportsOpenAIBatch: boolean;
-}
-
-/**
- * Result from getResolvedConfig()
- */
-export interface ResolvedConfigResult {
-  /** The resolved configuration */
-  config: ResolvedLLMConfig;
-
-  /** Capabilities derived from the config */
-  capabilities: ConfigCapabilities;
 }
 
 // =============================================================================
@@ -896,7 +656,7 @@ export interface LRUCacheStats {
 }
 
 /**
- * Combined cache statistics for LLMConfigLoader
+ * Combined cache statistics for config-related caches
  */
 export interface CacheStats {
   /** LRU cache statistics */
@@ -1014,6 +774,7 @@ export const VALID_PROVIDERS: readonly Provider[] = [
   "anthropic",
   "google",
   "deepseek",
+  "sno-gpu",
 ] as const;
 
 /** Minimum budgetTokens for Anthropic extended thinking */

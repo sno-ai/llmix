@@ -23,7 +23,7 @@ const DEFAULT_MAX_DELAY_MS = 30_000;
 const DEFAULT_JITTER_MS = 1_000;
 const DEFAULT_MAX_RETRY_AFTER_MS = 60_000;
 const KILLSWITCH_FILENAME = "killswitch";
-const KILLSWITCH_SUBDIR = "llmix2";
+const KILLSWITCH_SUBDIR = "llmix";
 
 // ---------------------------------------------------------------------------
 // Helpers

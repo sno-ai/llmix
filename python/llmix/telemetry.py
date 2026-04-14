@@ -7,14 +7,14 @@ picks the implementation at construction time, or passes None to disable.
 Usage:
     # Standard Helicone (public users)
     plugin = HeliconePlugin(api_key="hk-...", environment="prod")
-    pipeline = V2CallPipeline(config, telemetry=plugin)
+    pipeline = CallPipeline(config, telemetry=plugin)
 
     # Self-hosted / custom
     plugin = SnoHeliconePlugin(base_url="http://helicone.sno.ai:8585")
-    pipeline = V2CallPipeline(config, telemetry=plugin)
+    pipeline = CallPipeline(config, telemetry=plugin)
 
     # No telemetry
-    pipeline = V2CallPipeline(config, telemetry=None)
+    pipeline = CallPipeline(config, telemetry=None)
 """
 
 from typing import Any, Protocol
