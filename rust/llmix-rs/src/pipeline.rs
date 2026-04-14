@@ -468,6 +468,26 @@ impl CallPipeline {
         );
         insert_cloned(
             &mut kwargs,
+            "top_k",
+            common.and_then(|map| clone_alias(map, &["top_k", "topK"])),
+        );
+        insert_cloned(
+            &mut kwargs,
+            "presence_penalty",
+            common.and_then(|map| clone_alias(map, &["presence_penalty", "presencePenalty"])),
+        );
+        insert_cloned(
+            &mut kwargs,
+            "frequency_penalty",
+            common.and_then(|map| clone_alias(map, &["frequency_penalty", "frequencyPenalty"])),
+        );
+        insert_cloned(
+            &mut kwargs,
+            "stop",
+            common.and_then(|map| clone_alias(map, &["stop", "stop_sequences", "stopSequences"])),
+        );
+        insert_cloned(
+            &mut kwargs,
             "seed",
             common.and_then(|map| clone_alias(map, &["seed"])),
         );
@@ -538,8 +558,9 @@ impl CallPipeline {
                 .and_then(|map| f64_alias(map, &["presence_penalty", "presencePenalty"])),
             frequency_penalty: common
                 .and_then(|map| f64_alias(map, &["frequency_penalty", "frequencyPenalty"])),
-            stop_sequences: common
-                .and_then(|map| string_array_alias(map, &["stop_sequences", "stopSequences"])),
+            stop_sequences: common.and_then(|map| {
+                string_array_alias(map, &["stop_sequences", "stopSequences", "stop"])
+            }),
         })
     }
 
@@ -824,12 +845,15 @@ fn string_array_alias(map: &Map<String, Value>, aliases: &[&str]) -> Option<Vec<
     aliases
         .iter()
         .find_map(|alias| map.get(*alias))
-        .and_then(Value::as_array)
-        .map(|array| {
-            array
-                .iter()
-                .filter_map(|value| value.as_str().map(str::to_owned))
-                .collect()
+        .and_then(|value| match value {
+            Value::Array(array) => Some(
+                array
+                    .iter()
+                    .filter_map(|entry| entry.as_str().map(str::to_owned))
+                    .collect(),
+            ),
+            Value::String(value) => Some(vec![value.clone()]),
+            _ => None,
         })
 }
 
