@@ -836,12 +836,15 @@ fn string_array_alias(map: &Map<String, Value>, aliases: &[&str]) -> Option<Vec<
     aliases
         .iter()
         .find_map(|alias| map.get(*alias))
-        .and_then(Value::as_array)
-        .map(|array| {
-            array
-                .iter()
-                .filter_map(|value| value.as_str().map(str::to_owned))
-                .collect()
+        .and_then(|value| match value {
+            Value::Array(array) => Some(
+                array
+                    .iter()
+                    .filter_map(|entry| entry.as_str().map(str::to_owned))
+                    .collect(),
+            ),
+            Value::String(value) => Some(vec![value.clone()]),
+            _ => None,
         })
 }
 
