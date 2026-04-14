@@ -268,66 +268,6 @@ async fn rate_limit_rotates_to_next_key_before_retrying() {
 }
 
 #[tokio::test]
-async fn snogpu_alias_applies_transform_kwargs_end_to_end() {
-    let seen_kwargs = Arc::new(Mutex::new(None::<serde_json::Map<String, Value>>));
-    let kwargs_slot = seen_kwargs.clone();
-
-    let pipeline = CallPipeline::new(fast_pipeline_config(
-        move |ctx: DispatchContext| {
-            let kwargs_slot = kwargs_slot.clone();
-            async move {
-                *kwargs_slot
-                    .lock()
-                    .expect("kwargs mutex should remain available") = Some(ctx.kwargs.clone());
-                Ok(success_result("ok"))
-            }
-        },
-        None,
-    ))
-    .expect("pipeline should construct");
-    pipeline.set_key_pool(
-        "snogpu",
-        KeyPool::new(vec!["not-needed".to_owned()]).expect("key pool should construct"),
-    );
-
-    let response = pipeline
-        .call(CallInput {
-            config: json!({
-                "provider": "snogpu",
-                "model": "qwen3.5-27b-reason",
-                "baseUrl": "https://rt3-llm.sno.ai",
-                "providerOptions": {
-                    "snogpu": {
-                        "gpuPath": "reason",
-                        "enableThinking": true
-                    }
-                },
-                "common": {
-                    "enableThinking": false,
-                    "maxOutputTokens": 64
-                }
-            }),
-            messages: sample_messages(),
-            singleflight_key: None,
-        })
-        .await;
-
-    assert!(response.success);
-
-    let seen_kwargs = seen_kwargs
-        .lock()
-        .expect("kwargs mutex should remain available")
-        .clone()
-        .expect("dispatch should have run once");
-    assert_eq!(
-        seen_kwargs.get("base_url"),
-        Some(&json!("https://rt3-llm.sno.ai/reason/v1"))
-    );
-    assert_eq!(seen_kwargs.get("enableThinking"), Some(&json!(true)));
-    assert_eq!(seen_kwargs.get("max_tokens"), Some(&json!(64)));
-}
-
-#[tokio::test]
 async fn unauthorized_response_marks_key_dead_and_next_call_exhausts_pool() {
     let dispatch_calls = Arc::new(AtomicUsize::new(0));
     let seen_dispatch_calls = dispatch_calls.clone();

@@ -1,6 +1,6 @@
 #![cfg(any(
     feature = "helpers-openai",
-    feature = "helpers-snogpu",
+    feature = "helpers-sno-gpu",
     feature = "helpers-anthropic",
     feature = "helpers-gemini"
 ))]
@@ -18,11 +18,11 @@ use llmix_rs::AnthropicChatHelper;
 use llmix_rs::GeminiChatHelper;
 #[cfg(feature = "helpers-openai")]
 use llmix_rs::OpenAiChatHelper;
-#[cfg(feature = "helpers-snogpu")]
+#[cfg(feature = "helpers-sno-gpu")]
 use llmix_rs::SnoGpuChatHelper;
 use llmix_rs::{DispatchContext, DispatchFn, LlmixError};
 
-#[cfg(feature = "helpers-snogpu")]
+#[cfg(feature = "helpers-sno-gpu")]
 use llmix_rs::{CallInput, CallPipeline, KeyPool, PipelineConfig};
 
 #[derive(Debug)]
@@ -564,7 +564,7 @@ async fn gemini_helper_surfaces_provider_error_headers() {
     }
 }
 
-#[cfg(feature = "helpers-snogpu")]
+#[cfg(feature = "helpers-sno-gpu")]
 fn fast_helper_pipeline<D>(dispatch: D) -> PipelineConfig
 where
     D: DispatchFn + 'static,
@@ -580,9 +580,9 @@ where
     config
 }
 
-#[cfg(feature = "helpers-snogpu")]
+#[cfg(feature = "helpers-sno-gpu")]
 #[tokio::test]
-async fn snogpu_helper_injects_internal_token_and_thinking_payload() {
+async fn sno_gpu_helper_injects_internal_token_and_thinking_payload() {
     let (base_url, request_rx, server) = spawn_json_server(
         "200 OK",
         &[],
@@ -605,18 +605,18 @@ async fn snogpu_helper_injects_internal_token_and_thinking_payload() {
     ))
     .expect("pipeline should construct");
     pipeline.set_key_pool(
-        "snogpu",
+        "sno-gpu",
         KeyPool::new(vec!["not-needed".to_string()]).expect("key pool should construct"),
     );
 
     let response = pipeline
         .call(CallInput {
             config: json!({
-                "provider": "snogpu",
+                "provider": "sno-gpu",
                 "model": "qwen3.5-27b-reason",
                 "baseUrl": base_url,
                 "providerOptions": {
-                    "snogpu": {
+                    "sno-gpu": {
                         "gpuPath": "reason",
                         "enableThinking": true
                     }

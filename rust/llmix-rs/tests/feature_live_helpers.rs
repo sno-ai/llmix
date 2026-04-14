@@ -1,6 +1,6 @@
 #![cfg(any(
     feature = "helpers-openai",
-    feature = "helpers-snogpu",
+    feature = "helpers-sno-gpu",
     feature = "helpers-anthropic",
     feature = "helpers-gemini"
 ))]
@@ -15,7 +15,7 @@ use llmix_rs::AnthropicChatHelper;
 use llmix_rs::GeminiChatHelper;
 #[cfg(feature = "helpers-openai")]
 use llmix_rs::OpenAiChatHelper;
-#[cfg(feature = "helpers-snogpu")]
+#[cfg(feature = "helpers-sno-gpu")]
 use llmix_rs::SnoGpuChatHelper;
 
 const LIVE_TESTS_FLAG: &str = "LLMIX_RUN_LIVE_TESTS";
@@ -283,28 +283,29 @@ async fn gemini_live_continuation_via_pipeline() {
     );
 }
 
-#[cfg(feature = "helpers-snogpu")]
+#[cfg(feature = "helpers-sno-gpu")]
 #[tokio::test]
-async fn snogpu_live_extract_path_via_pipeline() {
-    let Some(envs) =
-        require_live_env_groups(&[&["GPU_BASE_URL"], &["SNO_LLM_API_KEY", "INTERNAL_SERVICE_SECRET"]])
-    else {
+async fn sno_gpu_live_extract_path_via_pipeline() {
+    let Some(envs) = require_live_env_groups(&[
+        &["GPU_BASE_URL"],
+        &["SNO_LLM_API_KEY", "INTERNAL_SERVICE_SECRET"],
+    ]) else {
         return;
     };
     let base_url = envs[0].clone();
     let internal_secret = envs[1].clone();
-    let model = env_or("SNOGPU_MODEL", "qwen3.5-27b-extract");
+    let model = env_or("SNO_GPU_MODEL", "qwen3.5-27b-extract");
 
     let pipeline = live_pipeline(SnoGpuChatHelper::new().with_internal_token(internal_secret));
     pipeline.set_key_pool(
-        "snogpu",
-        KeyPool::new(vec!["not-needed".to_string()]).expect("snogpu key pool should construct"),
+        "sno-gpu",
+        KeyPool::new(vec!["not-needed".to_string()]).expect("sno-gpu key pool should construct"),
     );
 
     let response = pipeline
         .call(CallInput {
             config: json!({
-                "provider": "snogpu",
+                "provider": "sno-gpu",
                 "model": model,
                 "baseUrl": base_url,
                 "common": {
@@ -312,7 +313,7 @@ async fn snogpu_live_extract_path_via_pipeline() {
                     "maxOutputTokens": 48
                 },
                 "providerOptions": {
-                    "snogpu": {
+                    "sno-gpu": {
                         "gpuPath": "extract",
                         "enableThinking": false
                     }
@@ -326,14 +327,14 @@ async fn snogpu_live_extract_path_via_pipeline() {
         })
         .await;
 
-    assert_live_success("snogpu extract", &response);
+    assert_live_success("sno-gpu extract", &response);
     assert!(
         response.content.contains('4'),
-        "snogpu extract should mention 4, got {:?}",
+        "sno-gpu extract should mention 4, got {:?}",
         response.content
     );
     assert!(
         response.thinking_content.is_none(),
-        "snogpu extract should not surface thinking content when disabled"
+        "sno-gpu extract should not surface thinking content when disabled"
     );
 }

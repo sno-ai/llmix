@@ -238,23 +238,6 @@ fn sno_gpu_constructs_base_url_and_validates_inputs() {
 }
 
 #[test]
-fn sno_gpu_supports_legacy_alias_and_injects_enable_thinking() {
-    let mut context = ctx("qwen3.5-27b", "snogpu");
-    context.base_url = Some("https://rt3-llm.sno.ai".to_string());
-    context.enable_thinking = Some(false);
-    context.provider_options = Some(object(json!({
-        "snogpu": { "gpuPath": "reason", "enableThinking": true }
-    })));
-
-    let result = sno_gpu_transform_kwargs(&context, Map::new()).unwrap();
-    assert_eq!(
-        result.get("base_url"),
-        Some(&json!("https://rt3-llm.sno.ai/reason/v1"))
-    );
-    assert_eq!(result.get("enableThinking"), Some(&json!(true)));
-}
-
-#[test]
 fn sno_gpu_uses_camel_output_key_when_input_kwargs_do() {
     let mut context = ctx("qwen3.5-27b", "sno-gpu");
     context.base_url = Some("https://rt3-llm.sno.ai".to_string());
@@ -289,12 +272,11 @@ fn sno_gpu_errors_on_missing_base_url_and_invalid_paths() {
 
 #[test]
 fn registry_contains_expected_entries() {
-    assert_eq!(PROVIDER_KWARGS_REGISTRY.len(), 6);
+    assert_eq!(PROVIDER_KWARGS_REGISTRY.len(), 5);
     assert!(provider_kwargs_callback("openai").is_some());
     assert!(provider_kwargs_callback("deepseek").is_some());
     assert!(provider_kwargs_callback("google").is_some());
     assert!(provider_kwargs_callback("gemini").is_some());
     assert!(provider_kwargs_callback("sno-gpu").is_some());
-    assert!(provider_kwargs_callback("snogpu").is_some());
     assert!(provider_kwargs_callback("unknown").is_none());
 }
