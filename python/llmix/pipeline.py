@@ -130,6 +130,7 @@ class PipelineConfig:
     # multiple pipelines so the first ``close()`` does not tear down Redis for
     # the others.
     close_response_cache: bool = True
+    bypass_key_pool_providers: frozenset[str] = frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +143,7 @@ class CallPipeline:
 
     def __init__(self, config: PipelineConfig) -> None:
         self._dispatch = config.dispatch
+        self._bypass_key_pool_providers = config.bypass_key_pool_providers
         from pathlib import Path
 
         state_dir = Path(config.kill_switch_state_dir) if config.kill_switch_state_dir else None
@@ -165,7 +167,25 @@ class CallPipeline:
         self._close_response_cache = config.close_response_cache
 
     def set_key_pool(self, provider: str, pool: KeyPool) -> None:
-        """Register a key pool for a provider."""
+        """Register a key pool for a provider.
+
+        Raises ``ValueError`` if the configured dispatch function was built
+        with a prebuilt ``client=`` for this provider. A prebuilt client's
+        baked-in api_key authenticates every request, while ``ctx.api_key``
+        (from the pool) is ignored — so 401/403 responses would mark the
+        wrong key dead and silently corrupt the pool.
+        """
+        bypass: frozenset[str] = getattr(self._dispatch, "__llmix_bypass_key_pool_providers__", frozenset())
+        bypass = bypass | self._bypass_key_pool_providers
+        if provider in bypass:
+            raise ValueError(
+                f"Cannot register a KeyPool for provider {provider!r}: its dispatch "
+                "was built with a prebuilt client=... which uses its own api_key. "
+                "Registering a pool would cause 401/403 responses to mark unrelated "
+                "pool keys dead. Either drop the client= argument (let the factory "
+                "build a fresh client per call from ctx.api_key) or skip set_key_pool "
+                "for this provider."
+            )
         self._key_pools[provider] = pool
 
     def close(self) -> None:
