@@ -159,7 +159,10 @@ async fn cache_hit_avoids_dispatch_and_strips_thinking() {
 }
 
 #[tokio::test]
-async fn successful_dispatch_caches_raw_content_and_preserves_tool_calls() {
+async fn successful_dispatch_with_tool_calls_skips_cache_write() {
+    // When the provider returns tool_calls, the pipeline must not write to
+    // cache: CachedValue stores only the text body, so a future hit would
+    // silently drop the function-call structure. (GH #6)
     let dispatch_calls = Arc::new(AtomicUsize::new(0));
     let seen_dispatch_calls = dispatch_calls.clone();
     let cache = memory_cache();
@@ -217,10 +220,55 @@ async fn successful_dispatch_caches_raw_content_and_preserves_tool_calls() {
     );
     assert_eq!(dispatch_calls.load(Ordering::SeqCst), 1);
 
+    // The response contained tool_calls, so the cache MUST NOT have a hit.
+    assert!(
+        cache.get(&cache_key).await.is_none(),
+        "cache write must be skipped when response contains tool_calls"
+    );
+}
+
+#[tokio::test]
+async fn successful_dispatch_without_tool_calls_caches_raw_content() {
+    let dispatch_calls = Arc::new(AtomicUsize::new(0));
+    let seen_dispatch_calls = dispatch_calls.clone();
+    let cache = memory_cache();
+    let input = base_input();
+    let cache_key = cache_key_for(&input);
+
+    let pipeline = CallPipeline::new(fast_pipeline_config(
+        move |_ctx: DispatchContext| {
+            let seen_dispatch_calls = seen_dispatch_calls.clone();
+            async move {
+                seen_dispatch_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(ProviderResult {
+                    content: "<think>hidden plan</think>\nfinal answer".to_owned(),
+                    model: "gpt-4.1-mini".to_owned(),
+                    usage: LlmUsage {
+                        input_tokens: 21,
+                        output_tokens: 8,
+                        total_tokens: 29,
+                    },
+                    headers: None,
+                    tool_calls: None,
+                })
+            }
+        },
+        Some(cache.clone()),
+    ))
+    .expect("pipeline should construct");
+    pipeline.set_key_pool(
+        "openai",
+        KeyPool::new(vec!["key-a".to_owned()]).expect("key pool should construct"),
+    );
+
+    let response = pipeline.call(input).await;
+    assert!(response.success);
+    assert_eq!(dispatch_calls.load(Ordering::SeqCst), 1);
+
     let cached = cache
         .get(&cache_key)
         .await
-        .expect("response should be written to cache");
+        .expect("response should be written to cache when no tool_calls");
     assert_eq!(cached.value, "<think>hidden plan</think>\nfinal answer");
     assert_eq!(cached.tier, CacheHitTier::L1);
 }

@@ -351,7 +351,11 @@ export class CallPipeline {
       );
 
       // Step 18: Cache write (raw content, pre-strip)
-      if (this.responseCache && cacheKey) {
+      // Skip cache write when the response contains toolCalls: CachedValue
+      // stores only the text body, so a future hit would silently drop the
+      // function-call structure. See GH issue #6.
+      const hasToolCalls = Array.isArray(result.toolCalls) && result.toolCalls.length > 0;
+      if (this.responseCache && cacheKey && !hasToolCalls) {
         await this.responseCache.set(cacheKey, result.content);
       }
 
