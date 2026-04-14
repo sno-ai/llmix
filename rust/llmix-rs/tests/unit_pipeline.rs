@@ -5,11 +5,9 @@ use llmix_rs::{
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::env;
 use std::fs;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 fn sample_messages() -> Vec<Value> {
@@ -106,12 +104,12 @@ fn provider_error(message: &str, status_code: u16) -> llmix_rs::LlmixError {
     .into()
 }
 
-fn temp_state_dir(prefix: &str) -> PathBuf {
+fn temp_state_dir(prefix: &str) -> std::path::PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("time should move forward")
         .as_nanos();
-    env::temp_dir().join(format!(
+    std::env::temp_dir().join(format!(
         "llmix-rs-pipeline-{prefix}-{}-{nanos}",
         std::process::id()
     ))
@@ -524,6 +522,71 @@ async fn semaphore_release_on_key_selection_failure_restores_permit() {
     assert!(!first.success);
     assert!(!second.success);
     assert_eq!(pipeline.get_semaphore_window("openai"), Some(1));
+}
+
+#[test]
+fn semaphore_release_on_401_cleanup_failure_allows_next_call() {
+    let pipeline_slot = Arc::new(OnceLock::<Arc<CallPipeline>>::new());
+    let dispatch_calls = Arc::new(AtomicUsize::new(0));
+    let seen_dispatch_calls = dispatch_calls.clone();
+    let seen_pipeline_slot = pipeline_slot.clone();
+
+    let mut config = fast_pipeline_config(
+        move |_ctx: DispatchContext| {
+            let seen_dispatch_calls = seen_dispatch_calls.clone();
+            let seen_pipeline_slot = seen_pipeline_slot.clone();
+            async move {
+                let attempt = seen_dispatch_calls.fetch_add(1, Ordering::SeqCst);
+                if attempt == 0 {
+                    let pipeline = seen_pipeline_slot
+                        .get()
+                        .expect("pipeline should be available before dispatch");
+                    pipeline.set_key_pool(
+                        "openai",
+                        KeyPool::new(vec!["key-b".to_owned()])
+                            .expect("replacement key pool should construct"),
+                    );
+                    Err(provider_error("unauthorized", 401))
+                } else {
+                    Ok(success_result("recovered"))
+                }
+            }
+        },
+        None,
+    );
+    config.semaphore_initial = 1;
+    config.semaphore_min = 1;
+    config.max_retries = 0;
+
+    let pipeline = Arc::new(CallPipeline::new(config).expect("pipeline should construct"));
+    pipeline.set_key_pool(
+        "openai",
+        KeyPool::new(vec!["key-a".to_owned()]).expect("key pool should construct"),
+    );
+    assert!(
+        pipeline_slot.set(pipeline.clone()).is_ok(),
+        "pipeline should only be set once"
+    );
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime should build");
+
+    runtime.block_on(async {
+        let first = tokio::time::timeout(Duration::from_millis(200), pipeline.call(base_input()))
+            .await
+            .expect("first call should not hang");
+        let second = tokio::time::timeout(Duration::from_millis(200), pipeline.call(base_input()))
+            .await
+            .expect("second call should not hang");
+
+        assert!(!first.success);
+        assert!(second.success);
+        assert_eq!(second.content, "recovered");
+        assert_eq!(pipeline.get_semaphore_window("openai"), Some(1));
+        assert_eq!(dispatch_calls.load(Ordering::SeqCst), 2);
+    });
 }
 
 #[tokio::test]

@@ -30,6 +30,12 @@ pub struct AdaptiveSemaphore {
     state: Mutex<AdaptiveSemaphoreState>,
 }
 
+#[derive(Debug)]
+pub struct AdaptiveSemaphorePermit<'a> {
+    semaphore: &'a AdaptiveSemaphore,
+    released: bool,
+}
+
 impl AdaptiveSemaphore {
     pub fn new(initial: usize, min_concurrency: usize) -> LlmixResult<Self> {
         if initial < 1 {
@@ -132,6 +138,16 @@ impl AdaptiveSemaphore {
         }
     }
 
+    pub async fn acquire_guard(
+        &self,
+    ) -> Result<AdaptiveSemaphorePermit<'_>, AdaptiveSemaphoreClosedError> {
+        self.acquire().await?;
+        Ok(AdaptiveSemaphorePermit {
+            semaphore: self,
+            released: false,
+        })
+    }
+
     pub fn close(&self) {
         let waiters = {
             let mut state = self
@@ -214,6 +230,24 @@ impl AdaptiveSemaphore {
         let scale = ratio / HEADER_BACKOFF_THRESHOLD;
         let target = (self.min as f64 + scale * (self.max - self.min) as f64) as usize;
         adjust_window(&mut state, self.min, self.max, target);
+    }
+}
+
+impl AdaptiveSemaphorePermit<'_> {
+    pub fn release(mut self) {
+        if !self.released {
+            self.semaphore.release();
+            self.released = true;
+        }
+    }
+}
+
+impl Drop for AdaptiveSemaphorePermit<'_> {
+    fn drop(&mut self) {
+        if !self.released {
+            self.semaphore.release();
+            self.released = true;
+        }
     }
 }
 

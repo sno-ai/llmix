@@ -149,6 +149,27 @@ fn load_keys_from_env_filters_empty_entries_from_multi_key_var() {
 }
 
 #[test]
+fn load_keys_from_env_normalizes_provider_delimiters_for_env_var_names() {
+    let _guard = env_lock();
+    let keys_var = "SNO_GPU_KEYS";
+    let key_var = "SNO_GPU_API_KEY";
+    let old_keys = env::var(keys_var).ok();
+    let old_key = env::var(key_var).ok();
+
+    env::set_var(keys_var, "gpu-a, gpu-b");
+    env::remove_var(key_var);
+
+    let pool = load_keys_from_env("sno-gpu").unwrap();
+    assert_eq!(pool.total_count(), 2);
+    assert_eq!(pool.select().unwrap(), "gpu-a");
+    pool.rotate();
+    assert_eq!(pool.select().unwrap(), "gpu-b");
+
+    restore_var(keys_var, old_keys);
+    restore_var(key_var, old_key);
+}
+
+#[test]
 fn load_keys_from_env_missing_vars_is_an_error() {
     let _guard = env_lock();
     let keys_var = "RUSTPORT_MISSING_KEYS";

@@ -113,7 +113,14 @@ impl KeyPool {
 }
 
 pub fn load_keys_from_env(provider: &str) -> LlmixResult<KeyPool> {
-    let provider_upper = provider.to_uppercase();
+    let provider_upper = provider
+        .chars()
+        .map(|character| match character {
+            'a'..='z' => character.to_ascii_uppercase(),
+            'A'..='Z' | '0'..='9' => character,
+            _ => '_',
+        })
+        .collect::<String>();
     let keys_var = format!("{provider_upper}_KEYS");
     let key_var = format!("{provider_upper}_API_KEY");
 

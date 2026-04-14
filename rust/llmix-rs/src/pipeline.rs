@@ -340,7 +340,7 @@ impl CallPipeline {
             .unwrap_or_else(|| "unknown".to_owned());
         let semaphore = self.get_semaphore(&provider);
 
-        semaphore.acquire().await?;
+        let _permit = semaphore.acquire_guard().await?;
 
         let mut api_key = None::<String>;
         let result = async {
@@ -417,8 +417,6 @@ impl CallPipeline {
                 Err(error)
             }
         };
-
-        semaphore.release();
         outcome
     }
 
@@ -633,9 +631,9 @@ impl CallPipeline {
     where
         F: FnOnce() -> LlmixResult<T>,
     {
-        self.file_lock.acquire()?;
+        let guard = self.file_lock.acquire_guard()?;
         let result = func();
-        let release_result = self.file_lock.release();
+        let release_result = guard.release();
 
         match (result, release_result) {
             (Ok(value), Ok(())) => Ok(value),

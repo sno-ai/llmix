@@ -576,6 +576,12 @@ pub struct FileLock {
     file: Mutex<Option<File>>,
 }
 
+#[derive(Debug)]
+pub struct FileLockGuard<'a> {
+    file_lock: &'a FileLock,
+    released: bool,
+}
+
 impl FileLock {
     pub fn new() -> LlmixResult<Self> {
         Self::with_path(resolve_state_dir().join("llmix.lock"))
@@ -641,12 +647,39 @@ impl FileLock {
         Ok(())
     }
 
+    pub fn acquire_guard(&self) -> LlmixResult<FileLockGuard<'_>> {
+        self.acquire()?;
+        Ok(FileLockGuard {
+            file_lock: self,
+            released: false,
+        })
+    }
+
     pub fn release(&self) -> LlmixResult<()> {
         let maybe_file = self.file.lock().expect("file lock mutex poisoned").take();
         if let Some(file) = maybe_file {
             file.unlock()?;
         }
         Ok(())
+    }
+}
+
+impl FileLockGuard<'_> {
+    pub fn release(mut self) -> LlmixResult<()> {
+        if self.released {
+            return Ok(());
+        }
+        self.released = true;
+        self.file_lock.release()
+    }
+}
+
+impl Drop for FileLockGuard<'_> {
+    fn drop(&mut self) {
+        if !self.released {
+            let _ = self.file_lock.release();
+            self.released = true;
+        }
     }
 }
 
