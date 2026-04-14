@@ -159,7 +159,12 @@ def _normalize_response(response: LLMResponse, fallback_model: str) -> ProviderR
 
 
 def _resolve_base_url(ctx: DispatchInput, default: str) -> str:
-    for source in (ctx.kwargs.get("base_url"), ctx.config.get("baseUrl"), default):
+    for source in (
+        ctx.kwargs.get("base_url"),
+        ctx.config.get("base_url"),
+        ctx.config.get("baseUrl"),
+        default,
+    ):
         if isinstance(source, str) and source.strip():
             return source
     return default
@@ -170,7 +175,7 @@ def _resolve_gpu_base_url(ctx: DispatchInput) -> str:
     if isinstance(explicit, str) and explicit.strip():
         return explicit
 
-    config_base_url = ctx.config.get("baseUrl")
+    config_base_url = ctx.config.get("base_url") or ctx.config.get("baseUrl")
     if isinstance(config_base_url, str) and config_base_url.strip():
         return config_base_url
 
