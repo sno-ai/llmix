@@ -320,7 +320,8 @@ async fn anthropic_helper_extracts_system_messages_and_parses_response() {
                 json!({ "role": "user", "content": "Say hello." }),
             ],
             kwargs: serde_json::from_value(json!({
-                "temperature": 0.2
+                "temperature": 0.2,
+                "stop": ["END"]
             }))
             .expect("request kwargs should deserialize"),
             config: json!({}),
@@ -348,6 +349,7 @@ async fn anthropic_helper_extracts_system_messages_and_parses_response() {
         json!([{ "role": "user", "content": "Say hello." }])
     );
     assert_eq!(request.body["temperature"], json!(0.2));
+    assert_eq!(request.body["stop_sequences"], json!(["END"]));
     assert_eq!(request.body["max_tokens"], json!(1024));
 
     assert_eq!(result.content, "Ahoy there");

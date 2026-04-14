@@ -154,6 +154,9 @@ fn build_request_body(ctx: &DispatchContext) -> Map<String, Value> {
     if let Some(top_p) = body.remove("topP") {
         body.insert("top_p".to_string(), top_p);
     }
+    if let Some(stop) = body.remove("stop") {
+        body.insert("stop_sequences".to_string(), stop);
+    }
 
     let (messages, system) = split_system_messages(&ctx.messages);
     body.insert("messages".to_string(), Value::Array(messages));

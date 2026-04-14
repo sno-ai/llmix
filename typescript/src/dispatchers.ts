@@ -43,6 +43,9 @@ type SnoGpuThinkingSettings = {
   enableThinking?: boolean;
   thinkingBudget?: number;
 };
+type ResponseFormatConfig =
+  | { type: "text" }
+  | { type: "json"; schema?: JSONValue; name?: string; description?: string };
 
 function requireApiKey(
   apiKey: string | undefined,
@@ -118,6 +121,60 @@ function resolveText(kwargs: Record<string, unknown>): TextConfig | undefined {
     return { format: (responseFormat as Record<string, unknown>)["type"] };
   }
   return undefined;
+}
+
+function resolveStringArray(value: unknown): string[] | undefined {
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+    return value;
+  }
+  return undefined;
+}
+
+function resolveResponseFormat(kwargs: Record<string, unknown>): ResponseFormatConfig | undefined {
+  const responseFormat = kwargs["response_format"];
+  if (typeof responseFormat === "string") {
+    if (responseFormat === "text") {
+      return { type: "text" };
+    }
+    if (responseFormat === "json" || responseFormat === "json_object" || responseFormat === "json_schema") {
+      return { type: "json" };
+    }
+    return undefined;
+  }
+  if (!isRecord(responseFormat)) {
+    return undefined;
+  }
+
+  const type = responseFormat["type"];
+  if (type === "text") {
+    return { type: "text" };
+  }
+  if (type !== "json" && type !== "json_object" && type !== "json_schema") {
+    return undefined;
+  }
+
+  const jsonSchema = isRecord(responseFormat["json_schema"]) ? responseFormat["json_schema"] : undefined;
+  const schema = responseFormat["schema"] ?? jsonSchema?.["schema"];
+  const name = typeof responseFormat["name"] === "string"
+    ? responseFormat["name"]
+    : typeof jsonSchema?.["name"] === "string"
+      ? jsonSchema["name"]
+      : undefined;
+  const description = typeof responseFormat["description"] === "string"
+    ? responseFormat["description"]
+    : typeof jsonSchema?.["description"] === "string"
+      ? jsonSchema["description"]
+      : undefined;
+
+  return {
+    type: "json",
+    ...(schema !== undefined ? { schema: schema as JSONValue } : {}),
+    ...(name !== undefined ? { name } : {}),
+    ...(description !== undefined ? { description } : {}),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -291,16 +348,30 @@ async function generateWithModel(
   const seed = typeof ctx.kwargs["seed"] === "number" ? ctx.kwargs["seed"] : undefined;
   const maxOutputTokens = resolveMaxOutputTokens(ctx.kwargs);
   const text = resolveText(ctx.kwargs);
+  const responseFormat = resolveResponseFormat(ctx.kwargs);
   const output = text?.format === "text" ? Output.text() : undefined;
   const tools = resolveTools(ctx.kwargs);
+  const topP = typeof ctx.kwargs["top_p"] === "number" ? ctx.kwargs["top_p"] : undefined;
+  const topK = typeof ctx.kwargs["top_k"] === "number" ? ctx.kwargs["top_k"] : undefined;
+  const presencePenalty =
+    typeof ctx.kwargs["presence_penalty"] === "number" ? ctx.kwargs["presence_penalty"] : undefined;
+  const frequencyPenalty =
+    typeof ctx.kwargs["frequency_penalty"] === "number" ? ctx.kwargs["frequency_penalty"] : undefined;
+  const stopSequences = resolveStringArray(ctx.kwargs["stop"]);
 
   const result = await generateText({
     model,
     messages,
     ...(temperature !== undefined ? { temperature } : {}),
+    ...(topP !== undefined ? { topP } : {}),
+    ...(topK !== undefined ? { topK } : {}),
+    ...(presencePenalty !== undefined ? { presencePenalty } : {}),
+    ...(frequencyPenalty !== undefined ? { frequencyPenalty } : {}),
+    ...(stopSequences ? { stopSequences } : {}),
     ...(seed !== undefined ? { seed } : {}),
     ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
     ...(output ? { output } : {}),
+    ...(responseFormat ? { responseFormat } : {}),
     ...(tools ? { tools } : {}),
     ...(providerOptions ? { providerOptions } : {}),
   });
