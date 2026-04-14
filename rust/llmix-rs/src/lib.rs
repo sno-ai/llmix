@@ -9,7 +9,7 @@ pub mod dispatch;
 pub mod error;
 #[cfg(any(
     feature = "helpers-openai",
-    feature = "helpers-snogpu",
+    feature = "helpers-sno-gpu",
     feature = "helpers-anthropic",
     feature = "helpers-gemini"
 ))]
@@ -17,7 +17,7 @@ pub mod error;
     docsrs,
     doc(cfg(any(
         feature = "helpers-openai",
-        feature = "helpers-snogpu",
+        feature = "helpers-sno-gpu",
         feature = "helpers-anthropic",
         feature = "helpers-gemini"
     )))
@@ -52,9 +52,9 @@ pub use helpers::gemini::GeminiChatHelper;
 #[cfg(feature = "helpers-openai")]
 #[cfg_attr(docsrs, doc(cfg(feature = "helpers-openai")))]
 pub use helpers::openai::OpenAiChatHelper;
-#[cfg(feature = "helpers-snogpu")]
-#[cfg_attr(docsrs, doc(cfg(feature = "helpers-snogpu")))]
-pub use helpers::snogpu::SnoGpuChatHelper;
+#[cfg(feature = "helpers-sno-gpu")]
+#[cfg_attr(docsrs, doc(cfg(feature = "helpers-sno-gpu")))]
+pub use helpers::sno_gpu::SnoGpuChatHelper;
 pub use key_pool::{load_keys_from_env, KeyPool};
 pub use pipeline::{CallPipeline, PipelineConfig};
 pub use provider_kwargs::{

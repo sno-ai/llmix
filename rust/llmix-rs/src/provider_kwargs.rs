@@ -16,13 +16,12 @@ pub struct TransformKwargsContext {
     pub base_url: Option<String>,
 }
 
-pub const PROVIDER_KWARGS_REGISTRY: [(&str, TransformKwargsCallback); 6] = [
+pub const PROVIDER_KWARGS_REGISTRY: [(&str, TransformKwargsCallback); 5] = [
     ("openai", openai_transform_kwargs),
     ("deepseek", openrouter_transform_kwargs),
     ("google", gemini_transform_kwargs),
     ("gemini", gemini_transform_kwargs),
     ("sno-gpu", sno_gpu_transform_kwargs),
-    ("snogpu", sno_gpu_transform_kwargs),
 ];
 
 pub fn apply_transform_kwargs(
@@ -184,7 +183,8 @@ pub fn sno_gpu_transform_kwargs(
     let sno_gpu_opts = ctx
         .provider_options
         .as_ref()
-        .and_then(|options| get_object_alias(options, &["sno-gpu", "snogpu"]));
+        .and_then(|options| options.get("sno-gpu"))
+        .and_then(Value::as_object);
     let gpu_path = sno_gpu_opts
         .and_then(|options| get_value_alias(options, &["gpu_path", "gpuPath"]))
         .and_then(Value::as_str);

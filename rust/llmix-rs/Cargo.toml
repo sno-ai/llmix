@@ -15,7 +15,7 @@ categories = ["asynchronous", "api-bindings"]
 default = []
 redis = ["dep:redis", "dep:url"]
 helpers-openai = ["dep:reqwest", "dep:url", "dep:hyper-rustls"]
-helpers-snogpu = ["helpers-openai"]
+helpers-sno-gpu = ["helpers-openai"]
 helpers-anthropic = ["dep:reqwest", "dep:url", "dep:hyper-rustls"]
 helpers-gemini = ["dep:reqwest", "dep:url", "dep:hyper-rustls"]
 

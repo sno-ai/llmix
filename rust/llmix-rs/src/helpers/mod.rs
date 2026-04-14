@@ -4,5 +4,5 @@ pub mod anthropic;
 pub mod gemini;
 #[cfg(feature = "helpers-openai")]
 pub mod openai;
-#[cfg(feature = "helpers-snogpu")]
-pub mod snogpu;
+#[cfg(feature = "helpers-sno-gpu")]
+pub mod sno_gpu;
