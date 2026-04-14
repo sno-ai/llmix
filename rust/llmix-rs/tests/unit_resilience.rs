@@ -316,17 +316,6 @@ fn kill_switch_inactive_active_env_and_migration_paths_work() {
     assert_eq!(resolved.path(), active_path.as_path());
     restore_var("LLMIX_STATE_DIR", old_state_dir);
 
-    let migration_root = TestTempDir::new("killswitch-migrate");
-    let legacy_dir = migration_root.path().join("llmix2");
-    let current_dir = migration_root.path().join("llmix");
-    fs::create_dir_all(&legacy_dir).unwrap();
-    let legacy_path = legacy_dir.join("killswitch");
-    fs::write(&legacy_path, "").unwrap();
-
-    let migrated = KillSwitch::with_state_dir(&current_dir).unwrap();
-    assert_eq!(migrated.path(), current_dir.join("killswitch").as_path());
-    assert!(migrated.path().exists());
-    assert!(!legacy_path.exists());
 }
 
 #[tokio::test]

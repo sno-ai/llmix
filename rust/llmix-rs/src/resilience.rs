@@ -21,7 +21,6 @@ const DEFAULT_MAX_RETRY_AFTER_MS: u64 = 60_000;
 const MAX_COOLDOWN: Duration = Duration::from_secs(300);
 const KILLSWITCH_FILENAME: &str = "killswitch";
 const STATE_SUBDIR: &str = "llmix";
-const LEGACY_STATE_SUBDIR: &str = "llmix2";
 
 pub fn is_retryable(status_code: u16) -> bool {
     status_code == 408 || status_code == 429 || (500..=599).contains(&status_code)
@@ -36,36 +35,6 @@ pub fn resolve_state_dir() -> PathBuf {
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_owned());
     PathBuf::from(home).join(".local/state").join(STATE_SUBDIR)
-}
-
-fn resolve_legacy_state_dir(current_state_dir: &Path) -> Option<PathBuf> {
-    (current_state_dir.file_name().and_then(|name| name.to_str()) == Some(STATE_SUBDIR))
-        .then(|| {
-            current_state_dir
-                .parent()
-                .map(|parent| parent.join(LEGACY_STATE_SUBDIR))
-        })
-        .flatten()
-}
-
-fn migrate_legacy_killswitch(current_state_dir: &Path) -> io::Result<PathBuf> {
-    let current_path = current_state_dir.join(KILLSWITCH_FILENAME);
-    let Some(legacy_state_dir) = resolve_legacy_state_dir(current_state_dir) else {
-        return Ok(current_path);
-    };
-
-    if current_path.exists() {
-        return Ok(current_path);
-    }
-
-    let legacy_path = legacy_state_dir.join(KILLSWITCH_FILENAME);
-    if !legacy_path.exists() {
-        return Ok(current_path);
-    }
-
-    fs::create_dir_all(current_state_dir)?;
-    fs::rename(&legacy_path, &current_path)?;
-    Ok(current_path)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -299,7 +268,7 @@ impl KillSwitch {
 
     pub fn with_state_dir(path: impl AsRef<Path>) -> io::Result<Self> {
         Ok(Self {
-            path: migrate_legacy_killswitch(path.as_ref())?,
+            path: path.as_ref().join(KILLSWITCH_FILENAME),
         })
     }
 

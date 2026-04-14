@@ -36,7 +36,6 @@ _DEFAULT_JITTER_MS = 1_000
 _DEFAULT_MAX_RETRY_AFTER_MS = 60_000
 _KILLSWITCH_FILENAME = "killswitch"
 _KILLSWITCH_SUBDIR = "llmix"
-_LEGACY_KILLSWITCH_SUBDIR = "llmix2"
 
 
 # ---------------------------------------------------------------------------
@@ -66,31 +65,6 @@ def _resolve_state_dir() -> Path:
         return Path(xdg) / _KILLSWITCH_SUBDIR
 
     return Path.home() / ".local" / "state" / _KILLSWITCH_SUBDIR
-
-
-def _resolve_legacy_state_dir(current_state_dir: Path) -> Path | None:
-    if current_state_dir.name != _KILLSWITCH_SUBDIR:
-        return None
-    return current_state_dir.parent / _LEGACY_KILLSWITCH_SUBDIR
-
-
-def _migrate_legacy_killswitch(current_state_dir: Path) -> Path:
-    legacy_state_dir = _resolve_legacy_state_dir(current_state_dir)
-    current_path = current_state_dir / _KILLSWITCH_FILENAME
-    if legacy_state_dir is None or current_path.exists():
-        return current_path
-
-    legacy_path = legacy_state_dir / _KILLSWITCH_FILENAME
-    if not legacy_path.exists():
-        return current_path
-
-    current_state_dir.mkdir(parents=True, exist_ok=True)
-    legacy_path.replace(current_path)
-    warnings.warn(
-        f"migrated legacy kill switch from {legacy_path} to {current_path}",
-        stacklevel=3,
-    )
-    return current_path
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +274,7 @@ class KillSwitch:
 
     def __init__(self, state_dir: Path | None = None) -> None:
         base = state_dir or _resolve_state_dir()
-        self._path = _migrate_legacy_killswitch(base)
+        self._path = base / _KILLSWITCH_FILENAME
 
     @property
     def path(self) -> Path:
