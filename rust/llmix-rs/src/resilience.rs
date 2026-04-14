@@ -102,7 +102,7 @@ impl CircuitBreaker {
     }
 
     pub fn state(&self) -> CircuitState {
-        let mut inner = self.inner.lock().expect("circuit breaker mutex poisoned");
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         transition_open_to_half_open(&mut inner);
         inner.state
     }
@@ -110,12 +110,12 @@ impl CircuitBreaker {
     pub fn cooldown(&self) -> Duration {
         self.inner
             .lock()
-            .expect("circuit breaker mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .cooldown
     }
 
     pub fn check(&self) -> Result<(), CircuitOpenError> {
-        let mut inner = self.inner.lock().expect("circuit breaker mutex poisoned");
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         transition_open_to_half_open(&mut inner);
 
         match inner.state {
@@ -139,7 +139,7 @@ impl CircuitBreaker {
     }
 
     pub fn on_success(&self) {
-        let mut inner = self.inner.lock().expect("circuit breaker mutex poisoned");
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if inner.state == CircuitState::HalfOpen {
             inner.half_open_successes += 1;
             evaluate_half_open(
@@ -156,7 +156,7 @@ impl CircuitBreaker {
 
     pub fn on_failure(&self, status_code: Option<u16>, network_error: bool) {
         let retryable = network_error || status_code.is_some_and(is_retryable);
-        let mut inner = self.inner.lock().expect("circuit breaker mutex poisoned");
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
 
         if inner.state == CircuitState::HalfOpen {
             if retryable {
@@ -190,7 +190,7 @@ impl CircuitBreaker {
     }
 
     pub fn cancel_probe(&self) {
-        let mut inner = self.inner.lock().expect("circuit breaker mutex poisoned");
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if inner.state != CircuitState::HalfOpen {
             return;
         }
@@ -207,7 +207,7 @@ impl CircuitBreaker {
     }
 
     pub fn reset(&self) {
-        let mut inner = self.inner.lock().expect("circuit breaker mutex poisoned");
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.state = CircuitState::Closed;
         inner.consecutive_failures = 0;
         inner.opened_at = None;
@@ -359,7 +359,7 @@ where
     {
         let key = key.into();
         let (entry, is_leader) = {
-            let mut in_flight = self.in_flight.lock().expect("singleflight mutex poisoned");
+            let mut in_flight = self.in_flight.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(existing) = in_flight.get(&key) {
                 (existing.clone(), false)
             } else {
@@ -380,7 +380,7 @@ where
             }
             self.in_flight
                 .lock()
-                .expect("singleflight mutex poisoned")
+                .unwrap_or_else(|e| e.into_inner())
                 .remove(&key);
             entry.notify.notify_waiters();
             return result;
@@ -402,7 +402,7 @@ where
     pub fn in_flight_count(&self) -> usize {
         self.in_flight
             .lock()
-            .expect("singleflight mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .len()
     }
 }
@@ -612,7 +612,7 @@ impl FileLock {
             .write(true)
             .open(path)?;
         file.lock_exclusive()?;
-        *self.file.lock().expect("file lock mutex poisoned") = Some(file);
+        *self.file.lock().unwrap_or_else(|e| e.into_inner()) = Some(file);
         Ok(())
     }
 
@@ -625,7 +625,7 @@ impl FileLock {
     }
 
     pub fn release(&self) -> LlmixResult<()> {
-        let maybe_file = self.file.lock().expect("file lock mutex poisoned").take();
+        let maybe_file = self.file.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(file) = maybe_file {
             file.unlock()?;
         }
@@ -657,7 +657,7 @@ impl Drop for FileLock {
         if let Some(file) = self
             .file
             .get_mut()
-            .expect("file lock mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .take()
         {
             let _ = file.unlock();

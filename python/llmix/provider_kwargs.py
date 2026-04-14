@@ -11,6 +11,8 @@ Ported from repo-reference/llm-provider/src/llm_provider/providers/_registry.py
 import re
 from typing import Any, Protocol, TypedDict
 
+from llmix.env import get_gpu_base_url
+
 # =============================================================================
 # Types
 # =============================================================================
@@ -161,13 +163,17 @@ def sno_gpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]
     gpu_path: str | None = sno_gpu_opts.get("gpu_path")
 
     base_url = ctx.get("base_url") or ""
-    # Strip trailing /v1 if present so we can reconstruct cleanly
     base = base_url.rstrip("/")
+    if not base:
+        base = get_gpu_base_url().rstrip("/")
+    # Strip trailing /v1 if present so we can reconstruct cleanly
     if base.endswith("/v1"):
         base = base[:-3]
 
     if not base.strip():
-        raise ValueError("sno-gpu provider requires a non-empty base_url in config")
+        raise ValueError(
+            "sno-gpu provider requires a non-empty base_url in config or GPU_BASE_URL env var"
+        )
 
     if gpu_path:
         if '..' in gpu_path or not re.match(r'^[a-zA-Z0-9_/-]+$', gpu_path):

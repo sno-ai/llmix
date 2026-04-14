@@ -47,7 +47,7 @@ impl KeyPool {
     }
 
     pub fn select(&self) -> Result<String, KeyPoolExhaustedError> {
-        let mut state = self.state.lock().expect("key pool mutex poisoned");
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
 
         if state.dead.len() >= self.keys.len() {
             return Err(KeyPoolExhaustedError {
@@ -70,7 +70,7 @@ impl KeyPool {
     }
 
     pub fn rotate(&self) {
-        let mut state = self.state.lock().expect("key pool mutex poisoned");
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
 
         if state.dead.len() >= self.keys.len() {
             return;
@@ -92,18 +92,18 @@ impl KeyPool {
             ));
         }
 
-        let mut state = self.state.lock().expect("key pool mutex poisoned");
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.dead.insert(key.to_owned());
         Ok(())
     }
 
     pub fn is_exhausted(&self) -> bool {
-        let state = self.state.lock().expect("key pool mutex poisoned");
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.dead.len() >= self.keys.len()
     }
 
     pub fn alive_count(&self) -> usize {
-        let state = self.state.lock().expect("key pool mutex poisoned");
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         self.keys.len() - state.dead.len()
     }
 

@@ -138,7 +138,7 @@ impl CallPipeline {
     pub fn set_key_pool(&self, provider: impl Into<String>, pool: KeyPool) {
         self.key_pools
             .lock()
-            .expect("key pool registry mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .insert(provider.into(), Arc::new(pool));
     }
 
@@ -146,7 +146,7 @@ impl CallPipeline {
         let semaphores = self
             .semaphores
             .lock()
-            .expect("semaphore registry mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .values()
             .cloned()
             .collect::<Vec<_>>();
@@ -194,7 +194,7 @@ impl CallPipeline {
         let key = format!("{provider}:{}", base_url.as_ref());
         self.circuit_breakers
             .lock()
-            .expect("circuit breaker registry mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .get(&key)
             .map(|breaker| breaker.state())
     }
@@ -202,7 +202,7 @@ impl CallPipeline {
     pub fn get_semaphore_window(&self, provider: &str) -> Option<usize> {
         self.semaphores
             .lock()
-            .expect("semaphore registry mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .get(provider)
             .map(|semaphore| semaphore.window())
     }
@@ -605,7 +605,7 @@ impl CallPipeline {
         let mut circuit_breakers = self
             .circuit_breakers
             .lock()
-            .expect("circuit breaker registry mutex poisoned");
+            .unwrap_or_else(|e| e.into_inner());
         circuit_breakers
             .entry(key)
             .or_insert_with(|| {
@@ -624,7 +624,7 @@ impl CallPipeline {
         let mut semaphores = self
             .semaphores
             .lock()
-            .expect("semaphore registry mutex poisoned");
+            .unwrap_or_else(|e| e.into_inner());
         semaphores
             .entry(provider.to_owned())
             .or_insert_with(|| {
@@ -639,7 +639,7 @@ impl CallPipeline {
     fn get_key_pool(&self, provider: &str) -> Option<Arc<KeyPool>> {
         self.key_pools
             .lock()
-            .expect("key pool registry mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .get(provider)
             .cloned()
     }

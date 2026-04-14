@@ -76,7 +76,7 @@ impl AdaptiveSemaphore {
     pub fn window(&self) -> usize {
         self.state
             .lock()
-            .expect("adaptive semaphore mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .window
     }
 
@@ -91,7 +91,7 @@ impl AdaptiveSemaphore {
     pub fn closed(&self) -> bool {
         self.state
             .lock()
-            .expect("adaptive semaphore mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .closed
     }
 
@@ -99,7 +99,7 @@ impl AdaptiveSemaphore {
         let mut state = self
             .state
             .lock()
-            .expect("adaptive semaphore mutex poisoned");
+            .unwrap_or_else(|e| e.into_inner());
         state.available = state.window;
         state.waiters.clear();
         state.permits_to_absorb = 0;
@@ -111,7 +111,7 @@ impl AdaptiveSemaphore {
                 let mut state = self
                     .state
                     .lock()
-                    .expect("adaptive semaphore mutex poisoned");
+                    .unwrap_or_else(|e| e.into_inner());
 
                 if state.closed {
                     return Err(AdaptiveSemaphoreClosedError);
@@ -153,7 +153,7 @@ impl AdaptiveSemaphore {
             let mut state = self
                 .state
                 .lock()
-                .expect("adaptive semaphore mutex poisoned");
+                .unwrap_or_else(|e| e.into_inner());
             state.closed = true;
             state.waiters.drain(..).collect::<Vec<_>>()
         };
@@ -167,7 +167,7 @@ impl AdaptiveSemaphore {
         let mut state = self
             .state
             .lock()
-            .expect("adaptive semaphore mutex poisoned");
+            .unwrap_or_else(|e| e.into_inner());
 
         if state.permits_to_absorb > 0 {
             state.permits_to_absorb -= 1;
@@ -187,7 +187,7 @@ impl AdaptiveSemaphore {
         let mut state = self
             .state
             .lock()
-            .expect("adaptive semaphore mutex poisoned");
+            .unwrap_or_else(|e| e.into_inner());
         if state.closed || state.has_header_signal || state.window >= self.max {
             return;
         }
@@ -199,7 +199,7 @@ impl AdaptiveSemaphore {
         let mut state = self
             .state
             .lock()
-            .expect("adaptive semaphore mutex poisoned");
+            .unwrap_or_else(|e| e.into_inner());
         if state.closed {
             return;
         }
@@ -212,7 +212,7 @@ impl AdaptiveSemaphore {
         let mut state = self
             .state
             .lock()
-            .expect("adaptive semaphore mutex poisoned");
+            .unwrap_or_else(|e| e.into_inner());
         if state.closed || limit == 0 {
             return;
         }

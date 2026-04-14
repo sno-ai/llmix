@@ -9,6 +9,7 @@
  * Ported from repo-reference/llm-provider/src/llm_provider/providers/_registry.py
  */
 
+import { getGpuBaseUrl } from "./env";
 import { getModelCapabilities } from "./model-capabilities";
 import type { ProviderOptions } from "./types";
 
@@ -173,12 +174,17 @@ export function snoGpuTransformKwargs(
   const gpuPath = snoGpuOpts?.gpuPath;
 
   let base = (ctx.baseUrl ?? "").replace(/\/+$/, "");
+  if (!base) {
+    base = (getGpuBaseUrl() ?? "").replace(/\/+$/, "");
+  }
   if (base.endsWith("/v1")) {
     base = base.slice(0, -3);
   }
 
   if (!base) {
-    throw new Error("sno-gpu provider requires a non-empty base_url in config");
+    throw new Error(
+      "sno-gpu provider requires a non-empty base_url in config or GPU_BASE_URL env var",
+    );
   }
 
   if (gpuPath) {
