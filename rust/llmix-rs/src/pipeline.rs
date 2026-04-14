@@ -459,6 +459,26 @@ impl CallPipeline {
         );
         insert_cloned(
             &mut kwargs,
+            "top_k",
+            common.and_then(|map| clone_alias(map, &["top_k", "topK"])),
+        );
+        insert_cloned(
+            &mut kwargs,
+            "presence_penalty",
+            common.and_then(|map| clone_alias(map, &["presence_penalty", "presencePenalty"])),
+        );
+        insert_cloned(
+            &mut kwargs,
+            "frequency_penalty",
+            common.and_then(|map| clone_alias(map, &["frequency_penalty", "frequencyPenalty"])),
+        );
+        insert_cloned(
+            &mut kwargs,
+            "stop",
+            common.and_then(|map| clone_alias(map, &["stop", "stop_sequences", "stopSequences"])),
+        );
+        insert_cloned(
+            &mut kwargs,
             "seed",
             common.and_then(|map| clone_alias(map, &["seed"])),
         );

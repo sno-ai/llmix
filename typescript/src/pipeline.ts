@@ -196,6 +196,10 @@ export class CallPipeline {
       temperature: config.common?.temperature,
       top_p: config.common?.topP,
       max_tokens: config.common?.maxOutputTokens,
+      top_k: config.common?.topK,
+      presence_penalty: config.common?.presencePenalty,
+      frequency_penalty: config.common?.frequencyPenalty,
+      stop: config.common?.stopSequences,
       seed: config.common?.seed,
       response_format: (config as unknown as Record<string, unknown>)["responseFormat"],
     };
