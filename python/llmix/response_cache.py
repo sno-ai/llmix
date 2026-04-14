@@ -72,14 +72,18 @@ SKIP_STRATEGIES: frozenset[str] = frozenset({"native", "gateway", "disabled"})
 CACHE_KEY_FIELDS = (
     "baseUrl",
     "enableThinking",
+    "frequencyPenalty",
     "maxOutputTokens",
     "messages",
     "model",
+    "presencePenalty",
     "provider",
     "providerOptions",
     "responseFormat",
     "seed",
+    "stopSequences",
     "temperature",
+    "topK",
     "topP",
 )
 

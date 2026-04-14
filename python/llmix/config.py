@@ -22,6 +22,7 @@ from llmix.types import ConfigAccessError, ConfigNotFoundError, InvalidConfigErr
 
 # Legacy compatibility mapping reused from the retired config loader.
 _CAMEL_TO_SNAKE: dict[str, str] = {
+    "baseUrl": "base_url",
     "maxOutputTokens": "max_output_tokens",
     "maxRetries": "max_retries",
     "topP": "top_p",

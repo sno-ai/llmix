@@ -222,7 +222,10 @@ pub fn sno_gpu_transform_kwargs(
 
     let rebuilt = match gpu_path {
         Some(path) if !path.is_empty() => {
-            if path.contains("..") || !is_valid_gpu_path(path) {
+            if path.len() > MAX_GPU_PATH_LEN
+                || path.contains("..")
+                || !is_valid_gpu_path(path)
+            {
                 return Err(LlmixError::InvalidProviderKwargsConfig(format!(
                     "Invalid gpu_path: {path:?}"
                 )));
@@ -259,6 +262,8 @@ fn get_object_alias<'a>(
 fn get_value_alias<'a>(map: &'a Map<String, Value>, keys: &[&str]) -> Option<&'a Value> {
     keys.iter().find_map(|key| map.get(*key))
 }
+
+const MAX_GPU_PATH_LEN: usize = 256;
 
 fn is_valid_gpu_path(path: &str) -> bool {
     path.chars()

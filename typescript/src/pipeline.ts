@@ -98,6 +98,13 @@ export interface PipelineConfig {
   killSwitchStateDir?: string;
   transformKwargsOverrides?: Record<string, TransformKwargsCallback>;
   responseCache?: TwoTierCache;
+  /**
+   * When true (default), ``CallPipeline.close()`` also closes
+   * ``responseCache``. Set to false when sharing one ``TwoTierCache`` across
+   * multiple pipelines so the first ``close()`` does not tear down Redis for
+   * the others.
+   */
+  closeResponseCache?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +129,7 @@ export class CallPipeline {
 
   private fileLockPromise: Promise<FileLockLike> | null = null;
   private readonly responseCache: TwoTierCache | undefined;
+  private readonly closeResponseCacheOnShutdown: boolean = true;
 
   constructor(config: PipelineConfig) {
     this.dispatch = config.dispatch;
@@ -140,6 +148,7 @@ export class CallPipeline {
       ...(config.transformKwargsOverrides ?? {}),
     };
     this.responseCache = config.responseCache;
+    this.closeResponseCacheOnShutdown = config.closeResponseCache ?? true;
   }
 
   /** Register a key pool for a provider. */
@@ -255,6 +264,10 @@ export class CallPipeline {
           responseFormat: (config as unknown as Record<string, unknown>)["responseFormat"],
           seed: config.common?.seed,
           topP: config.common?.topP,
+          topK: config.common?.topK,
+          presencePenalty: config.common?.presencePenalty,
+          frequencyPenalty: config.common?.frequencyPenalty,
+          stopSequences: config.common?.stopSequences,
           providerOptions: config.providerOptions as Record<string, unknown> | undefined,
         });
         const hit = await this.responseCache.get(cacheKey);
@@ -289,6 +302,10 @@ export class CallPipeline {
           responseFormat: (config as unknown as Record<string, unknown>)["responseFormat"],
           seed: config.common?.seed,
           topP: config.common?.topP,
+          topK: config.common?.topK,
+          presencePenalty: config.common?.presencePenalty,
+          frequencyPenalty: config.common?.frequencyPenalty,
+          stopSequences: config.common?.stopSequences,
           providerOptions: config.providerOptions,
         }, sortReplacer),
       ));
@@ -495,10 +512,13 @@ export class CallPipeline {
     return stripThinking(content);
   }
 
-  /** Release all semaphores and clean up resources. */
-  close(): void {
+  /** Release all semaphores and clean up resources (including Redis L2). */
+  async close(): Promise<void> {
     for (const sem of this.semaphores.values()) {
       sem.close();
+    }
+    if (this.responseCache && this.closeResponseCacheOnShutdown) {
+      await this.responseCache.close();
     }
   }
 

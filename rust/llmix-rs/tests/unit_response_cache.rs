@@ -18,6 +18,10 @@ fn sample_params() -> CacheKeyParams {
         provider_options: None,
         seed: None,
         top_p: None,
+        top_k: None,
+        presence_penalty: None,
+        frequency_penalty: None,
+        stop_sequences: None,
     }
 }
 

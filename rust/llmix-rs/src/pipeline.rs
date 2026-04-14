@@ -514,6 +514,13 @@ impl CallPipeline {
             provider_options: self.provider_options_value(config),
             seed: common.and_then(|map| i64_alias(map, &["seed"])),
             top_p: common.and_then(|map| f64_alias(map, &["top_p", "topP"])),
+            top_k: common.and_then(|map| i64_alias(map, &["top_k", "topK"])),
+            presence_penalty: common
+                .and_then(|map| f64_alias(map, &["presence_penalty", "presencePenalty"])),
+            frequency_penalty: common
+                .and_then(|map| f64_alias(map, &["frequency_penalty", "frequencyPenalty"])),
+            stop_sequences: common
+                .and_then(|map| string_array_alias(map, &["stop_sequences", "stopSequences"])),
         })
     }
 
@@ -791,6 +798,19 @@ fn u64_alias(map: &Map<String, Value>, aliases: &[&str]) -> Option<u64> {
                     .filter(|candidate| *candidate >= 0)
                     .map(|candidate| candidate as u64)
             })
+        })
+}
+
+fn string_array_alias(map: &Map<String, Value>, aliases: &[&str]) -> Option<Vec<String>> {
+    aliases
+        .iter()
+        .find_map(|alias| map.get(*alias))
+        .and_then(Value::as_array)
+        .map(|array| {
+            array
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_owned))
+                .collect()
         })
 }
 

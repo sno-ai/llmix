@@ -125,6 +125,11 @@ class PipelineConfig:
     kill_switch_state_dir: str | None = None
     transform_kwargs_overrides: dict[str, TransformKwargsCallback] | None = None
     response_cache: TwoTierCache | None = None
+    # When True (default), ``CallPipeline.close()`` also closes
+    # ``response_cache``. Set to False when sharing one ``TwoTierCache`` across
+    # multiple pipelines so the first ``close()`` does not tear down Redis for
+    # the others.
+    close_response_cache: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +162,7 @@ class CallPipeline:
         self._transform_kwargs: dict[str, TransformKwargsCallback] = {**PROVIDER_KWARGS_REGISTRY, **(config.transform_kwargs_overrides or {})}
 
         self._response_cache = config.response_cache
+        self._close_response_cache = config.close_response_cache
 
     def set_key_pool(self, provider: str, pool: KeyPool) -> None:
         """Register a key pool for a provider."""
@@ -164,7 +170,7 @@ class CallPipeline:
 
     def close(self) -> None:
         """Release pipeline-owned resources."""
-        if self._response_cache is not None:
+        if self._response_cache is not None and self._close_response_cache:
             self._response_cache.close()
 
     def _get_circuit_breaker(self, provider: str, base_url: str = "") -> CircuitBreaker:
@@ -231,7 +237,7 @@ class CallPipeline:
             "top_p": common.get("top_p"),
             "enable_thinking": common.get("enable_thinking"),
             "provider_options": config.get("provider_options") or {},
-            "base_url": config.get("baseUrl", ""),
+            "base_url": config.get("base_url", config.get("baseUrl", "")),
         }
         return apply_transform_kwargs(ctx, kwargs, transform_fn)
 
@@ -241,7 +247,7 @@ class CallPipeline:
         base_url = kwargs.get("base_url")
         if isinstance(base_url, str) and base_url.strip():
             return base_url
-        return str(config.get("baseUrl", "") or "")
+        return str(config.get("base_url", config.get("baseUrl", "")) or "")
 
     async def call(self, call_input: CallInput) -> CallResponse:
         """Execute the 19-step call flow."""

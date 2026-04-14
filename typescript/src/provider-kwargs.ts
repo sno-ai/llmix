@@ -182,8 +182,12 @@ export function snoGpuTransformKwargs(
   }
 
   if (gpuPath) {
-    // Validate gpuPath: no traversal, alphanumeric + hyphens/underscores/slashes only
-    if (gpuPath.includes("..") || !/^[a-zA-Z0-9_/-]+$/.test(gpuPath)) {
+    // Validate gpuPath: length cap, no traversal, alphanumeric + hyphens/underscores/slashes only
+    if (
+      gpuPath.length > 256 ||
+      gpuPath.includes("..") ||
+      !/^[a-zA-Z0-9_/-]+$/.test(gpuPath)
+    ) {
       throw new Error(`Invalid gpu_path: "${gpuPath}"`);
     }
     result["baseUrl"] = `${base}/${gpuPath}/v1`;

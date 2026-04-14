@@ -53,14 +53,18 @@ const SKIP_STRATEGIES: ReadonlySet<string> = new Set([
 const CACHE_KEY_FIELDS = [
   "baseUrl",
   "enableThinking",
+  "frequencyPenalty",
   "maxOutputTokens",
   "messages",
   "model",
+  "presencePenalty",
   "provider",
   "providerOptions",
   "responseFormat",
   "seed",
+  "stopSequences",
   "temperature",
+  "topK",
   "topP",
 ] as const;
 
@@ -107,6 +111,10 @@ export interface CacheKeyParams {
   providerOptions?: Record<string, unknown> | null | undefined;
   seed?: number | null | undefined;
   topP?: number | null | undefined;
+  topK?: number | null | undefined;
+  presencePenalty?: number | null | undefined;
+  frequencyPenalty?: number | null | undefined;
+  stopSequences?: string[] | null | undefined;
 }
 
 interface CachedValue {

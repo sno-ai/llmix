@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import warnings
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
@@ -61,6 +62,21 @@ def _require_api_key(api_key: str | None, env_value: str | None, *, env_name: st
     if resolved and resolved.strip():
         return resolved
     raise ProviderError(f"{provider} provider requires {env_name}")
+
+
+def _warn_client_opts_out(client: object | None, provider: str) -> None:
+    """Warn once per factory creation when the caller supplies a prebuilt
+    provider client: its baked-in ``api_key`` bypasses the pipeline's KeyPool
+    rotation (``rotate()``/``mark_dead()`` still run but have no effect).
+    """
+    if client is None:
+        return
+    warnings.warn(
+        f"{provider}_dispatch(client=...) opts out of KeyPool rotation: the "
+        "prebuilt client's api_key is used on every call and ctx.api_key is "
+        "ignored.",
+        stacklevel=3,
+    )
 
 
 def _coerce_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -249,6 +265,8 @@ def _map_deepseek_model(model: str) -> str:
 
 
 def openai_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDispatchFn:
+    _warn_client_opts_out(client, "openai")
+
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         openai_client_cls = cast("type[AsyncOpenAIClient]", _load_provider_attr("AsyncOpenAIClient"))
         resolved_client = client or openai_client_cls(
@@ -269,6 +287,8 @@ def openai_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDispatch
 
 
 def anthropic_dispatch(client: AsyncAnthropicClient | None = None) -> ProviderDispatchFn:
+    _warn_client_opts_out(client, "anthropic")
+
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         anthropic_client_cls = cast("type[AsyncAnthropicClient]", _load_provider_attr("AsyncAnthropicClient"))
         api_key = _require_api_key(ctx.api_key, get_anthropic_api_key(), env_name="ANTHROPIC_API_KEY", provider="anthropic")
@@ -287,6 +307,8 @@ def anthropic_dispatch(client: AsyncAnthropicClient | None = None) -> ProviderDi
 
 
 def gemini_dispatch(client: AsyncGeminiClient | None = None) -> ProviderDispatchFn:
+    _warn_client_opts_out(client, "gemini")
+
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         gemini_client_cls = cast("type[AsyncGeminiClient]", _load_provider_attr("AsyncGeminiClient"))
         resolved_client = client or gemini_client_cls(
@@ -309,6 +331,8 @@ def gemini_dispatch(client: AsyncGeminiClient | None = None) -> ProviderDispatch
 
 
 def deepinfra_dispatch(client: DeepInfraClient | None = None) -> ProviderDispatchFn:
+    _warn_client_opts_out(client, "deepinfra")
+
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         deepinfra_options = _resolve_provider_options(ctx, "deepinfra")
         common = _resolve_common(ctx)
@@ -337,6 +361,8 @@ def deepinfra_dispatch(client: DeepInfraClient | None = None) -> ProviderDispatc
 
 
 def openrouter_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDispatchFn:
+    _warn_client_opts_out(client, "openrouter")
+
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         resolved_model = _map_deepseek_model(ctx.model)
         openai_client_cls = cast("type[AsyncOpenAIClient]", _load_provider_attr("AsyncOpenAIClient"))
@@ -358,6 +384,8 @@ def openrouter_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDisp
 
 
 def novita_dispatch(client: NovitaClient | None = None) -> ProviderDispatchFn:
+    _warn_client_opts_out(client, "novita")
+
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         novita_options = _resolve_provider_options(ctx, "novita")
         common = _resolve_common(ctx)
@@ -386,6 +414,8 @@ def novita_dispatch(client: NovitaClient | None = None) -> ProviderDispatchFn:
 
 
 def sno_gpu_dispatch(client: SnoGpuClient | None = None) -> ProviderDispatchFn:
+    _warn_client_opts_out(client, "sno_gpu")
+
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         sno_gpu_options = _resolve_provider_options(ctx, "sno-gpu")
         common = _resolve_common(ctx)
@@ -414,6 +444,8 @@ def sno_gpu_dispatch(client: SnoGpuClient | None = None) -> ProviderDispatchFn:
 
 
 def together_dispatch(client: TogetherClient | None = None) -> ProviderDispatchFn:
+    _warn_client_opts_out(client, "together")
+
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         together_client_cls = cast("type[TogetherClient]", _load_provider_attr("TogetherClient"))
         resolved_client = client or together_client_cls(

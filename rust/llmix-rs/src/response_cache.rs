@@ -17,19 +17,21 @@ use tokio::sync::Mutex;
 pub const CACHE_KEY_PREFIX: &str = "llmix:resp:";
 const DEFAULT_L1_MAX: usize = 1000;
 const DEFAULT_TTL_SECONDS: u64 = 3600;
-const DEFAULT_L2_TTL_SECONDS: u64 = 3600;
-
-const CACHE_KEY_FIELDS: [&str; 11] = [
+const CACHE_KEY_FIELDS: [&str; 15] = [
     "baseUrl",
     "enableThinking",
+    "frequencyPenalty",
     "maxOutputTokens",
     "messages",
     "model",
+    "presencePenalty",
     "provider",
     "providerOptions",
     "responseFormat",
     "seed",
+    "stopSequences",
     "temperature",
+    "topK",
     "topP",
 ];
 
@@ -59,6 +61,14 @@ pub struct CacheKeyParams {
     pub seed: Option<i64>,
     #[serde(default)]
     pub top_p: Option<f64>,
+    #[serde(default)]
+    pub top_k: Option<i64>,
+    #[serde(default)]
+    pub presence_penalty: Option<f64>,
+    #[serde(default)]
+    pub frequency_penalty: Option<f64>,
+    #[serde(default)]
+    pub stop_sequences: Option<Vec<String>>,
 }
 
 impl CacheKeyParams {
@@ -100,6 +110,22 @@ impl CacheKeyParams {
         }
         if let Some(value) = finite_number(self.top_p) {
             fields.insert("topP", Value::Number(value));
+        }
+        if let Some(value) = self.top_k {
+            fields.insert("topK", Value::Number(Number::from(value)));
+        }
+        if let Some(value) = finite_number(self.presence_penalty) {
+            fields.insert("presencePenalty", Value::Number(value));
+        }
+        if let Some(value) = finite_number(self.frequency_penalty) {
+            fields.insert("frequencyPenalty", Value::Number(value));
+        }
+        if let Some(stop_sequences) = self.stop_sequences.as_ref() {
+            let array = stop_sequences
+                .iter()
+                .map(|value| Value::String(value.clone()))
+                .collect::<Vec<_>>();
+            fields.insert("stopSequences", Value::Array(array));
         }
 
         let mut map = Map::new();
@@ -354,7 +380,8 @@ impl TwoTierCache {
             return;
         };
 
-        let ttl = self.ttl_seconds.max(DEFAULT_L2_TTL_SECONDS);
+        // Constructor clamps ttl_seconds to >= 1, so use it directly.
+        let ttl = self.ttl_seconds;
         let payload = serde_json::to_string(&RedisPayload {
             data: &entry.data,
             cached_at: entry.cached_at,
@@ -672,6 +699,10 @@ mod tests {
             provider_options: None,
             seed: None,
             top_p: None,
+            top_k: None,
+            presence_penalty: None,
+            frequency_penalty: None,
+            stop_sequences: None,
         };
         let nan = CacheKeyParams {
             temperature: Some(f64::NAN),

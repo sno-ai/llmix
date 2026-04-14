@@ -134,6 +134,10 @@ async fn openai_live_response_round_trip_uses_real_redis_l2() {
         provider_options: None,
         seed: None,
         top_p: None,
+        top_k: None,
+        presence_penalty: None,
+        frequency_penalty: None,
+        stop_sequences: None,
     })
     .expect("cache key should serialize");
 
