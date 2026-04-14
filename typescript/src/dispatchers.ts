@@ -349,7 +349,21 @@ async function generateWithModel(
   const maxOutputTokens = resolveMaxOutputTokens(ctx.kwargs);
   const text = resolveText(ctx.kwargs);
   const responseFormat = resolveResponseFormat(ctx.kwargs);
-  const output = text?.format === "text" ? Output.text() : undefined;
+  const output =
+    text?.format === "text"
+      ? Output.text()
+      : responseFormat?.type === "json" && responseFormat.schema !== undefined
+        ? Output.object({
+            schema: responseFormat.schema as never,
+            ...(responseFormat.name !== undefined ? { name: responseFormat.name } : {}),
+            ...(responseFormat.description !== undefined ? { description: responseFormat.description } : {}),
+          })
+        : responseFormat?.type === "json"
+          ? Output.json({
+              ...(responseFormat.name !== undefined ? { name: responseFormat.name } : {}),
+              ...(responseFormat.description !== undefined ? { description: responseFormat.description } : {}),
+            })
+          : undefined;
   const tools = resolveTools(ctx.kwargs);
   const topP = typeof ctx.kwargs["top_p"] === "number" ? ctx.kwargs["top_p"] : undefined;
   const topK = typeof ctx.kwargs["top_k"] === "number" ? ctx.kwargs["top_k"] : undefined;
@@ -371,7 +385,6 @@ async function generateWithModel(
     ...(seed !== undefined ? { seed } : {}),
     ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
     ...(output ? { output } : {}),
-    ...(responseFormat ? { responseFormat } : {}),
     ...(tools ? { tools } : {}),
     ...(providerOptions ? { providerOptions } : {}),
   });

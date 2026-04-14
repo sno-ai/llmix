@@ -190,6 +190,7 @@ async fn openai_helper_builds_chat_request_and_parses_response() {
                 "temperature": 0,
                 "max_tokens": 32,
                 "seed": 7,
+                "top_k": 9,
                 "response_format": { "type": "json_object" }
             }))
             .expect("request kwargs should deserialize"),
@@ -215,6 +216,8 @@ async fn openai_helper_builds_chat_request_and_parses_response() {
     assert_eq!(request.body["temperature"], json!(0));
     assert_eq!(request.body["max_tokens"], json!(32));
     assert_eq!(request.body["seed"], json!(7));
+    assert_eq!(request.body.get("top_k"), None);
+    assert_eq!(request.body.get("topK"), None);
     assert_eq!(
         request.body["response_format"],
         json!({ "type": "json_object" })
@@ -321,7 +324,10 @@ async fn anthropic_helper_extracts_system_messages_and_parses_response() {
             ],
             kwargs: serde_json::from_value(json!({
                 "temperature": 0.2,
-                "stop": ["END"]
+                "stop": ["END"],
+                "presence_penalty": 0.3,
+                "frequencyPenalty": 0.4,
+                "response_format": { "type": "json_object" }
             }))
             .expect("request kwargs should deserialize"),
             config: json!({}),
@@ -351,6 +357,12 @@ async fn anthropic_helper_extracts_system_messages_and_parses_response() {
     assert_eq!(request.body["temperature"], json!(0.2));
     assert_eq!(request.body["stop_sequences"], json!(["END"]));
     assert_eq!(request.body["max_tokens"], json!(1024));
+    assert_eq!(request.body.get("presence_penalty"), None);
+    assert_eq!(request.body.get("presencePenalty"), None);
+    assert_eq!(request.body.get("frequency_penalty"), None);
+    assert_eq!(request.body.get("frequencyPenalty"), None);
+    assert_eq!(request.body.get("response_format"), None);
+    assert_eq!(request.body.get("responseFormat"), None);
 
     assert_eq!(result.content, "Ahoy there");
     assert_eq!(result.model, "claude-sonnet-4-20250514");
@@ -453,6 +465,10 @@ async fn gemini_helper_formats_system_instruction_and_continuation() {
                 "temperature": 0,
                 "max_tokens": 32,
                 "top_p": 0.9,
+                "top_k": 7,
+                "stop": ["DONE"],
+                "presencePenalty": 0.2,
+                "frequency_penalty": 0.1,
                 "thinking_config": {
                     "thinking_budget": 256
                 }
@@ -502,10 +518,19 @@ async fn gemini_helper_formats_system_instruction_and_continuation() {
         json!(32)
     );
     assert_eq!(request.body["generationConfig"]["topP"], json!(0.9));
+    assert_eq!(request.body["generationConfig"]["topK"], json!(7));
+    assert_eq!(
+        request.body["generationConfig"]["stopSequences"],
+        json!(["DONE"])
+    );
     assert_eq!(
         request.body["generationConfig"]["thinkingConfig"]["thinkingBudget"],
         json!(256)
     );
+    assert_eq!(request.body.get("presence_penalty"), None);
+    assert_eq!(request.body.get("presencePenalty"), None);
+    assert_eq!(request.body.get("frequency_penalty"), None);
+    assert_eq!(request.body.get("frequencyPenalty"), None);
 
     assert_eq!(result.content, "78");
     assert_eq!(result.model, "gemini-2.5-flash-002");

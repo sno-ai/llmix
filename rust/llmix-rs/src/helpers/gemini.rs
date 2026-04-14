@@ -143,6 +143,12 @@ fn build_request_body(ctx: &DispatchContext) -> Map<String, Value> {
     if let Some(value) = body.remove("top_p").or_else(|| body.remove("topP")) {
         generation_config.insert("topP".to_string(), value);
     }
+    if let Some(value) = body.remove("top_k").or_else(|| body.remove("topK")) {
+        generation_config.insert("topK".to_string(), value);
+    }
+    if let Some(value) = body.remove("stop").or_else(|| body.remove("stopSequences")) {
+        generation_config.insert("stopSequences".to_string(), value);
+    }
     if let Some(value) = body
         .remove("thinking_config")
         .or_else(|| body.remove("thinkingConfig"))
@@ -152,6 +158,10 @@ fn build_request_body(ctx: &DispatchContext) -> Map<String, Value> {
             normalize_thinking_config(value),
         );
     }
+    body.remove("presence_penalty");
+    body.remove("presencePenalty");
+    body.remove("frequency_penalty");
+    body.remove("frequencyPenalty");
     if !generation_config.is_empty() {
         body.insert(
             "generationConfig".to_string(),

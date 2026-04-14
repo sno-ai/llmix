@@ -141,6 +141,8 @@ fn build_request_body(ctx: &DispatchContext) -> Map<String, Value> {
     let mut body = ctx.kwargs.clone();
     body.remove("base_url");
     body.remove("baseUrl");
+    body.remove("top_k");
+    body.remove("topK");
     body.insert("model".to_string(), Value::String(ctx.model.clone()));
     body.insert("messages".to_string(), Value::Array(ctx.messages.clone()));
     body
