@@ -226,6 +226,55 @@ async fn successful_dispatch_caches_raw_content_and_preserves_tool_calls() {
 }
 
 #[tokio::test]
+async fn common_stop_alias_changes_cache_key() {
+    let dispatch_calls = Arc::new(AtomicUsize::new(0));
+    let seen_dispatch_calls = dispatch_calls.clone();
+    let cache = memory_cache();
+
+    let pipeline = CallPipeline::new(fast_pipeline_config(
+        move |ctx: DispatchContext| {
+            let seen_dispatch_calls = seen_dispatch_calls.clone();
+            async move {
+                seen_dispatch_calls.fetch_add(1, Ordering::SeqCst);
+                let stop_value = ctx
+                    .kwargs
+                    .get("stop")
+                    .and_then(Value::as_array)
+                    .and_then(|values| values.first())
+                    .and_then(Value::as_str)
+                    .expect("stop alias should be forwarded");
+                Ok(success_result(stop_value))
+            }
+        },
+        Some(cache),
+    ))
+    .expect("pipeline should construct");
+    pipeline.set_key_pool(
+        "openai",
+        KeyPool::new(vec!["key-a".to_owned()]).expect("key pool should construct"),
+    );
+
+    let mut first = base_input();
+    first.config["common"]["stop"] = json!(["END_A"]);
+
+    let first_response = pipeline.call(first).await;
+
+    assert!(first_response.success);
+    assert_eq!(first_response.content, "END_A");
+    assert_eq!(first_response.cache_hit, None);
+
+    let mut second = base_input();
+    second.config["common"]["stop"] = json!(["END_B"]);
+
+    let second_response = pipeline.call(second).await;
+
+    assert!(second_response.success);
+    assert_eq!(second_response.content, "END_B");
+    assert_eq!(second_response.cache_hit, None);
+    assert_eq!(dispatch_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
 async fn rate_limit_rotates_to_next_key_before_retrying() {
     let seen_keys = Arc::new(Mutex::new(Vec::<String>::new()));
     let dispatch_calls = Arc::new(AtomicUsize::new(0));

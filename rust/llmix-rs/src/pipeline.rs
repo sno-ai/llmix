@@ -549,8 +549,9 @@ impl CallPipeline {
                 .and_then(|map| f64_alias(map, &["presence_penalty", "presencePenalty"])),
             frequency_penalty: common
                 .and_then(|map| f64_alias(map, &["frequency_penalty", "frequencyPenalty"])),
-            stop_sequences: common
-                .and_then(|map| string_array_alias(map, &["stop_sequences", "stopSequences"])),
+            stop_sequences: common.and_then(|map| {
+                string_array_alias(map, &["stop_sequences", "stopSequences", "stop"])
+            }),
         })
     }
 
