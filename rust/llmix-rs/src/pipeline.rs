@@ -283,8 +283,17 @@ impl CallPipeline {
             thinking_content,
         } = self.apply_thinking_strip(&provider_result.content, &input.config);
 
+        // Skip cache write when the response contains tool_calls: CachedValue
+        // stores only the text body, so a future hit would silently drop the
+        // function-call structure. See GH issue #6.
+        let has_tool_calls = provider_result
+            .tool_calls
+            .as_ref()
+            .is_some_and(|calls| !calls.is_empty());
         if let (Some(cache), Some(key)) = (self.response_cache.as_ref(), cache_key.as_ref()) {
-            cache.set(key, &provider_result.content).await;
+            if !has_tool_calls {
+                cache.set(key, &provider_result.content).await;
+            }
         }
 
         Ok(CallResponse {

@@ -376,7 +376,10 @@ class CallPipeline:
                 content, thinking_content = strip_thinking(result.content)
 
             # Step 18: Cache write (raw content, pre-strip)
-            if self._response_cache and cache_key:
+            # Skip cache write when the response contains tool_calls: CachedValue
+            # stores only the text body, so a future hit would silently drop the
+            # function-call structure. See GH issue #6.
+            if self._response_cache and cache_key and not result.tool_calls:
                 await self._response_cache.aset(cache_key, result.content)
 
             # Step 19: Telemetry -- placeholder
