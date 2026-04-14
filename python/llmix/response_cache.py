@@ -146,7 +146,7 @@ def generate_cache_key(params: dict[str, Any]) -> str:
             continue
         canonical[field_name] = value
 
-    json_str = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    json_str = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     hash_hex = hashlib.sha256(json_str.encode("utf-8")).hexdigest()
     return f"{CACHE_KEY_PREFIX}{hash_hex}"
 
