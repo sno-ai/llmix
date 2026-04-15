@@ -12,16 +12,17 @@ The crate is usable today, but it should still be treated as beta. The public su
 - Provider kwargs normalization for OpenAI, Anthropic, Gemini, OpenRouter, and `sno-gpu`
 - Thinking-token stripping
 - YAML config loading with `load_config` and `load_config_preset`
-- Optional helper modules for OpenAI-compatible, Anthropic, Gemini, and `sno-gpu` HTTP dispatch
+- Optional provider modules for OpenAI-compatible, Anthropic, Gemini, and `sno-gpu` HTTP dispatch
 
 ## Feature flags
 
 - Default features: core crate only
 - `redis`: enable Redis-backed L2 response cache
-- `helpers-openai`: enable the OpenAI chat helper
-- `helpers-sno-gpu`: enable the `sno-gpu` helper
-- `helpers-anthropic`: enable the Anthropic chat helper
-- `helpers-gemini`: enable the Gemini chat helper
+- `providers-openai`: enable the OpenAI chat provider adapter
+- `providers-sno-gpu`: enable the `sno-gpu` provider adapter
+- `providers-anthropic`: enable the Anthropic chat provider adapter
+- `providers-gemini`: enable the Gemini chat provider adapter
+- `helpers-*`: legacy aliases that forward to the matching `providers-*` feature
 
 ## Minimal example
 
@@ -79,11 +80,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 The same callback shape works when you replace the inline closure with your own async function or an adapter around a provider-specific client.
 
-## Optional helper modules
+## Optional provider modules
 
-The core crate does not require provider SDKs. If you want a batteries-included HTTP adapter, enable one of the helper features and wire the helper into `PipelineConfig::new(...)`.
+The core crate does not require provider SDKs. If you want a batteries-included HTTP adapter, enable one of the `providers-*` features and wire the corresponding helper into `PipelineConfig::new(...)`.
 
-Helpers are deliberately optional because the LLMix contract is the orchestration layer, not a mandatory SDK abstraction.
+These provider adapters are deliberately optional because the LLMix contract is the orchestration layer, not a mandatory SDK abstraction.
 
 ## Shared parity tests
 
@@ -91,7 +92,7 @@ The Rust crate consumes the same fixtures used by the rest of the repo under `te
 
 - `cargo test --all-features` runs the local parity and unit suites
 - live provider tests are opt-in and only run when `LLMIX_RUN_LIVE_TESTS=1`
-- helper-specific live tests also require the matching provider credentials in the environment
+- provider-specific live tests also require the matching provider credentials in the environment
 
 ## Monorepo location
 
