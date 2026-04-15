@@ -1,4 +1,4 @@
-#![cfg(all(feature = "redis", feature = "helpers-openai"))]
+#![cfg(all(feature = "redis", feature = "providers-openai"))]
 
 use llmix_rs::{
     generate_cache_key, CacheHitTier, CacheKeyParams, CallInput, CallPipeline, KeyPool,

@@ -8,21 +8,29 @@ pub mod config;
 pub mod dispatch;
 pub mod error;
 #[cfg(any(
-    feature = "helpers-openai",
-    feature = "helpers-sno-gpu",
-    feature = "helpers-anthropic",
-    feature = "helpers-gemini"
+    feature = "providers-openai",
+    feature = "providers-sno-gpu",
+    feature = "providers-anthropic",
+    feature = "providers-gemini"
 ))]
 #[cfg_attr(
     docsrs,
     doc(cfg(any(
-        feature = "helpers-openai",
-        feature = "helpers-sno-gpu",
-        feature = "helpers-anthropic",
-        feature = "helpers-gemini"
+        feature = "providers-openai",
+        feature = "providers-sno-gpu",
+        feature = "providers-anthropic",
+        feature = "providers-gemini"
     )))
 )]
-pub mod helpers;
+pub mod providers;
+#[cfg(any(
+    feature = "providers-openai",
+    feature = "providers-sno-gpu",
+    feature = "providers-anthropic",
+    feature = "providers-gemini"
+))]
+#[doc(hidden)]
+pub use providers as helpers;
 pub mod key_pool;
 pub mod pipeline;
 pub mod provider_kwargs;
@@ -43,18 +51,18 @@ pub use error::{
     InvalidConfigError, KeyPoolExhaustedError, KillSwitchActiveError, LlmixError, LlmixResult,
     ProviderError, SecurityError,
 };
-#[cfg(feature = "helpers-anthropic")]
-#[cfg_attr(docsrs, doc(cfg(feature = "helpers-anthropic")))]
-pub use helpers::anthropic::AnthropicChatHelper;
-#[cfg(feature = "helpers-gemini")]
-#[cfg_attr(docsrs, doc(cfg(feature = "helpers-gemini")))]
-pub use helpers::gemini::GeminiChatHelper;
-#[cfg(feature = "helpers-openai")]
-#[cfg_attr(docsrs, doc(cfg(feature = "helpers-openai")))]
-pub use helpers::openai::OpenAiChatHelper;
-#[cfg(feature = "helpers-sno-gpu")]
-#[cfg_attr(docsrs, doc(cfg(feature = "helpers-sno-gpu")))]
-pub use helpers::sno_gpu::SnoGpuChatHelper;
+#[cfg(feature = "providers-anthropic")]
+#[cfg_attr(docsrs, doc(cfg(feature = "providers-anthropic")))]
+pub use providers::anthropic::AnthropicChatHelper;
+#[cfg(feature = "providers-gemini")]
+#[cfg_attr(docsrs, doc(cfg(feature = "providers-gemini")))]
+pub use providers::gemini::GeminiChatHelper;
+#[cfg(feature = "providers-openai")]
+#[cfg_attr(docsrs, doc(cfg(feature = "providers-openai")))]
+pub use providers::openai::OpenAiChatHelper;
+#[cfg(feature = "providers-sno-gpu")]
+#[cfg_attr(docsrs, doc(cfg(feature = "providers-sno-gpu")))]
+pub use providers::sno_gpu::SnoGpuChatHelper;
 pub use key_pool::{load_keys_from_env, KeyPool};
 pub use pipeline::{CallPipeline, PipelineConfig};
 pub use provider_kwargs::{

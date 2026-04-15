@@ -1,6 +1,6 @@
 use crate::dispatch::DispatchFn;
 use crate::error::{InvalidConfigError, LlmixResult};
-use crate::helpers::openai::OpenAiChatHelper;
+use crate::providers::openai::OpenAiChatHelper;
 use crate::types::{DispatchContext, ProviderResult};
 use async_trait::async_trait;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};

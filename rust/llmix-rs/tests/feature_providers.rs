@@ -1,8 +1,8 @@
 #![cfg(any(
-    feature = "helpers-openai",
-    feature = "helpers-sno-gpu",
-    feature = "helpers-anthropic",
-    feature = "helpers-gemini"
+    feature = "providers-openai",
+    feature = "providers-sno-gpu",
+    feature = "providers-anthropic",
+    feature = "providers-gemini"
 ))]
 
 use serde_json::{json, Value};
@@ -12,17 +12,17 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-#[cfg(feature = "helpers-anthropic")]
+#[cfg(feature = "providers-anthropic")]
 use llmix_rs::AnthropicChatHelper;
-#[cfg(feature = "helpers-gemini")]
+#[cfg(feature = "providers-gemini")]
 use llmix_rs::GeminiChatHelper;
-#[cfg(feature = "helpers-openai")]
+#[cfg(feature = "providers-openai")]
 use llmix_rs::OpenAiChatHelper;
-#[cfg(feature = "helpers-sno-gpu")]
+#[cfg(feature = "providers-sno-gpu")]
 use llmix_rs::SnoGpuChatHelper;
 use llmix_rs::{DispatchContext, DispatchFn, LlmixError};
 
-#[cfg(feature = "helpers-sno-gpu")]
+#[cfg(feature = "providers-sno-gpu")]
 use llmix_rs::{CallInput, CallPipeline, KeyPool, PipelineConfig};
 
 #[derive(Debug)]
@@ -147,7 +147,7 @@ fn parse_request_head(head: &[u8]) -> (String, String, HashMap<String, String>) 
     (method, path, headers)
 }
 
-#[cfg(feature = "helpers-openai")]
+#[cfg(feature = "providers-openai")]
 #[tokio::test]
 async fn openai_helper_builds_chat_request_and_parses_response() {
     let (base_url, request_rx, server) = spawn_json_server(
@@ -245,7 +245,7 @@ async fn openai_helper_builds_chat_request_and_parses_response() {
     );
 }
 
-#[cfg(feature = "helpers-openai")]
+#[cfg(feature = "providers-openai")]
 #[tokio::test]
 async fn openai_helper_surfaces_provider_error_headers() {
     let (base_url, _request_rx, server) = spawn_json_server(
@@ -290,7 +290,7 @@ async fn openai_helper_surfaces_provider_error_headers() {
     }
 }
 
-#[cfg(feature = "helpers-anthropic")]
+#[cfg(feature = "providers-anthropic")]
 #[tokio::test]
 async fn anthropic_helper_extracts_system_messages_and_parses_response() {
     let (base_url, request_rx, server) = spawn_json_server(
@@ -378,7 +378,7 @@ async fn anthropic_helper_extracts_system_messages_and_parses_response() {
     );
 }
 
-#[cfg(feature = "helpers-anthropic")]
+#[cfg(feature = "providers-anthropic")]
 #[tokio::test]
 async fn anthropic_helper_surfaces_provider_error_headers() {
     let (base_url, _request_rx, server) = spawn_json_server(
@@ -423,7 +423,7 @@ async fn anthropic_helper_surfaces_provider_error_headers() {
     }
 }
 
-#[cfg(feature = "helpers-gemini")]
+#[cfg(feature = "providers-gemini")]
 #[tokio::test]
 async fn gemini_helper_formats_system_instruction_and_continuation() {
     let (base_url, request_rx, server) = spawn_json_server(
@@ -546,7 +546,7 @@ async fn gemini_helper_formats_system_instruction_and_continuation() {
     );
 }
 
-#[cfg(feature = "helpers-gemini")]
+#[cfg(feature = "providers-gemini")]
 #[tokio::test]
 async fn gemini_helper_surfaces_provider_error_headers() {
     let (base_url, _request_rx, server) = spawn_json_server(
@@ -591,7 +591,7 @@ async fn gemini_helper_surfaces_provider_error_headers() {
     }
 }
 
-#[cfg(feature = "helpers-sno-gpu")]
+#[cfg(feature = "providers-sno-gpu")]
 fn fast_helper_pipeline<D>(dispatch: D) -> PipelineConfig
 where
     D: DispatchFn + 'static,
@@ -607,7 +607,7 @@ where
     config
 }
 
-#[cfg(feature = "helpers-sno-gpu")]
+#[cfg(feature = "providers-sno-gpu")]
 #[tokio::test]
 async fn sno_gpu_helper_injects_internal_token_and_thinking_payload() {
     let (base_url, request_rx, server) = spawn_json_server(

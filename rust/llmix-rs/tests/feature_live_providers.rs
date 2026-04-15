@@ -1,21 +1,21 @@
 #![cfg(any(
-    feature = "helpers-openai",
-    feature = "helpers-sno-gpu",
-    feature = "helpers-anthropic",
-    feature = "helpers-gemini"
+    feature = "providers-openai",
+    feature = "providers-sno-gpu",
+    feature = "providers-anthropic",
+    feature = "providers-gemini"
 ))]
 
 use llmix_rs::{CallInput, CallPipeline, CallResponse, DispatchFn, KeyPool, PipelineConfig};
 use serde_json::json;
 use std::env;
 
-#[cfg(feature = "helpers-anthropic")]
+#[cfg(feature = "providers-anthropic")]
 use llmix_rs::AnthropicChatHelper;
-#[cfg(feature = "helpers-gemini")]
+#[cfg(feature = "providers-gemini")]
 use llmix_rs::GeminiChatHelper;
-#[cfg(feature = "helpers-openai")]
+#[cfg(feature = "providers-openai")]
 use llmix_rs::OpenAiChatHelper;
-#[cfg(feature = "helpers-sno-gpu")]
+#[cfg(feature = "providers-sno-gpu")]
 use llmix_rs::SnoGpuChatHelper;
 
 const LIVE_TESTS_FLAG: &str = "LLMIX_RUN_LIVE_TESTS";
@@ -138,7 +138,7 @@ fn assert_live_success(label: &str, response: &CallResponse) {
     );
 }
 
-#[cfg(feature = "helpers-openai")]
+#[cfg(feature = "providers-openai")]
 #[tokio::test]
 async fn openai_live_simple_completion_via_pipeline() {
     let Some(envs) = require_live_env(&["OPENAI_API_KEY"]) else {
@@ -179,7 +179,7 @@ async fn openai_live_simple_completion_via_pipeline() {
     );
 }
 
-#[cfg(feature = "helpers-anthropic")]
+#[cfg(feature = "providers-anthropic")]
 #[tokio::test]
 async fn anthropic_live_system_message_via_pipeline() {
     let Some(envs) = require_live_env(&["ANTHROPIC_API_KEY"]) else {
@@ -227,7 +227,7 @@ async fn anthropic_live_system_message_via_pipeline() {
     );
 }
 
-#[cfg(feature = "helpers-gemini")]
+#[cfg(feature = "providers-gemini")]
 #[tokio::test]
 async fn gemini_live_continuation_via_pipeline() {
     let Some(envs) = require_live_env(&["GEMINI_API_KEY"]) else {
@@ -283,7 +283,7 @@ async fn gemini_live_continuation_via_pipeline() {
     );
 }
 
-#[cfg(feature = "helpers-sno-gpu")]
+#[cfg(feature = "providers-sno-gpu")]
 #[tokio::test]
 async fn sno_gpu_live_extract_path_via_pipeline() {
     let Some(envs) = require_live_env_groups(&[
