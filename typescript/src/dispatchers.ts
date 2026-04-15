@@ -309,7 +309,10 @@ function injectSnoGpuExtraBody(
 function createSnoGpuFetch(ctx: DispatchContext): typeof fetch {
   const thinking = resolveSnoGpuThinking(ctx);
 
-  return async (input, init) => {
+  const impl = async (
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ): Promise<Response> => {
     if (typeof init?.body !== "string") {
       return fetch(input, init);
     }
@@ -335,6 +338,10 @@ function createSnoGpuFetch(ctx: DispatchContext): typeof fetch {
       body: JSON.stringify(nextPayload),
     });
   };
+
+  // Bun's `typeof fetch` includes a `preconnect` method; forward it from the
+  // global so the wrapper is assignable wherever the SDK expects full fetch.
+  return Object.assign(impl, { preconnect: fetch.preconnect.bind(fetch) });
 }
 
 async function generateWithModel(
@@ -424,6 +431,9 @@ export function geminiDispatch(): ProviderDispatchFn {
   };
 }
 
+// OpenRouter is OpenAI-compatible — no dedicated provider package needed.
+// Reuses @ai-sdk/openai with baseURL=https://openrouter.ai/api/v1.
+// Ref: https://openrouter.ai/docs/quickstart
 export function openrouterDispatch(): ProviderDispatchFn {
   return async (ctx) => {
     const { createOpenAI } = await getOpenAiSdk();
