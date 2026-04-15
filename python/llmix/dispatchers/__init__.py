@@ -368,6 +368,9 @@ def deepinfra_dispatch(client: DeepInfraClient | None = None) -> ProviderDispatc
 
 
 def openrouter_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDispatchFn:
+    # OpenRouter is OpenAI-compatible — no dedicated client needed.
+    # Reuses AsyncOpenAIClient with base_url=https://openrouter.ai/api/v1.
+    # Ref: https://openrouter.ai/docs/quickstart
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
         resolved_model = _map_deepseek_model(ctx.model)
         openai_client_cls = cast("type[AsyncOpenAIClient]", _load_provider_attr("AsyncOpenAIClient"))

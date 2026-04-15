@@ -14,6 +14,11 @@ if _GEN1_PKG_DIR.is_dir():
 Providers are lazily imported to avoid hard failures when optional
 dependencies (e.g. google-genai) are not installed.  Only the provider
 actually used at runtime needs its dependencies present.
+
+Note: there is no dedicated OpenRouter/DeepInfra/Novita/Together *client*
+class because those services are OpenAI-compatible — they reuse
+``AsyncOpenAIClient`` with a custom ``base_url``. Provider selection
+happens in ``llmix.dispatchers`` (e.g. ``openrouter_dispatch``), not here.
 """
 
 # Eagerly import only the universal base types (no optional deps).
