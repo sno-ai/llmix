@@ -357,9 +357,6 @@ async function openaiResults(
 }
 
 // --- Anthropic (Task 108) ---
-// TODO: This raw-fetch Anthropic batch implementation duplicates logic in
-// providers/anthropic-batch.ts (SDK-based). The SDK adapter should be the
-// canonical implementation — refactor this to delegate to it.
 
 async function anthropicSubmit(
   apiKey: string,
