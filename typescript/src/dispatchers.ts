@@ -43,6 +43,9 @@ type SnoGpuThinkingSettings = {
   enableThinking?: boolean;
   thinkingBudget?: number;
 };
+type FetchWithOptionalPreconnect = typeof fetch & {
+  preconnect?: (...args: unknown[]) => unknown;
+};
 type ResponseFormatConfig =
   | { type: "text" }
   | { type: "json"; schema?: JSONValue; name?: string; description?: string };
@@ -309,7 +312,7 @@ function injectSnoGpuExtraBody(
 function createSnoGpuFetch(ctx: DispatchContext): typeof fetch {
   const thinking = resolveSnoGpuThinking(ctx);
 
-  const impl = async (
+  const impl: typeof fetch = async (
     input: Parameters<typeof fetch>[0],
     init?: Parameters<typeof fetch>[1],
   ): Promise<Response> => {
@@ -339,9 +342,14 @@ function createSnoGpuFetch(ctx: DispatchContext): typeof fetch {
     });
   };
 
-  // Bun's `typeof fetch` includes a `preconnect` method; forward it from the
-  // global so the wrapper is assignable wherever the SDK expects full fetch.
-  return Object.assign(impl, { preconnect: fetch.preconnect.bind(fetch) });
+  const preconnect = (fetch as FetchWithOptionalPreconnect).preconnect;
+  if (typeof preconnect === "function") {
+    // Preserve Bun's fetch.preconnect when available without assuming it
+    // exists in standard runtimes or DOM/Node fetch typings.
+    return Object.assign(impl, { preconnect: preconnect.bind(fetch) }) as typeof fetch;
+  }
+
+  return impl;
 }
 
 async function generateWithModel(
