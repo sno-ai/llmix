@@ -1,13 +1,12 @@
 /**
  * LLMix
  *
- * Config-driven LLM calls for TypeScript.
+ * Cross-runtime orchestration for LLM calls in TypeScript.
  *
  * @example
  * ```typescript
- * import { CallPipeline, loadConfigPreset } from "llmix";
+ * import { CallPipeline } from "llmix";
  *
- * const config = await loadConfigPreset("extraction", "./config/llm/_default");
  * const pipeline = new CallPipeline({ dispatch: async (ctx) => {
  *   return {
  *     content: "ok",
@@ -16,8 +15,17 @@
  *   };
  * }});
  *
+ * const config = {
+ *   provider: "openai",
+ *   model: "gpt-4.1-mini",
+ * };
+ *
  * const response = await pipeline.call({ config, messages: [{ role: "user", content: "hi" }] });
  * ```
+ *
+ * Direct YAML helpers remain available through `loadConfig` and
+ * `loadConfigPreset`, but they are best treated as low-level authoring, test,
+ * and migration helpers rather than the long-term production runtime path.
  */
 
 // =============================================================================

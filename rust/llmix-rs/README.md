@@ -11,7 +11,7 @@ The crate is usable today, but it should still be treated as beta. The public su
 - Circuit breaker, kill switch, retry, singleflight, key-pool rotation, and AIMD semaphore
 - Provider kwargs normalization for OpenAI, Anthropic, Gemini, OpenRouter, and `sno-gpu`
 - Thinking-token stripping
-- YAML config loading with `load_config` and `load_config_preset`
+- Low-level YAML config helpers with `load_config` and `load_config_preset`
 - Optional provider modules for OpenAI-compatible, Anthropic, Gemini, and `sno-gpu` HTTP dispatch
 
 ## Feature flags
@@ -79,6 +79,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 The same callback shape works when you replace the inline closure with your own async function or an adapter around a provider-specific client.
+
+## Config runtime direction
+
+The Rust crate currently exposes `load_config` and `load_config_preset`, but
+they should be treated as low-level helpers for authoring tools, tests, and
+migration work rather than the long-term production runtime path.
+
+The committed production direction for the monorepo is the snapshot-based
+config runtime described in
+[../../docs/llm-config-snapshots-plan.md](../../docs/llm-config-snapshots-plan.md):
+
+- YAML stays as the authoring format
+- publishing creates immutable snapshot revisions
+- `current.json` is the only live switch
+- runtime reads committed snapshot artifacts instead of mutable authoring YAML
+
+That lets Rust stay aligned with Python and TypeScript without putting
+cross-language YAML normalization on the runtime hot path.
 
 ## Optional provider modules
 
