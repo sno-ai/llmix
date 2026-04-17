@@ -312,7 +312,7 @@ function injectSnoGpuExtraBody(
 function createSnoGpuFetch(ctx: DispatchContext): typeof fetch {
   const thinking = resolveSnoGpuThinking(ctx);
 
-  const impl: typeof fetch = async (
+  const impl = async (
     input: Parameters<typeof fetch>[0],
     init?: Parameters<typeof fetch>[1],
   ): Promise<Response> => {
@@ -349,7 +349,7 @@ function createSnoGpuFetch(ctx: DispatchContext): typeof fetch {
     return Object.assign(impl, { preconnect: preconnect.bind(fetch) }) as typeof fetch;
   }
 
-  return impl;
+  return impl as typeof fetch;
 }
 
 async function generateWithModel(
