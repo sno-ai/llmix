@@ -98,21 +98,8 @@ where
     S: AsRef<str>,
     P: AsRef<Path>,
 {
-    load_config_preset_with_version(name, base_dir, 1)
-}
-
-pub fn load_config_preset_with_version<S, P>(
-    name: S,
-    base_dir: P,
-    version: u32,
-) -> LlmixResult<Value>
-where
-    S: AsRef<str>,
-    P: AsRef<Path>,
-{
     let preset = normalize_preset_name(name.as_ref());
     validate_preset(&preset)?;
-    validate_version(version)?;
 
     let presets_dir = absolutize_user_path(base_dir.as_ref())?;
     let module_name = presets_dir
@@ -121,7 +108,7 @@ where
         .unwrap_or_default();
     validate_module(module_name)?;
 
-    let file_path = presets_dir.join(format!("{preset}.v{version}.yaml"));
+    let file_path = presets_dir.join(format!("{preset}.yaml"));
     verify_path_containment(&file_path, &presets_dir)?;
     load_config(file_path)
 }
