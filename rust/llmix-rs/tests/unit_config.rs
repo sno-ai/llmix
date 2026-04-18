@@ -61,7 +61,7 @@ fn load_config_reports_missing_file() {
 #[test]
 fn load_config_normalizes_legacy_camel_case_keys() {
     let temp_dir = unique_temp_dir("llmix-config-camel-case");
-    let file_path = temp_dir.join("public-compat.v1.yaml");
+    let file_path = temp_dir.join("public-compat.yaml");
     write_file(
         &file_path,
         r#"
@@ -95,7 +95,7 @@ caching:
 #[test]
 fn load_config_permission_denied_maps_to_config_access_error() {
     let temp_dir = unique_temp_dir("llmix-config-denied");
-    let file_path = temp_dir.join("denied.v1.yaml");
+    let file_path = temp_dir.join("denied.yaml");
     write_file(&file_path, "provider: openai\nmodel: gpt-4.1-mini\n");
 
     let original_permissions = fs::metadata(&file_path)
@@ -129,7 +129,7 @@ fn validators_match_current_name_rules() {
     validate_module("_default").expect("special module should be valid");
     validate_module("abc_123").expect("simple module should be valid");
     validate_preset("_base_fast").expect("special preset should be valid");
-    validate_preset("agent_v2").expect("simple preset should be valid");
+    validate_preset("agent_fast").expect("simple preset should be valid");
     validate_version(1).expect("version one should be valid");
     validate_version(9999).expect("max version should be valid");
 

@@ -10,8 +10,8 @@ fn fixture_dir() -> PathBuf {
 }
 
 #[test]
-fn load_config_normalizes_legacy_v1_preset_shape() {
-    let preset_path = fixture_dir().join("sample_preset.v1.yaml");
+fn load_config_normalizes_legacy_preset_shape() {
+    let preset_path = fixture_dir().join("sample_preset.yaml");
     let config = load_config(&preset_path).expect("fixture should load");
 
     assert_eq!(config["provider"], "openai");
