@@ -18,7 +18,7 @@ from typing import Literal
 
 import yaml
 
-from llmix.types import ConfigAccessError, ConfigNotFoundError, InvalidConfigError, SecurityError, validate_module, validate_preset, validate_version
+from llmix.types import ConfigAccessError, ConfigNotFoundError, InvalidConfigError, SecurityError, validate_module, validate_preset
 
 # Legacy compatibility mapping reused from the retired config loader.
 _CAMEL_TO_SNAKE: dict[str, str] = {
@@ -230,7 +230,7 @@ def _normalize_config_shape(config: dict[str, Any]) -> dict[str, Any]:
     """
     Normalize legacy YAML layouts into the public Python config shape.
 
-    v1 presets frequently stored provider/model inside ``common``. The public
+    Some legacy presets stored provider/model inside ``common``. The public
     loader lifts those fields to the top level and removes them from
     ``common`` so the returned config matches the documented contract.
     """
@@ -264,9 +264,9 @@ def load_config(path: str | Path) -> dict[str, Any]:
     return _load_yaml_file(file_path)
 
 
-def load_config_preset(name: str, base_dir: str | Path, *, version: int = 1) -> dict[str, Any]:
+def load_config_preset(name: str, base_dir: str | Path) -> dict[str, Any]:
     """
-    Load a preset file from ``{base_dir}/{name}.v{version}.yaml``.
+    Load a preset file from ``{base_dir}/{name}.yaml``.
 
     ``name`` may be a bare preset (`"extraction"`) or include a `.yaml` suffix.
     """
@@ -277,12 +277,11 @@ def load_config_preset(name: str, base_dir: str | Path, *, version: int = 1) -> 
         preset_name = preset_name[:-4]
 
     validate_preset(preset_name)
-    validate_version(version)
 
     presets_dir = Path(base_dir).expanduser().resolve()
     module_name = presets_dir.name
     validate_module(module_name)
 
-    file_path = presets_dir / f"{preset_name}.v{version}.yaml"
+    file_path = presets_dir / f"{preset_name}.yaml"
     _verify_path_containment(file_path, presets_dir)
     return load_config(file_path)
