@@ -42,6 +42,9 @@ _LAZY_IMPORTS: dict[str, str] = {
     "resolve_config_dir": "llmix.config",
     "load_config": "llmix.config",
     "load_config_preset": "llmix.config",
+    "ConfigRegistryManager": "llmix.config_registry",
+    "ConfigRegistryPublisher": "llmix.config_registry",
+    "PublishedRevision": "llmix.config_registry",
     # resilience
     "CircuitBreaker": "llmix.resilience",
     "CircuitOpenError": "llmix.resilience",
@@ -84,6 +87,9 @@ if TYPE_CHECKING:
     from llmix.config import load_config as load_config
     from llmix.config import load_config_preset as load_config_preset
     from llmix.config import resolve_config_dir as resolve_config_dir
+    from llmix.config_registry import ConfigRegistryManager as ConfigRegistryManager
+    from llmix.config_registry import ConfigRegistryPublisher as ConfigRegistryPublisher
+    from llmix.config_registry import PublishedRevision as PublishedRevision
     from llmix.dispatchers import anthropic_dispatch as anthropic_dispatch
     from llmix.dispatchers import deepinfra_dispatch as deepinfra_dispatch
     from llmix.dispatchers import gemini_dispatch as gemini_dispatch
@@ -154,6 +160,9 @@ __all__ = [
     "resolve_config_dir",
     "load_config",
     "load_config_preset",
+    "ConfigRegistryManager",
+    "ConfigRegistryPublisher",
+    "PublishedRevision",
     "CircuitBreaker",
     "CircuitOpenError",
     "CircuitState",
