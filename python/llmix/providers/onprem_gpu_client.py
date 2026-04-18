@@ -31,7 +31,7 @@ def build_gpu_base_url(gpu_path: str | None = None) -> str:
     """Build GPU base URL with optional path routing.
 
     Args:
-        gpu_path: 'extract', 'reason', or None (legacy /v1).
+        gpu_path: 'extract', 'reason', or None for the default path.
 
     Returns:
         Full base URL for AsyncOpenAI (e.g. https://llm.example.com/extract/v1).

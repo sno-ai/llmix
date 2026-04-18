@@ -353,19 +353,19 @@ class AsyncAnthropicClient(BaseLLMClient):
         Maps OpenAI-style response_completion to Anthropic Messages API.
         """
         if tools is not None:
-            raise NotImplementedError("tools parameter not yet supported in Anthropic v2 provider")
+            raise NotImplementedError("tools parameter not yet supported in the Anthropic provider")
         if tool_choice is not None:
-            raise NotImplementedError("tool_choice parameter not yet supported in Anthropic v2 provider")
+            raise NotImplementedError("tool_choice parameter not yet supported in the Anthropic provider")
         if parallel_tool_calls is not None:
-            raise NotImplementedError("parallel_tool_calls parameter not yet supported in Anthropic v2 provider")
+            raise NotImplementedError("parallel_tool_calls parameter not yet supported in the Anthropic provider")
         if allowed_tools is not None:
-            raise NotImplementedError("allowed_tools parameter not yet supported in Anthropic v2 provider")
+            raise NotImplementedError("allowed_tools parameter not yet supported in the Anthropic provider")
         if text is not None:
-            raise NotImplementedError("text (structured output) parameter not yet supported in Anthropic v2 provider")
+            raise NotImplementedError("text (structured output) parameter not yet supported in the Anthropic provider")
         if store is not None:
-            raise NotImplementedError("store parameter not yet supported in Anthropic v2 provider")
+            raise NotImplementedError("store parameter not yet supported in the Anthropic provider")
         if reasoning_effort is not None:
-            raise NotImplementedError("reasoning_effort parameter not yet supported in Anthropic v2 provider")
+            raise NotImplementedError("reasoning_effort parameter not yet supported in the Anthropic provider")
 
         model = self.get_model(model)
         resolved_temperature = temperature if temperature is not None else self.default_temperature
