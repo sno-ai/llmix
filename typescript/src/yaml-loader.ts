@@ -174,22 +174,20 @@ export function validateVersion(version: number): void {
 /**
  * Build config file path from components
  *
- * Path format: {configDir}/{module}/{preset}.v{version}.yaml
+ * Path format: {configDir}/{module}/{preset}.yaml
  * Note: scope is NOT part of the file path (used for cascade resolution)
  *
  * @param configDir - Base config directory
  * @param module - Module name (e.g., "hrkg", "_default")
  * @param preset - Preset name (e.g., "extraction", "_base")
- * @param version - Config version number
  * @returns Resolved file path
  */
 export function buildConfigFilePath(
   configDir: string,
   module: string,
-  preset: string,
-  version: number
+  preset: string
 ): string {
-  const filename = `${preset}.v${version}.yaml`;
+  const filename = `${preset}.yaml`;
   return join(resolve(configDir), module, filename);
 }
 
@@ -539,7 +537,6 @@ export const LLMConfigSchema = z
  * @param configDir - Base config directory
  * @param module - Module name (e.g., "hrkg", "_default")
  * @param preset - Preset name (e.g., "extraction", "_base")
- * @param version - Config version number
  * @returns Validated LLMConfig
  * @throws ConfigNotFoundError if file doesn't exist
  * @throws InvalidConfigError if YAML parsing or schema validation fails
@@ -548,16 +545,14 @@ export const LLMConfigSchema = z
 export async function loadConfigFromFile(
   configDir: string,
   module: string,
-  preset: string,
-  version: number
+  preset: string
 ): Promise<LLMConfig> {
   // Validate inputs
   validateModule(module);
   validatePreset(preset);
-  validateVersion(version);
 
   // Build and verify file path
-  const filePath = buildConfigFilePath(configDir, module, preset, version);
+  const filePath = buildConfigFilePath(configDir, module, preset);
   await verifyPathContainmentAsync(filePath, configDir);
 
   // Read file
@@ -569,7 +564,7 @@ export async function loadConfigFromFile(
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT") {
         throw new ConfigNotFoundError(
-          `Config file not found: ${filePath} (module=${module}, preset=${preset}, version=${version})`
+          `Config file not found: ${filePath} (module=${module}, preset=${preset})`
         );
       }
       if (code === "EACCES") {

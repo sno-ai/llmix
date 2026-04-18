@@ -15,7 +15,7 @@ import path from "node:path"
 import { parse as parseYaml } from "yaml"
 
 import { ConfigAccessError, ConfigNotFoundError, InvalidConfigError, type LLMConfig } from "./types"
-import { LLMConfigSchema, validateModule, validatePreset, validateVersion, verifyPathContainmentAsync } from "./yaml-loader"
+import { LLMConfigSchema, validateModule, validatePreset, verifyPathContainmentAsync } from "./yaml-loader"
 
 /** Lockfiles that indicate project root (any package manager) */
 const LOCKFILES = ["bun.lock", "pnpm-lock.yaml", "yarn.lock", "package-lock.json"]
@@ -216,13 +216,9 @@ export async function loadConfig(configPath: string): Promise<LLMConfig> {
 }
 
 /**
- * Load a preset file from ``{baseDir}/{name}.v{version}.yaml``.
+ * Load a preset file from ``{baseDir}/{name}.yaml``.
  */
-export async function loadConfigPreset(
-	name: string,
-	baseDir: string,
-	options?: { version?: number },
-): Promise<LLMConfig> {
+export async function loadConfigPreset(name: string, baseDir: string): Promise<LLMConfig> {
 	const presetFile = path.basename(name)
 	let preset = presetFile
 	if (preset.endsWith(".yaml")) {
@@ -231,14 +227,12 @@ export async function loadConfigPreset(
 		preset = preset.slice(0, -4)
 	}
 
-	const version = options?.version ?? 1
 	validatePreset(preset)
-	validateVersion(version)
 
 	const presetsDir = path.resolve(baseDir)
 	validateModule(path.basename(presetsDir))
 
-	const filePath = path.join(presetsDir, `${preset}.v${version}.yaml`)
+	const filePath = path.join(presetsDir, `${preset}.yaml`)
 	await verifyPathContainmentAsync(filePath, presetsDir)
 	return loadConfig(filePath)
 }
