@@ -56,7 +56,7 @@ export interface CachingConfig {
    * Required for native strategy - groups related prompts together.
    * Optional for gateway/disabled strategies.
    *
-   * Example: "extraction-v1", "search-2024"
+   * Example: "extraction-primary", "search-2024"
    */
   key?: string | undefined;
 
@@ -349,7 +349,7 @@ export interface SnoGpuProviderOptions {
   /** Token budget for thinking/reasoning. Only applies when enableThinking is true. */
   thinkingBudget?: number | undefined;
 
-  /** GPU routing path: 'extract' (GPU 0, SMR) or 'reason' (GPU 1, EKG). Omit for legacy /v1. */
+  /** GPU routing path: 'extract' (GPU 0, SMR) or 'reason' (GPU 1, EKG). Omit for the default path. */
   gpuPath?: string | undefined;
 }
 
@@ -443,7 +443,7 @@ export interface ExperimentConfig {
   /** Whether the experiment is currently active */
   enabled: boolean;
 
-  /** Version to use when experiment is enabled (e.g., 2 for v2) */
+  /** Experiment revision number to use when the experiment is enabled. */
   version: number;
 
   /** ISO timestamp when experiment was enabled */

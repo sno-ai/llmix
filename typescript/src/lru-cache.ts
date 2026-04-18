@@ -114,8 +114,8 @@ export class LRUCache {
   /**
    * Invalidate cache entries matching pattern
    *
-   * Cache key format: `{scope}:{module}:{userId}:{preset}:v{version}`
-   * Example key: `default:hrkg:_:extraction:v1`
+   * Cache key format: `{scope}:{module}:{userId}:{preset}:{revision}`
+   * Example key: `default:hrkg:_:extraction:active`
    *
    * Pattern matching (colon-separated, supports `*` wildcards):
    * - "*" -> Clear all entries
