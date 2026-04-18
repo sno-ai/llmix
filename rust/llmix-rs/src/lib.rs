@@ -5,6 +5,7 @@
 pub mod adaptive_semaphore;
 pub mod canonical_json;
 pub mod config;
+pub mod config_registry;
 pub mod dispatch;
 pub mod error;
 #[cfg(any(
@@ -41,10 +42,10 @@ pub mod types;
 
 pub use adaptive_semaphore::{parse_openai_ratelimit_headers, AdaptiveSemaphore, RateLimitHeaders};
 pub use config::{
-    load_config, load_config_preset, load_config_preset_with_version, resolve_config_dir,
-    validate_module, validate_preset, validate_version, ConfigDirSource, LlmixPathConfig,
-    ResolvedConfigDir,
+    load_config, load_config_preset, resolve_config_dir, validate_module, validate_preset,
+    validate_version, ConfigDirSource, LlmixPathConfig, ResolvedConfigDir,
 };
+pub use config_registry::{ConfigRegistryManager, ConfigRegistryPublisher, PublishedRevision};
 pub use dispatch::DispatchFn;
 pub use error::{
     AdaptiveSemaphoreClosedError, CircuitOpenError, ConfigAccessError, ConfigNotFoundError,
