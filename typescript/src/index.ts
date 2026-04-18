@@ -23,9 +23,10 @@
  * const response = await pipeline.call({ config, messages: [{ role: "user", content: "hi" }] });
  * ```
  *
- * Direct YAML helpers remain available through `loadConfig` and
- * `loadConfigPreset`, but they are best treated as low-level authoring, test,
- * and migration helpers rather than the long-term production runtime path.
+ * `ConfigRegistryManager` and `ConfigRegistryPublisher` are the preferred
+ * preset runtime path. Direct YAML helpers remain available through
+ * `loadConfig` and `loadConfigPreset`, but they are best treated as low-level
+ * authoring, test, and migration helpers.
  */
 
 // =============================================================================
@@ -33,6 +34,7 @@
 // =============================================================================
 
 export { loadConfig, loadConfigPreset, resolveConfigDir, type LLMixPathConfig, type ResolvedConfigDir } from "./config";
+export { ConfigRegistryManager, ConfigRegistryPublisher, type PublishedRevision } from "./config-registry";
 
 // =============================================================================
 // CALL PIPELINE
