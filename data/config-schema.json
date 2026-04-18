@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://llmix.dev/config-schema.json",
   "title": "LLMix YAML Preset Configuration",
-  "description": "JSON Schema for LLMix v2 YAML preset files. TODO: Generate from Zod schemas in Phase 2.",
+  "description": "JSON Schema for LLMix YAML preset files. TODO: Generate from Zod schemas in Phase 2.",
   "type": "object",
   "properties": {
     "common": {
