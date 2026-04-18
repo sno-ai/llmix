@@ -113,7 +113,7 @@ class CachingConfig(TypedDict, total=False):
     Cache key for native strategy.
     Required for native strategy - groups related prompts together.
     Optional for gateway/disabled strategies.
-    Example: "extraction-v1", "search-2024"
+    Example: "extraction-primary", "search-2024"
     """
 
     ttl: int
@@ -305,7 +305,7 @@ class SnoGpuProviderOptions(TypedDict, total=False):
     """Token budget for thinking/reasoning. Only applies when enable_thinking=True."""
 
     gpu_path: str
-    """GPU routing path: 'extract' or 'reason'. Omit for legacy /v1."""
+    """GPU routing path: 'extract' or 'reason'. Omit for the default path."""
 
 ProviderOptions = TypedDict(
     "ProviderOptions",
@@ -397,7 +397,7 @@ class ExperimentConfig(TypedDict):
     """Whether the experiment is currently active (100% toggle)"""
 
     version: int
-    """Version to use when experiment is enabled (e.g., 2 for v2)"""
+    """Experiment revision number to use when the experiment is enabled."""
 
     enabledAt: str
     """ISO timestamp when experiment was enabled"""
