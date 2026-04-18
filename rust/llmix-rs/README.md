@@ -1,6 +1,6 @@
 # llmix-rs
 
-`llmix-rs` is the Rust binding for the current LLMix v2 orchestration contract.
+`llmix-rs` is the Rust binding for the current LLMix orchestration contract.
 
 The crate is usable today, but it should still be treated as beta. The public surface is aligned to the current Python and TypeScript bindings, while downstream production adoption is still earlier-stage in Rust.
 
@@ -11,6 +11,7 @@ The crate is usable today, but it should still be treated as beta. The public su
 - Circuit breaker, kill switch, retry, singleflight, key-pool rotation, and AIMD semaphore
 - Provider kwargs normalization for OpenAI, Anthropic, Gemini, OpenRouter, and `sno-gpu`
 - Thinking-token stripping
+- Config Registry runtime manager and publisher for committed preset snapshots
 - Low-level YAML config helpers with `load_config` and `load_config_preset`
 - Optional provider modules for OpenAI-compatible, Anthropic, Gemini, and `sno-gpu` HTTP dispatch
 
@@ -80,15 +81,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 The same callback shape works when you replace the inline closure with your own async function or an adapter around a provider-specific client.
 
-## Config runtime direction
+## Config Registry
 
-The Rust crate currently exposes `load_config` and `load_config_preset`, but
-they should be treated as low-level helpers for authoring tools, tests, and
-migration work rather than the long-term production runtime path.
+The Rust crate now exposes `ConfigRegistryPublisher` and
+`ConfigRegistryManager` as the preferred preset runtime path.
 
-The committed production direction for the monorepo is the snapshot-based
-config runtime described in
-[../../docs/llm-config-snapshots-plan.md](../../docs/llm-config-snapshots-plan.md):
+```rust,no_run
+use llmix_rs::{ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir};
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let root = resolve_config_dir(None)?.config_dir;
+ConfigRegistryPublisher::new(&root)?.publish()?;
+
+let mut manager = ConfigRegistryManager::open(&root)?;
+let config = manager.get_preset("search", "summary")?;
+# let _ = config;
+# Ok(())
+# }
+```
+
+The registry contract for the monorepo is described in
+[../../docs/llmix-config-registry-plan.md](../../docs/llmix-config-registry-plan.md):
 
 - YAML stays as the authoring format
 - publishing creates immutable snapshot revisions
@@ -97,6 +110,12 @@ config runtime described in
 
 That lets Rust stay aligned with Python and TypeScript without putting
 cross-language YAML normalization on the runtime hot path.
+
+The manager also exposes the active revision and reload health metadata so
+service code can report which snapshot is live and whether a reload failed.
+
+`load_config` and `load_config_preset` remain available as low-level helpers
+for authoring tools, tests, and migration work.
 
 ## Optional provider modules
 
