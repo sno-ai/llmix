@@ -323,6 +323,51 @@ function injectSnoGpuExtraBody(
   return result;
 }
 
+function normalizeSnoGpuResponsePayload(payload: unknown): unknown {
+  if (!isRecord(payload) || !Array.isArray(payload["choices"])) {
+    return payload;
+  }
+
+  let changed = false;
+  const choices = payload["choices"].map((choice) => {
+    if (!isRecord(choice) || !isRecord(choice["message"])) {
+      return choice;
+    }
+
+    const message = choice["message"];
+    const content = message["content"];
+    const reasoningContent = message["reasoning_content"];
+    if (
+      typeof reasoningContent !== "string" ||
+      !reasoningContent.trim() ||
+      !((typeof content === "string" && content.length === 0) || content === null)
+    ) {
+      return choice;
+    }
+
+    changed = true;
+    return {
+      ...choice,
+      message: {
+        ...message,
+        // LH: Some sno-gpu chat-completions deployments emit answer text only
+        // through `reasoning_content`. Mirror it into `content` so OpenAI-
+        // compatible SDK consumers receive usable text.
+        content: reasoningContent,
+      },
+    };
+  });
+
+  if (!changed) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    choices,
+  };
+}
+
 function createSnoGpuFetch(ctx: DispatchContext): typeof fetch {
   const thinking = resolveSnoGpuThinking(ctx);
 
@@ -330,29 +375,55 @@ function createSnoGpuFetch(ctx: DispatchContext): typeof fetch {
     input: Parameters<typeof fetch>[0],
     init?: Parameters<typeof fetch>[1],
   ): Promise<Response> => {
-    if (typeof init?.body !== "string") {
-      return fetch(input, init);
+    const nextInit = (() => {
+      if (typeof init?.body !== "string") {
+        return init;
+      }
+
+      let payload: unknown;
+      try {
+        payload = JSON.parse(init.body);
+      } catch {
+        return init;
+      }
+
+      if (!isRecord(payload)) {
+        return init;
+      }
+
+      const nextPayload = injectSnoGpuExtraBody(payload, thinking);
+      if (nextPayload === payload) {
+        return init;
+      }
+
+      return {
+        ...init,
+        body: JSON.stringify(nextPayload),
+      };
+    })();
+
+    const response = await fetch(input, nextInit);
+    const contentType = response.headers.get("content-type");
+    if (!contentType?.toLowerCase().includes("application/json")) {
+      return response;
     }
 
-    let payload: unknown;
+    let responsePayload: unknown;
     try {
-      payload = JSON.parse(init.body);
+      responsePayload = await response.clone().json();
     } catch {
-      return fetch(input, init);
+      return response;
     }
 
-    if (!isRecord(payload)) {
-      return fetch(input, init);
+    const normalizedPayload = normalizeSnoGpuResponsePayload(responsePayload);
+    if (normalizedPayload === responsePayload) {
+      return response;
     }
 
-    const nextPayload = injectSnoGpuExtraBody(payload, thinking);
-    if (nextPayload === payload) {
-      return fetch(input, init);
-    }
-
-    return fetch(input, {
-      ...init,
-      body: JSON.stringify(nextPayload),
+    return new Response(JSON.stringify(normalizedPayload), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: new Headers(response.headers),
     });
   };
 
