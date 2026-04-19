@@ -46,6 +46,9 @@ type SnoGpuThinkingSettings = {
 type FetchWithOptionalPreconnect = typeof fetch & {
   preconnect?: (...args: unknown[]) => unknown;
 };
+type OpenAiCompatibleProvider = ((modelId: string) => LanguageModel) & {
+  chat: (modelId: string) => LanguageModel;
+};
 type ResponseFormatConfig =
   | { type: "text" }
   | { type: "json"; schema?: JSONValue; name?: string; description?: string };
@@ -246,6 +249,17 @@ function mapDeepseekModel(model: string): string {
     return model;
   }
   return DEEPSEEK_MODEL_MAPPINGS[model] ?? `deepseek/${model}`;
+}
+
+function resolveOpenAiCompatibleChatModel(
+  provider: OpenAiCompatibleProvider,
+  model: string,
+): LanguageModel {
+  // LH: OpenAI-compatible gateways such as sno-gpu, Together, Novita,
+  // DeepInfra, and OpenRouter commonly expose chat/completions but not
+  // OpenAI's newer /responses API. Force the chat transport for those
+  // providers while preserving the default OpenAI behavior elsewhere.
+  return provider.chat(model);
 }
 
 function resolveBoolean(value: unknown): boolean | undefined {
@@ -449,7 +463,11 @@ export function openrouterDispatch(): ProviderDispatchFn {
       apiKey: requireApiKey(ctx.apiKey, getOpenrouterApiKey(), "OPENROUTER_API_KEY", "deepseek"),
       baseURL: resolveBaseUrl(ctx, OPENROUTER_BASE_URL),
     });
-    return generateWithModel(ctx, openrouter(mapDeepseekModel(ctx.model)), resolveProviderOptions(ctx.config, "deepseek"));
+    return generateWithModel(
+      ctx,
+      resolveOpenAiCompatibleChatModel(openrouter as OpenAiCompatibleProvider, mapDeepseekModel(ctx.model)),
+      resolveProviderOptions(ctx.config, "deepseek"),
+    );
   };
 }
 
@@ -460,7 +478,11 @@ export function deepinfraDispatch(): ProviderDispatchFn {
       apiKey: requireApiKey(ctx.apiKey, getDeepinfraApiKey(), "DEEPINFRA_API_KEY", "deepinfra"),
       baseURL: resolveBaseUrl(ctx, DEEPINFRA_BASE_URL),
     });
-    return generateWithModel(ctx, deepinfra(ctx.model), resolveProviderOptions(ctx.config, "deepinfra"));
+    return generateWithModel(
+      ctx,
+      resolveOpenAiCompatibleChatModel(deepinfra as OpenAiCompatibleProvider, ctx.model),
+      resolveProviderOptions(ctx.config, "deepinfra"),
+    );
   };
 }
 
@@ -471,7 +493,11 @@ export function novitaDispatch(): ProviderDispatchFn {
       apiKey: requireApiKey(ctx.apiKey, getNovitaApiKey(), "NOVITA_API_KEY", "novita"),
       baseURL: resolveBaseUrl(ctx, NOVITA_BASE_URL),
     });
-    return generateWithModel(ctx, novita(ctx.model), resolveProviderOptions(ctx.config, "novita"));
+    return generateWithModel(
+      ctx,
+      resolveOpenAiCompatibleChatModel(novita as OpenAiCompatibleProvider, ctx.model),
+      resolveProviderOptions(ctx.config, "novita"),
+    );
   };
 }
 
@@ -482,21 +508,38 @@ export function togetherDispatch(): ProviderDispatchFn {
       apiKey: requireApiKey(ctx.apiKey, getTogetherApiKey(), "TOGETHER_API_KEY", "together"),
       baseURL: resolveBaseUrl(ctx, TOGETHER_BASE_URL),
     });
-    return generateWithModel(ctx, together(ctx.model), resolveProviderOptions(ctx.config, "together"));
+    return generateWithModel(
+      ctx,
+      resolveOpenAiCompatibleChatModel(together as OpenAiCompatibleProvider, ctx.model),
+      resolveProviderOptions(ctx.config, "together"),
+    );
   };
 }
 
 export function snoGpuDispatch(): ProviderDispatchFn {
   return async (ctx) => {
     const { createOpenAI } = await getOpenAiSdk();
+    const apiKey = requireApiKey(
+      ctx.apiKey,
+      getSnoLlmApiKey(),
+      "SNO_LLM_API_KEY or INTERNAL_SERVICE_SECRET",
+      "sno-gpu",
+    );
     const openai = createOpenAI({
       apiKey: "not-used",
       baseURL: resolveGpuBaseUrl(ctx),
       fetch: createSnoGpuFetch(ctx),
       headers: {
-        "X-Sno-LLM-Key": requireApiKey(ctx.apiKey, getSnoLlmApiKey(), "SNO_LLM_API_KEY", "sno-gpu"),
+        // LH: Current sno-gpu gateways require X-Internal-Token, but keep the
+        // legacy header for older deployments that still expect it.
+        "X-Internal-Token": apiKey,
+        "X-Sno-LLM-Key": apiKey,
       },
     });
-    return generateWithModel(ctx, openai(ctx.model), undefined);
+    return generateWithModel(
+      ctx,
+      resolveOpenAiCompatibleChatModel(openai as OpenAiCompatibleProvider, ctx.model),
+      undefined,
+    );
   };
 }
