@@ -426,7 +426,7 @@ export class ConfigRegistryPublisher {
 	}
 
 	private async discoverPresets(): Promise<PresetSource[]> {
-		let moduleEntries
+		let moduleEntries: Array<{ name: string; isDirectory(): boolean }>
 		try {
 			moduleEntries = await readdir(this.authoringDir, { withFileTypes: true })
 		} catch (error) {

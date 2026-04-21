@@ -38,8 +38,12 @@ export function stripThinking(content: string): StripThinkingResult {
   // Extract closed thinking blocks
   // Reset lastIndex since we use the global flag
   THINK_CLOSED_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = THINK_CLOSED_RE.exec(content)) !== null) {
+  while (true) {
+    const match = THINK_CLOSED_RE.exec(content);
+    if (match === null) {
+      break;
+    }
+
     const block = match[0];
     const inner = block.substring(
       "<think>".length,
