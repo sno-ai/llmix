@@ -614,7 +614,7 @@ async fn sno_gpu_helper_injects_internal_token_and_thinking_payload() {
         "200 OK",
         &[],
         json!({
-            "model": "qwen3.5-27b-reason",
+            "model": "qwen3.6-27b-reason",
             "choices": [{
                 "message": { "content": "final answer" }
             }],
@@ -640,7 +640,7 @@ async fn sno_gpu_helper_injects_internal_token_and_thinking_payload() {
         .call(CallInput {
             config: json!({
                 "provider": "sno-gpu",
-                "model": "qwen3.5-27b-reason",
+                "model": "qwen3.6-27b-reason",
                 "baseUrl": base_url,
                 "providerOptions": {
                     "sno-gpu": {
@@ -668,7 +668,7 @@ async fn sno_gpu_helper_injects_internal_token_and_thinking_payload() {
         request.headers.get("x-internal-token"),
         Some(&"internal-secret".to_string())
     );
-    assert_eq!(request.body["model"], json!("qwen3.5-27b-reason"));
+    assert_eq!(request.body["model"], json!("qwen3.6-27b-reason"));
     assert_eq!(request.body["max_tokens"], json!(128));
     assert_eq!(request.body["extra_body"]["enable_thinking"], json!(true));
     assert_eq!(
