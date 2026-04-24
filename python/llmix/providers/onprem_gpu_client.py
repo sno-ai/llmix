@@ -23,7 +23,7 @@ from llmix.providers.openai_common import build_retry_config, jittered_delay
 
 logger = logging.getLogger(__name__)
 
-GPU_DEFAULT_MODEL = "qwen3.5-27b-extract"
+GPU_DEFAULT_MODEL = "qwen3.6-27b-extract"
 VALID_GPU_PATHS = frozenset({"extract", "reason"})
 
 

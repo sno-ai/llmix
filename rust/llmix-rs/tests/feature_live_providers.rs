@@ -294,7 +294,7 @@ async fn sno_gpu_live_extract_path_via_pipeline() {
     };
     let base_url = envs[0].clone();
     let internal_secret = envs[1].clone();
-    let model = env_or("SNO_GPU_MODEL", "qwen3.5-27b-extract");
+    let model = env_or("SNO_GPU_MODEL", "qwen3.6-27b-extract");
 
     let pipeline = live_pipeline(SnoGpuChatHelper::new().with_internal_token(internal_secret));
     pipeline.set_key_pool(
