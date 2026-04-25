@@ -205,7 +205,7 @@ fn gemini_preserves_existing_budget_and_supports_camel_case_aliases() {
 
 #[test]
 fn sno_gpu_constructs_base_url_and_validates_inputs() {
-    let mut context = ctx("qwen3.5-27b", "sno-gpu");
+    let mut context = ctx("qwen3.6-27b-extract", "sno-gpu");
     context.base_url = Some("https://rt3-llm.sno.ai".to_string());
     context.provider_options = Some(object(json!({
         "sno-gpu": { "gpu_path": "extract" }
@@ -226,6 +226,7 @@ fn sno_gpu_constructs_base_url_and_validates_inputs() {
     );
 
     let mut with_v1_context = context.clone();
+    with_v1_context.model = "qwen3.6-27b-reason".to_string();
     with_v1_context.base_url = Some("https://rt3-llm.sno.ai/v1".to_string());
     with_v1_context.provider_options = Some(object(json!({
         "sno-gpu": { "gpuPath": "reason" }
@@ -239,7 +240,7 @@ fn sno_gpu_constructs_base_url_and_validates_inputs() {
 
 #[test]
 fn sno_gpu_uses_camel_output_key_when_input_kwargs_do() {
-    let mut context = ctx("qwen3.5-27b", "sno-gpu");
+    let mut context = ctx("qwen3.6-27b-extract", "sno-gpu");
     context.base_url = Some("https://rt3-llm.sno.ai".to_string());
     context.provider_options = Some(object(json!({
         "sno-gpu": { "gpuPath": "extract" }
@@ -255,13 +256,14 @@ fn sno_gpu_uses_camel_output_key_when_input_kwargs_do() {
 
 #[test]
 fn sno_gpu_errors_on_missing_base_url_and_invalid_paths() {
-    let error = sno_gpu_transform_kwargs(&ctx("qwen3.5-27b", "sno-gpu"), Map::new()).unwrap_err();
+    let error =
+        sno_gpu_transform_kwargs(&ctx("qwen3.6-27b-reason", "sno-gpu"), Map::new()).unwrap_err();
     assert_eq!(
         error.to_string(),
         "sno-gpu provider requires a non-empty base_url"
     );
 
-    let mut context = ctx("qwen3.5-27b", "sno-gpu");
+    let mut context = ctx("qwen3.6-27b-reason", "sno-gpu");
     context.base_url = Some("https://rt3-llm.sno.ai".to_string());
     context.provider_options = Some(object(json!({
         "sno-gpu": { "gpu_path": "../escape" }
