@@ -56,6 +56,7 @@ def normalize_model_name(name: str) -> str:
     - Lowercase
     - Strip 'models/' prefix
     - Strip 'qwen/qwen' -> 'qwen' prefix
+    - Strip 'deepseek/' provider prefix
     - Strip date suffixes: -YYYY-MM-DD, -YYYYMMDD, -YYMM
     - Handle Anthropic naming: claude-haiku-4-5 -> claude-4.5-haiku
 
@@ -73,6 +74,10 @@ def normalize_model_name(name: str) -> str:
 
     # Remove Qwen/ prefix and normalize (qwen/qwen -> qwen)
     normalized = re.sub(r"^qwen/qwen", "qwen", normalized)
+
+    # Remove OpenRouter DeepSeek provider prefix
+    if normalized.startswith("deepseek/"):
+        normalized = normalized[9:]
 
     # Strip date suffixes:
     # -2025-08-07 (OpenAI YYYY-MM-DD)

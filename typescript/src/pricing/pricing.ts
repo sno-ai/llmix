@@ -79,7 +79,7 @@ const hasOwn = (key: string): boolean => Object.hasOwn(MODEL_PRICING, key)
  * Normalize model name for lookup:
  * - Strip date suffixes: -2025-08-07, -20251001, -2411
  * - Handle Anthropic naming: claude-haiku-4-5 -> claude-4.5-haiku
- * - Handle prefixes: models/, Qwen/
+ * - Handle prefixes: models/, Qwen/, deepseek/
  * - Lowercase
  */
 function normalizeModelName(name: string): string {
@@ -92,6 +92,11 @@ function normalizeModelName(name: string): string {
 
 	// Remove Qwen/ prefix and normalize
 	normalized = normalized.replace(/^qwen\/qwen/, "qwen")
+
+	// Remove OpenRouter DeepSeek provider prefix
+	if (normalized.startsWith("deepseek/")) {
+		normalized = normalized.slice(9)
+	}
 
 	// Strip date suffixes:
 	// -2025-08-07 (OpenAI YYYY-MM-DD)

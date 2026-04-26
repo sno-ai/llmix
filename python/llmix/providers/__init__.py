@@ -15,10 +15,9 @@ Providers are lazily imported to avoid hard failures when optional
 dependencies (e.g. google-genai) are not installed.  Only the provider
 actually used at runtime needs its dependencies present.
 
-Note: there is no dedicated OpenRouter/DeepInfra/Novita/Together *client*
-class because those services are OpenAI-compatible — they reuse
-``AsyncOpenAIClient`` with a custom ``base_url``. Provider selection
-happens in ``llmix.dispatchers`` (e.g. ``openrouter_dispatch``), not here.
+OpenRouter has its own small client even though its API is OpenAI-compatible:
+it uses Chat Completions, OpenRouter model routing, and OpenRouter usage
+normalization. Other compatible providers keep their dedicated chat clients.
 """
 
 # Eagerly import only the universal base types (no optional deps).
@@ -30,6 +29,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     'DeepInfraClient': 'llmix.providers.deepinfra_client',
     'AsyncGeminiClient': 'llmix.providers.gemini_async_client',
     'NovitaClient': 'llmix.providers.novita_client',
+    'OpenRouterClient': 'llmix.providers.openrouter_client',
     'AsyncOpenAIClient': 'llmix.providers.openai_async_client',
     'GpuClient': 'llmix.providers.onprem_gpu_client',
     'SnoGpuClient': 'llmix.providers.onprem_gpu_client',
@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from llmix.providers.onprem_gpu_client import GpuClient as GpuClient
     from llmix.providers.onprem_gpu_client import SnoGpuClient as SnoGpuClient
     from llmix.providers.openai_async_client import AsyncOpenAIClient as AsyncOpenAIClient
+    from llmix.providers.openrouter_client import OpenRouterClient as OpenRouterClient
     from llmix.providers.together_client import TogetherClient as TogetherClient
 
 
@@ -67,6 +68,7 @@ __all__ = [
     'DeepInfraClient',
     'AsyncGeminiClient',
     'NovitaClient',
+    'OpenRouterClient',
     'AsyncOpenAIClient',
     'BaseLLMClient',
     'GpuClient',

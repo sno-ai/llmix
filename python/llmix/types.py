@@ -127,8 +127,8 @@ class CachingConfig(TypedDict, total=False):
 # PROVIDER TYPES
 # =============================================================================
 
-Provider = Literal["openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "sno-gpu"]
-ProviderOrUnknown = Literal["openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "sno-gpu", "unknown"]
+Provider = Literal["openai", "anthropic", "google", "deepseek", "openrouter", "deepinfra", "together", "novita", "sno-gpu"]
+ProviderOrUnknown = Literal["openai", "anthropic", "google", "deepseek", "openrouter", "deepinfra", "together", "novita", "sno-gpu", "unknown"]
 
 
 # =============================================================================
@@ -271,6 +271,16 @@ class DeepSeekProviderOptions(TypedDict, total=False):
     thinking: DeepSeekThinkingConfig
 
 
+class OpenRouterProviderOptions(TypedDict, total=False):
+    """OpenRouter-specific request options."""
+
+    provider: dict[str, Any]
+    """OpenRouter provider routing preferences, e.g. {'sort': 'price'}."""
+
+    reasoning: dict[str, Any]
+    """OpenRouter reasoning configuration for supported models."""
+
+
 class DeepInfraProviderOptions(TypedDict, total=False):
     """DeepInfra-specific provider options."""
 
@@ -314,6 +324,7 @@ ProviderOptions = TypedDict(
         "anthropic": AnthropicProviderOptions,
         "google": GoogleProviderOptions,
         "deepseek": DeepSeekProviderOptions,
+        "openrouter": OpenRouterProviderOptions,
         "deepinfra": DeepInfraProviderOptions,
         "together": TogetherProviderOptions,
         "novita": NovitaProviderOptions,

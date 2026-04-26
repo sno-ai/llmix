@@ -30,6 +30,7 @@ import {
   MAX_VERSION,
   MIN_VERSION,
   type OpenAIProviderOptions,
+  type OpenRouterProviderOptions,
   type Provider,
   type ProviderOptions,
   SecurityError,
@@ -405,6 +406,16 @@ export const DeepSeekProviderOptionsSchema = z
   .strict() satisfies z.ZodType<DeepSeekProviderOptions>;
 
 /**
+ * OpenRouter provider options schema
+ */
+export const OpenRouterProviderOptionsSchema = z
+  .object({
+    provider: z.record(z.string(), z.unknown()).optional(),
+    reasoning: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict() satisfies z.ZodType<OpenRouterProviderOptions>;
+
+/**
  * Sno GPU provider options schema
  */
 export const SnoGpuProviderOptionsSchema = z
@@ -424,6 +435,7 @@ export const ProviderOptionsSchema = z
     anthropic: AnthropicProviderOptionsSchema.optional(),
     google: GoogleProviderOptionsSchema.optional(),
     deepseek: DeepSeekProviderOptionsSchema.optional(),
+    openrouter: OpenRouterProviderOptionsSchema.optional(),
     "sno-gpu": SnoGpuProviderOptionsSchema.optional(),
   })
   .strict() satisfies z.ZodType<ProviderOptions>;
@@ -436,6 +448,7 @@ export const ProviderSchema = z.enum([
   "anthropic",
   "google",
   "deepseek",
+  "openrouter",
   "sno-gpu",
 ]) satisfies z.ZodType<Provider>;
 

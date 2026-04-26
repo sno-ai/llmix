@@ -22,6 +22,7 @@ const PROVIDER_INSTALL_COMMANDS: Record<string, string> = {
   "@ai-sdk/openai": "bun add @ai-sdk/openai",
   "@ai-sdk/anthropic": "bun add @ai-sdk/anthropic",
   "@ai-sdk/google": "bun add @ai-sdk/google",
+  "@openrouter/sdk": "bun add @openrouter/sdk",
   ai: "bun add ai",
   ioredis: "bun add ioredis",
 };

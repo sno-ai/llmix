@@ -30,7 +30,16 @@ from llmix.providers.base import LLMResponse
 from llmix.providers.onprem_gpu_client import build_gpu_base_url
 
 if TYPE_CHECKING:
-    from llmix.providers import AsyncAnthropicClient, AsyncGeminiClient, AsyncOpenAIClient, DeepInfraClient, NovitaClient, SnoGpuClient, TogetherClient
+    from llmix.providers import (
+        AsyncAnthropicClient,
+        AsyncGeminiClient,
+        AsyncOpenAIClient,
+        DeepInfraClient,
+        NovitaClient,
+        OpenRouterClient,
+        SnoGpuClient,
+        TogetherClient,
+    )
 
 __all__ = [
     "anthropic_dispatch",
@@ -43,11 +52,14 @@ __all__ = [
     "together_dispatch",
 ]
 
-_DEEPSEEK_MODEL_MAPPINGS: dict[str, str] = {
+_OPENROUTER_MODEL_MAPPINGS: dict[str, str] = {
     "deepseek-chat": "deepseek/deepseek-chat-v3-0324",
     "deepseek-v3": "deepseek/deepseek-chat-v3-0324",
     "deepseek-v3.2-speciale": "deepseek/deepseek-chat-v3-0324:free",
+    "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
     "deepseek-reasoner": "deepseek/deepseek-reasoner",
+    "qwen3.5-27b": "qwen/qwen3.5-27b",
+    "qwen3.6-27b": "qwen/qwen3.6-27b",
 }
 
 
@@ -273,10 +285,53 @@ def _build_chat_provider_kwargs(ctx: DispatchInput) -> dict[str, Any]:
     return kwargs
 
 
-def _map_deepseek_model(model: str) -> str:
-    if model.startswith("deepseek/"):
+def _build_openrouter_kwargs(ctx: DispatchInput) -> dict[str, Any]:
+    kwargs = _build_chat_provider_kwargs(ctx)
+    extra_body = ctx.kwargs.get("extra_body")
+    if extra_body is not None:
+        kwargs["extra_body"] = extra_body
+
+    for key in ("provider", "reasoning"):
+        value = _resolve_openrouter_record(ctx, key)
+        if value is not None:
+            kwargs[key] = value
+    return kwargs
+
+
+def _is_openrouter_default_provider(value: Any) -> bool:
+    return isinstance(value, Mapping) and dict(value) == {"sort": "price"}
+
+
+def _resolve_openrouter_record(ctx: DispatchInput, key: str) -> dict[str, Any] | None:
+    direct = ctx.kwargs.get(key)
+    if isinstance(direct, Mapping):
+        return dict(direct)
+
+    extra_body = ctx.kwargs.get("extra_body")
+    extra_value = extra_body.get(key) if isinstance(extra_body, Mapping) else None
+    openrouter_options = _resolve_provider_options(ctx, "openrouter")
+    option_value = openrouter_options.get(key)
+
+    if isinstance(option_value, Mapping) and (
+        not isinstance(extra_value, Mapping) or (key == "provider" and _is_openrouter_default_provider(extra_value))
+    ):
+        return dict(option_value)
+    if isinstance(extra_value, Mapping):
+        return dict(extra_value)
+    return None
+
+
+def _map_openrouter_model(model: str) -> str:
+    if "/" in model:
         return model
-    return _DEEPSEEK_MODEL_MAPPINGS.get(model, f"deepseek/{model}")
+    mapped = _OPENROUTER_MODEL_MAPPINGS.get(model)
+    if mapped:
+        return mapped
+    if model.startswith("deepseek"):
+        return f"deepseek/{model}"
+    if model.startswith("qwen"):
+        return f"qwen/{model}"
+    return model
 
 
 def openai_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDispatchFn:
@@ -367,28 +422,24 @@ def deepinfra_dispatch(client: DeepInfraClient | None = None) -> ProviderDispatc
     return _mark_bypass(dispatch, client, "deepinfra")
 
 
-def openrouter_dispatch(client: AsyncOpenAIClient | None = None) -> ProviderDispatchFn:
-    # OpenRouter is OpenAI-compatible — no dedicated client needed.
-    # Reuses AsyncOpenAIClient with base_url=https://openrouter.ai/api/v1.
-    # Ref: https://openrouter.ai/docs/quickstart
+def openrouter_dispatch(client: OpenRouterClient | None = None) -> ProviderDispatchFn:
     async def dispatch(ctx: DispatchInput) -> ProviderResult:
-        resolved_model = _map_deepseek_model(ctx.model)
-        openai_client_cls = cast("type[AsyncOpenAIClient]", _load_provider_attr("AsyncOpenAIClient"))
-        resolved_client = client or openai_client_cls(
+        resolved_model = _map_openrouter_model(ctx.model)
+        openrouter_client_cls = cast("type[OpenRouterClient]", _load_provider_attr("OpenRouterClient"))
+        resolved_client = client or openrouter_client_cls(
             api_key=_require_api_key(ctx.api_key, get_openrouter_api_key(), env_name="OPENROUTER_API_KEY", provider="openrouter"),
             base_url=_resolve_base_url(ctx, OPENROUTER_BASE_URL),
             model=resolved_model,
         )
-        instructions, provider_messages = _split_system_messages(_coerce_messages(ctx.messages))
-        response = await resolved_client.response_completion(
-            input=provider_messages,
+        response = await resolved_client.chat_completion(
+            messages=_coerce_messages(ctx.messages),
             model=resolved_model,
-            instructions=instructions,
-            **_build_openai_kwargs(ctx),
+            **_build_openrouter_kwargs(ctx),
         )
         return _normalize_response(response, resolved_model)
 
-    return _mark_bypass(dispatch, client, "deepseek")
+    dispatch = _mark_bypass(dispatch, client, "deepseek")
+    return _mark_bypass(dispatch, client, "openrouter")
 
 
 def novita_dispatch(client: NovitaClient | None = None) -> ProviderDispatchFn:

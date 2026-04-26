@@ -24,11 +24,14 @@ const NOVITA_BASE_URL = "https://api.novita.ai/v3/openai";
 const TOGETHER_BASE_URL = "https://api.together.xyz/v1";
 const VALID_GPU_PATHS = new Set(["extract", "reason"]);
 
-const DEEPSEEK_MODEL_MAPPINGS: Record<string, string> = {
+const OPENROUTER_MODEL_MAPPINGS: Record<string, string> = {
   "deepseek-chat": "deepseek/deepseek-chat-v3-0324",
   "deepseek-v3": "deepseek/deepseek-chat-v3-0324",
   "deepseek-v3.2-speciale": "deepseek/deepseek-chat-v3-0324:free",
+  "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
   "deepseek-reasoner": "deepseek/deepseek-reasoner",
+  "qwen3.5-27b": "qwen/qwen3.5-27b",
+  "qwen3.6-27b": "qwen/qwen3.6-27b",
 };
 
 // LH: Keep optional AI SDK peers lazy so `import "llmix"` does not fail
@@ -37,6 +40,7 @@ const getAi = lazyImport<typeof import("ai")>("ai");
 const getAnthropicSdk = lazyImport<typeof import("@ai-sdk/anthropic")>("@ai-sdk/anthropic");
 const getGoogleSdk = lazyImport<typeof import("@ai-sdk/google")>("@ai-sdk/google");
 const getOpenAiSdk = lazyImport<typeof import("@ai-sdk/openai")>("@ai-sdk/openai");
+const getOpenRouterSdk = lazyImport<typeof import("@openrouter/sdk")>("@openrouter/sdk");
 
 type TextConfig = { format: unknown };
 type SnoGpuThinkingSettings = {
@@ -52,6 +56,31 @@ type OpenAiCompatibleProvider = ((modelId: string) => LanguageModel) & {
 type ResponseFormatConfig =
   | { type: "text" }
   | { type: "json"; schema?: JSONValue; name?: string; description?: string };
+type OpenRouterMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content?: unknown;
+  toolCalls?: unknown;
+  toolCallId?: string;
+  name?: string;
+};
+type OpenRouterChatRequest = Record<string, unknown> & {
+  model: string;
+  messages: OpenRouterMessage[];
+  stream: false;
+};
+type OpenRouterChatResult = {
+  choices?: Array<{
+    message?: {
+      content?: unknown;
+      reasoning?: unknown;
+      reasoningContent?: unknown;
+      toolCalls?: unknown[];
+      tool_calls?: unknown[];
+    };
+  }>;
+  model?: string;
+  usage?: unknown;
+};
 
 function requireApiKey(
   apiKey: string | undefined,
@@ -244,11 +273,21 @@ function normalizeResult(
   };
 }
 
-function mapDeepseekModel(model: string): string {
-  if (model.startsWith("deepseek/")) {
+function mapOpenRouterModel(model: string): string {
+  if (model.includes("/")) {
     return model;
   }
-  return DEEPSEEK_MODEL_MAPPINGS[model] ?? `deepseek/${model}`;
+  const mapped = OPENROUTER_MODEL_MAPPINGS[model];
+  if (mapped !== undefined) {
+    return mapped;
+  }
+  if (model.startsWith("deepseek")) {
+    return `deepseek/${model}`;
+  }
+  if (model.startsWith("qwen")) {
+    return `qwen/${model}`;
+  }
+  return model;
 }
 
 function resolveOpenAiCompatibleChatModel(
@@ -437,6 +476,201 @@ function createSnoGpuFetch(ctx: DispatchContext): typeof fetch {
   return impl as typeof fetch;
 }
 
+function toOpenRouterMessages(messages: ModelMessage[]): OpenRouterMessage[] {
+  const result: OpenRouterMessage[] = [];
+  for (const message of messages) {
+    if (!isRecord(message)) {
+      continue;
+    }
+    const record = message as Record<string, unknown>;
+    const role = record["role"];
+    if (role !== "system" && role !== "user" && role !== "assistant" && role !== "tool") {
+      continue;
+    }
+
+    const next: OpenRouterMessage = { role };
+    if (record["content"] !== undefined) {
+      next.content = record["content"];
+    } else if (role !== "assistant" || record["toolCalls"] === undefined) {
+      next.content = "";
+    }
+    if (record["toolCalls"] !== undefined) {
+      next.toolCalls = record["toolCalls"];
+    }
+    if (typeof record["toolCallId"] === "string") {
+      next.toolCallId = record["toolCallId"];
+    }
+    if (typeof record["name"] === "string") {
+      next.name = record["name"];
+    }
+    result.push(next);
+  }
+  return result;
+}
+
+function setOpenRouterNumber(
+  request: OpenRouterChatRequest,
+  kwargs: Record<string, unknown>,
+  sourceKey: string,
+  targetKey: string,
+): void {
+  const value = kwargs[sourceKey];
+  if (typeof value === "number") {
+    request[targetKey] = value;
+  }
+}
+
+function setOpenRouterBoolean(
+  request: OpenRouterChatRequest,
+  kwargs: Record<string, unknown>,
+  sourceKey: string,
+  targetKey: string,
+): void {
+  const value = kwargs[sourceKey];
+  if (typeof value === "boolean") {
+    request[targetKey] = value;
+  }
+}
+
+function setOpenRouterValue(
+  request: OpenRouterChatRequest,
+  kwargs: Record<string, unknown>,
+  sourceKey: string,
+  targetKey: string,
+): void {
+  const value = kwargs[sourceKey];
+  if (value !== undefined) {
+    request[targetKey] = value;
+  }
+}
+
+function resolveOpenRouterRecord(
+  ctx: DispatchContext,
+  key: "provider" | "reasoning",
+): Record<string, unknown> | undefined {
+  const direct = ctx.kwargs[key];
+  if (isRecord(direct)) {
+    return direct;
+  }
+
+  const extraBody = ctx.kwargs["extra_body"];
+  const extraValue = isRecord(extraBody) && isRecord(extraBody[key]) ? extraBody[key] : undefined;
+
+  const openrouterOptions = ctx.config.providerOptions?.openrouter;
+  const optionValue = openrouterOptions?.[key];
+  if (
+    optionValue !== undefined &&
+    (extraValue === undefined || (key === "provider" && isOpenRouterDefaultProvider(extraValue)))
+  ) {
+    return optionValue;
+  }
+  if (extraValue !== undefined) {
+    return extraValue;
+  }
+  return undefined;
+}
+
+function isOpenRouterDefaultProvider(value: Record<string, unknown>): boolean {
+  return Object.keys(value).length === 1 && value["sort"] === "price";
+}
+
+function buildOpenRouterChatRequest(ctx: DispatchContext, model: string): OpenRouterChatRequest {
+  const request: OpenRouterChatRequest = {
+    model,
+    messages: toOpenRouterMessages(ctx.messages as ModelMessage[]),
+    stream: false,
+  };
+
+  setOpenRouterNumber(request, ctx.kwargs, "temperature", "temperature");
+  setOpenRouterNumber(request, ctx.kwargs, "top_p", "topP");
+  setOpenRouterNumber(request, ctx.kwargs, "seed", "seed");
+  setOpenRouterNumber(request, ctx.kwargs, "presence_penalty", "presencePenalty");
+  setOpenRouterNumber(request, ctx.kwargs, "frequency_penalty", "frequencyPenalty");
+  setOpenRouterBoolean(request, ctx.kwargs, "parallel_tool_calls", "parallelToolCalls");
+  setOpenRouterValue(request, ctx.kwargs, "stop", "stop");
+  setOpenRouterValue(request, ctx.kwargs, "tools", "tools");
+  setOpenRouterValue(request, ctx.kwargs, "tool_choice", "toolChoice");
+  setOpenRouterValue(request, ctx.kwargs, "response_format", "responseFormat");
+  setOpenRouterValue(request, ctx.kwargs, "service_tier", "serviceTier");
+  setOpenRouterValue(request, ctx.kwargs, "session_id", "sessionId");
+  setOpenRouterValue(request, ctx.kwargs, "plugins", "plugins");
+  setOpenRouterValue(request, ctx.kwargs, "models", "models");
+
+  const maxCompletionTokens = ctx.kwargs["max_completion_tokens"];
+  if (typeof maxCompletionTokens === "number") {
+    request["maxCompletionTokens"] = maxCompletionTokens;
+  } else {
+    const maxTokens = resolveMaxOutputTokens(ctx.kwargs);
+    if (maxTokens !== undefined) {
+      request["maxTokens"] = maxTokens;
+    }
+  }
+
+  const provider = resolveOpenRouterRecord(ctx, "provider");
+  if (provider !== undefined) {
+    request["provider"] = provider;
+  }
+  const reasoning = resolveOpenRouterRecord(ctx, "reasoning");
+  if (reasoning !== undefined) {
+    request["reasoning"] = reasoning;
+  }
+
+  return request;
+}
+
+function extractOpenRouterContent(message: unknown): string {
+  if (!isRecord(message)) {
+    return "";
+  }
+  const content = message["content"];
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    const textParts = content.flatMap((part) => {
+      if (typeof part === "string") {
+        return [part];
+      }
+      if (isRecord(part) && typeof part["text"] === "string") {
+        return [part["text"]];
+      }
+      return [];
+    });
+    if (textParts.length > 0) {
+      return textParts.join("\n");
+    }
+  }
+  const reasoning = message["reasoning"] ?? message["reasoningContent"];
+  return typeof reasoning === "string" ? reasoning : "";
+}
+
+function extractOpenRouterUsage(usage: unknown): LLMUsage {
+  if (!isRecord(usage)) {
+    return { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  }
+  const inputTokens = typeof usage["promptTokens"] === "number" ? usage["promptTokens"] : 0;
+  const outputTokens = typeof usage["completionTokens"] === "number" ? usage["completionTokens"] : 0;
+  const totalTokens =
+    typeof usage["totalTokens"] === "number" ? usage["totalTokens"] : inputTokens + outputTokens;
+  const promptTokensDetails = isRecord(usage["promptTokensDetails"]) ? usage["promptTokensDetails"] : undefined;
+  const cachedInputTokens =
+    promptTokensDetails && typeof promptTokensDetails["cachedTokens"] === "number"
+      ? promptTokensDetails["cachedTokens"]
+      : undefined;
+  return { inputTokens, outputTokens, totalTokens, cachedInputTokens };
+}
+
+function normalizeOpenRouterResult(result: OpenRouterChatResult, fallbackModel: string): ProviderResult {
+  const message = result.choices?.[0]?.message;
+  const toolCalls = message?.toolCalls ?? message?.tool_calls;
+  return {
+    content: extractOpenRouterContent(message),
+    model: result.model ?? fallbackModel,
+    usage: extractOpenRouterUsage(result.usage),
+    toolCalls,
+  };
+}
+
 async function generateWithModel(
   ctx: DispatchContext,
   model: LanguageModel,
@@ -524,21 +758,18 @@ export function geminiDispatch(): ProviderDispatchFn {
   };
 }
 
-// OpenRouter is OpenAI-compatible — no dedicated provider package needed.
-// Reuses @ai-sdk/openai with baseURL=https://openrouter.ai/api/v1.
-// Ref: https://openrouter.ai/docs/quickstart
 export function openrouterDispatch(): ProviderDispatchFn {
   return async (ctx) => {
-    const { createOpenAI } = await getOpenAiSdk();
-    const openrouter = createOpenAI({
-      apiKey: requireApiKey(ctx.apiKey, getOpenrouterApiKey(), "OPENROUTER_API_KEY", "deepseek"),
-      baseURL: resolveBaseUrl(ctx, OPENROUTER_BASE_URL),
+    const { OpenRouter } = await getOpenRouterSdk();
+    const serverURL = resolveBaseUrl(ctx, OPENROUTER_BASE_URL);
+    const openrouter = new OpenRouter({
+      apiKey: requireApiKey(ctx.apiKey, getOpenrouterApiKey(), "OPENROUTER_API_KEY", "openrouter"),
+      serverURL,
     });
-    return generateWithModel(
-      ctx,
-      resolveOpenAiCompatibleChatModel(openrouter as OpenAiCompatibleProvider, mapDeepseekModel(ctx.model)),
-      resolveProviderOptions(ctx.config, "deepseek"),
-    );
+    const model = mapOpenRouterModel(ctx.model);
+    const chatRequest = buildOpenRouterChatRequest(ctx, model);
+    const result = await openrouter.chat.send({ chatRequest: chatRequest as never }, { serverURL });
+    return normalizeOpenRouterResult(result as OpenRouterChatResult, model);
   };
 }
 

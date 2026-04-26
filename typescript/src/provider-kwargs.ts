@@ -85,7 +85,7 @@ export function openaiTransformKwargs(
 }
 
 // =============================================================================
-// OpenRouter (DeepSeek): inject extra_body.provider.sort = "price"
+// OpenRouter: inject extra_body.provider.sort = "price"
 // =============================================================================
 
 const OPENROUTER_DEFAULT_PROVIDER = { sort: "price" } as const;
@@ -95,7 +95,7 @@ const OPENROUTER_DEFAULT_PROVIDER = { sort: "price" } as const;
  * Sets extra_body.provider.sort = "price" when not already present.
  */
 export function openrouterTransformKwargs(
-  _ctx: TransformKwargsContext,
+  ctx: TransformKwargsContext,
   kwargs: Record<string, unknown>
 ): Record<string, unknown> {
   const result = { ...kwargs };
@@ -104,8 +104,15 @@ export function openrouterTransformKwargs(
     typeof raw === "object" && raw !== null && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
       : {};
+  const openrouterOptions = ctx.providerOptions?.openrouter;
   if (!("provider" in extraBody)) {
-    result["extra_body"] = { ...extraBody, provider: OPENROUTER_DEFAULT_PROVIDER };
+    extraBody["provider"] = openrouterOptions?.provider ?? OPENROUTER_DEFAULT_PROVIDER;
+  }
+  if (!("reasoning" in extraBody) && openrouterOptions?.reasoning !== undefined) {
+    extraBody["reasoning"] = openrouterOptions.reasoning;
+  }
+  if (Object.keys(extraBody).length > 0) {
+    result["extra_body"] = { ...extraBody };
   }
   return result;
 }
@@ -235,6 +242,8 @@ export function snoGpuTransformKwargs(
 
 export const PROVIDER_KWARGS_REGISTRY: Record<string, TransformKwargsCallback> = {
   openai: openaiTransformKwargs,
+  openrouter: openrouterTransformKwargs,
+  // Legacy DeepSeek configs route through OpenRouter.
   deepseek: openrouterTransformKwargs,
   google: geminiTransformKwargs,
   gemini: geminiTransformKwargs,

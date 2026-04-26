@@ -91,7 +91,7 @@ def openai_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any])
 
 
 # =============================================================================
-# OpenRouter (DeepSeek): inject extra_body.provider.sort = "price"
+# OpenRouter: inject extra_body.provider.sort = "price"
 # =============================================================================
 
 _OPENROUTER_DEFAULT_PROVIDER = {"sort": "price"}
@@ -100,12 +100,22 @@ _OPENROUTER_DEFAULT_PROVIDER = {"sort": "price"}
 def openrouter_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]) -> dict[str, Any]:
     """Inject default provider sorting config for OpenRouter.
 
-    Sets extra_body.provider.sort = "price" when not already present.
+    Configured OpenRouter provider/reasoning options are copied into
+    extra_body when the caller did not already provide explicit kwargs.
+    Falls back to extra_body.provider.sort = "price".
     """
     kwargs = dict(kwargs)
+    provider_options = ctx.get("provider_options") or {}
+    openrouter_options = provider_options.get("openrouter") or {}
+
     extra_body: dict[str, Any] = kwargs.get("extra_body") or {}
     if "provider" not in extra_body:
-        extra_body = {**extra_body, "provider": {**_OPENROUTER_DEFAULT_PROVIDER}}
+        configured_provider = openrouter_options.get("provider")
+        provider = configured_provider if isinstance(configured_provider, dict) else _OPENROUTER_DEFAULT_PROVIDER
+        extra_body = {**extra_body, "provider": dict(provider)}
+    if "reasoning" not in extra_body and isinstance(openrouter_options.get("reasoning"), dict):
+        extra_body = {**extra_body, "reasoning": dict(openrouter_options["reasoning"])}
+    if extra_body:
         kwargs["extra_body"] = extra_body
     return kwargs
 
@@ -191,6 +201,8 @@ def sno_gpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]
 
 PROVIDER_KWARGS_REGISTRY: dict[str, TransformKwargsCallback] = {
     "openai": openai_transform_kwargs,
+    "openrouter": openrouter_transform_kwargs,
+    # Legacy DeepSeek provider configs route through OpenRouter.
     "deepseek": openrouter_transform_kwargs,
     "google": gemini_transform_kwargs,
     "gemini": gemini_transform_kwargs,

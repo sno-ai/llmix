@@ -115,7 +115,7 @@ export interface TimeoutConfig {
 /**
  * Supported LLM providers
  */
-export type Provider = "openai" | "anthropic" | "google" | "deepseek" | "sno-gpu";
+export type Provider = "openai" | "anthropic" | "google" | "deepseek" | "openrouter" | "sno-gpu";
 
 /** Provider type with unknown for error cases (config load failures) */
 export type ProviderOrUnknown = Provider | "unknown";
@@ -340,6 +340,19 @@ export interface DeepSeekProviderOptions {
 }
 
 /**
+ * OpenRouter-specific provider options
+ *
+ * @see https://openrouter.ai/docs/api-reference/chat-completion
+ */
+export interface OpenRouterProviderOptions {
+  /** OpenRouter provider routing preferences, e.g. `{ sort: "price" }`. */
+  provider?: Record<string, unknown> | undefined;
+
+  /** OpenRouter reasoning configuration for supported models. */
+  reasoning?: Record<string, unknown> | undefined;
+}
+
+/**
  * Sno on-prem GPU-specific provider options
  */
 export interface SnoGpuProviderOptions {
@@ -363,6 +376,7 @@ export interface ProviderOptions {
   anthropic?: AnthropicProviderOptions | undefined;
   google?: GoogleProviderOptions | undefined;
   deepseek?: DeepSeekProviderOptions | undefined;
+  openrouter?: OpenRouterProviderOptions | undefined;
   "sno-gpu"?: SnoGpuProviderOptions | undefined;
   deepinfra?: Record<string, unknown> | undefined;
   novita?: Record<string, unknown> | undefined;
