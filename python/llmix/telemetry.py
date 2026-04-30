@@ -9,8 +9,9 @@ Usage:
     plugin = HeliconePlugin(api_key="hk-...", environment="prod")
     pipeline = CallPipeline(config, telemetry=plugin)
 
-    # Self-hosted / custom
-    plugin = SnoHeliconePlugin(base_url="http://helicone.sno.ai:8585")
+    # Self-hosted / custom (Tailscale-only LLM proxy lane — see
+    # ~/infra/cloud-infra/sno-main-1/helicone/CLIENT_INTEGRATION.md "Lane B")
+    plugin = SnoHeliconePlugin(base_url="http://sno-main-1:8585")
     pipeline = CallPipeline(config, telemetry=plugin)
 
     # No telemetry
