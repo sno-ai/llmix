@@ -82,6 +82,7 @@ class SnoGpuClient(BaseLLMClient):
         self._http_client = http_client
         self._client: AsyncOpenAI | None = None
         self._client_lock = threading.Lock()
+
     @property
     def client(self) -> AsyncOpenAI:
         """Lazy-initialize AsyncOpenAI client for GPU inference (thread-safe)."""
@@ -96,10 +97,21 @@ class SnoGpuClient(BaseLLMClient):
                     "max_retries": 0,
                     "default_headers": self._default_headers,
                     # 960s > Caddy hard limit (900s) — transport must never kill before infra does
-                    "timeout": httpx.Timeout(960.0),
+                    "timeout": httpx.Timeout(960.0, connect=10.0),
                 }
                 if self._http_client is not None:
                     kwargs["http_client"] = self._http_client
+                else:
+                    # Bound connection pool so 502 bursts don't exhaust file descriptors
+                    # and half-open connections drain within keepalive_expiry on shutdown.
+                    kwargs["http_client"] = httpx.AsyncClient(
+                        limits=httpx.Limits(
+                            max_connections=20,
+                            max_keepalive_connections=10,
+                            keepalive_expiry=5.0,
+                        ),
+                        timeout=httpx.Timeout(960.0, connect=10.0),
+                    )
                 self._client = AsyncOpenAI(**kwargs)
             return self._client
 
