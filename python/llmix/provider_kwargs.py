@@ -165,12 +165,31 @@ def sno_gpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]
 
     Builds: {base_url}/{gpuPath}/v1 when gpuPath is present.
     Falls back to {base_url}/v1 when gpuPath is absent.
+
+    Also propagates ``enable_thinking`` (from providerOptions["sno-gpu"] or
+    common) into ``extra_body`` in BOTH the top-level form (the wrapper
+    translates this to ``chat_template_kwargs.enable_thinking``) AND directly
+    under ``chat_template_kwargs`` (so direct-vLLM endpoints honor it without
+    the wrapper). Without this, the YAML's ``enableThinking: false`` is
+    silently dropped and the reasoning model burns the whole token budget on
+    chain-of-thought, returning empty ``content``.
     """
     kwargs = dict(kwargs)
 
     provider_options = ctx.get("provider_options") or {}
     sno_gpu_opts = provider_options.get("sno-gpu") or {}
     gpu_path: str | None = sno_gpu_opts.get("gpu_path")
+
+    enable_thinking_opt = sno_gpu_opts.get("enable_thinking")
+    common_thinking = ctx.get("enable_thinking")
+    if enable_thinking_opt is not None or common_thinking is not None:
+        flag = bool(enable_thinking_opt) if enable_thinking_opt is not None else bool(common_thinking)
+        extra_body = dict(kwargs.get("extra_body") or {})
+        extra_body.setdefault("enable_thinking", flag)
+        chat_template_kwargs = dict(extra_body.get("chat_template_kwargs") or {})
+        chat_template_kwargs.setdefault("enable_thinking", flag)
+        extra_body["chat_template_kwargs"] = chat_template_kwargs
+        kwargs["extra_body"] = extra_body
 
     base_url = ctx.get("base_url") or ""
     base = base_url.rstrip("/")
@@ -181,9 +200,7 @@ def sno_gpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]
         base = base[:-3]
 
     if not base.strip():
-        raise ValueError(
-            "sno-gpu provider requires a non-empty base_url in config or GPU_BASE_URL env var"
-        )
+        raise ValueError("sno-gpu provider requires a non-empty base_url in config or GPU_BASE_URL env var")
 
     if gpu_path:
         if '..' in gpu_path or not re.match(r'^[a-zA-Z0-9_/-]+$', gpu_path):

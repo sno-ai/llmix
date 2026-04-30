@@ -105,11 +105,7 @@ class SnoGpuClient(BaseLLMClient):
                     # Bound connection pool so 502 bursts don't exhaust file descriptors
                     # and half-open connections drain within keepalive_expiry on shutdown.
                     kwargs["http_client"] = httpx.AsyncClient(
-                        limits=httpx.Limits(
-                            max_connections=20,
-                            max_keepalive_connections=10,
-                            keepalive_expiry=5.0,
-                        ),
+                        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10, keepalive_expiry=5.0),
                         timeout=httpx.Timeout(960.0, connect=10.0),
                     )
                 self._client = AsyncOpenAI(**kwargs)
@@ -134,11 +130,7 @@ class SnoGpuClient(BaseLLMClient):
                 api_kwargs[param] = kwargs[param]
         if "timeout" in kwargs and kwargs["timeout"] is not None:
             timeout = kwargs["timeout"]
-            api_kwargs["timeout"] = (
-                timeout
-                if isinstance(timeout, httpx.Timeout)
-                else httpx.Timeout(float(timeout))
-            )
+            api_kwargs["timeout"] = timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(float(timeout))
 
         # Pass top_k and min_p via extra_body (llama.cpp extensions, not standard OpenAI params)
         for ext_param in ("top_k", "min_p"):
@@ -156,7 +148,34 @@ class SnoGpuClient(BaseLLMClient):
                 if not response.choices:
                     return self._handle_error(Exception("GPU returned no choices"), model)
 
-                content = response.choices[0].message.content or ""
+                msg = response.choices[0].message
+                content = msg.content or ""
+                # vLLM with --reasoning-parser emits thinking in `reasoning`
+                # (newer) or `reasoning_content` (legacy). Wrap in <think>...</think>
+                # so downstream consumers can strip uniformly.
+                reasoning_text: str | None = None
+                for attr in ("reasoning_content", "reasoning"):
+                    val = getattr(msg, attr, None)
+                    if isinstance(val, str) and val.strip():
+                        reasoning_text = val
+                        break
+                if reasoning_text and "<think>" not in content:
+                    content = f"<think>{reasoning_text}</think>{content}"
+
+                # Surface budget-exhaustion as retryable error rather than empty success.
+                finish_reason = getattr(response.choices[0], "finish_reason", None)
+                visible = content
+                if visible.startswith("<think>") and "</think>" in visible:
+                    visible = visible.split("</think>", 1)[1]
+                if not visible.strip() and finish_reason == "length":
+                    return self._handle_error(
+                        Exception(
+                            f"Empty content with finish_reason=length — reasoning exhausted token budget "
+                            f"(model={response.model or model}, enable_thinking={self.enable_thinking})"
+                        ),
+                        model,
+                    )
+
                 usage = self._extract_usage(response)
 
                 return LLMResponse(content=content, usage=usage, model=response.model or model, success=True)
@@ -199,17 +218,9 @@ class SnoGpuClient(BaseLLMClient):
         The GPU API doesn't support the Response API, so this method converts
         response_completion() parameters to chat_completion() format.
         """
-        if (
-            tools
-            or tool_choice is not None
-            or parallel_tool_calls is not None
-            or allowed_tools is not None
-        ):
+        if tools or tool_choice is not None or parallel_tool_calls is not None or allowed_tools is not None:
             return self._handle_error(
-                ValueError(
-                    "GPU response_completion does not support tool calling; use chat_completion instead."
-                ),
-                model or self._get_default_model(),
+                ValueError("GPU response_completion does not support tool calling; use chat_completion instead."), model or self._get_default_model()
             )
         if text is not None and not (isinstance(text, dict) and text.get("format") is not None):
             logger.debug("[GPU] response_completion received 'text' without a mappable 'format' key.")
