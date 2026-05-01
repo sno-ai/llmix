@@ -128,17 +128,20 @@ function resolveHeliconeBaseUrl(
   ctx: DispatchContext,
   fallback: string,
   heliconeFallback: () => string,
-): string {
+): { baseURL: string; shouldSendHeliconeAuth: boolean } {
   const baseUrl = resolveBaseUrl(ctx, fallback);
   if (baseUrl !== fallback) {
-    return baseUrl;
+    return { baseURL: baseUrl, shouldSendHeliconeAuth: isHeliconeBaseUrl(baseUrl) };
   }
-  return getHeliconeApiKey()?.trim() ? heliconeFallback() : baseUrl;
+  if (getHeliconeApiKey()?.trim()) {
+    return { baseURL: heliconeFallback(), shouldSendHeliconeAuth: true };
+  }
+  return { baseURL: baseUrl, shouldSendHeliconeAuth: false };
 }
 
-function resolveHeliconeHeaders(baseUrl: string): Record<string, string> | undefined {
+function resolveHeliconeHeaders(shouldSendHeliconeAuth: boolean): Record<string, string> | undefined {
   const heliconeApiKey = getHeliconeApiKey()?.trim();
-  if (!heliconeApiKey || !isHeliconeBaseUrl(baseUrl)) {
+  if (!heliconeApiKey || !shouldSendHeliconeAuth) {
     return undefined;
   }
   return { "Helicone-Auth": `Bearer ${heliconeApiKey}` };
@@ -760,8 +763,8 @@ async function generateWithModel(
 export function openaiDispatch(): ProviderDispatchFn {
   return async (ctx) => {
     const { createOpenAI } = await getOpenAiSdk();
-    const baseURL = resolveHeliconeBaseUrl(ctx, OPENAI_BASE_URL, getHeliconeOpenaiBaseUrl);
-    const headers = resolveHeliconeHeaders(baseURL);
+    const { baseURL, shouldSendHeliconeAuth } = resolveHeliconeBaseUrl(ctx, OPENAI_BASE_URL, getHeliconeOpenaiBaseUrl);
+    const headers = resolveHeliconeHeaders(shouldSendHeliconeAuth);
     const openai = createOpenAI({
       apiKey: requireApiKey(ctx.apiKey, getOpenaiApiKey(), "OPENAI_API_KEY", "openai"),
       baseURL,
@@ -774,8 +777,8 @@ export function openaiDispatch(): ProviderDispatchFn {
 export function anthropicDispatch(): ProviderDispatchFn {
   return async (ctx) => {
     const { createAnthropic } = await getAnthropicSdk();
-    const baseURL = resolveHeliconeBaseUrl(ctx, ANTHROPIC_BASE_URL, getHeliconeAnthropicBaseUrl);
-    const headers = resolveHeliconeHeaders(baseURL);
+    const { baseURL, shouldSendHeliconeAuth } = resolveHeliconeBaseUrl(ctx, ANTHROPIC_BASE_URL, getHeliconeAnthropicBaseUrl);
+    const headers = resolveHeliconeHeaders(shouldSendHeliconeAuth);
     const anthropic = createAnthropic({
       apiKey: requireApiKey(ctx.apiKey, getAnthropicApiKey(), "ANTHROPIC_API_KEY", "anthropic"),
       baseURL,
