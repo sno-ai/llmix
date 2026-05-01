@@ -5,6 +5,9 @@ import {
   getDeepinfraApiKey,
   getGeminiApiKey,
   getGpuBaseUrl,
+  getHeliconeAnthropicBaseUrl,
+  getHeliconeApiKey,
+  getHeliconeOpenaiBaseUrl,
   getNovitaApiKey,
   getOpenaiApiKey,
   getOpenrouterApiKey,
@@ -110,6 +113,35 @@ function resolveBaseUrl(
     }
   }
   return fallback;
+}
+
+function isHeliconeBaseUrl(baseUrl: string): boolean {
+  try {
+    const hostname = new URL(baseUrl).hostname.toLowerCase();
+    return hostname === "helicone.ai" || hostname.endsWith(".helicone.ai");
+  } catch {
+    return false;
+  }
+}
+
+function resolveHeliconeBaseUrl(
+  ctx: DispatchContext,
+  fallback: string,
+  heliconeFallback: () => string,
+): string {
+  const baseUrl = resolveBaseUrl(ctx, fallback);
+  if (baseUrl !== fallback) {
+    return baseUrl;
+  }
+  return getHeliconeApiKey()?.trim() ? heliconeFallback() : baseUrl;
+}
+
+function resolveHeliconeHeaders(baseUrl: string): Record<string, string> | undefined {
+  const heliconeApiKey = getHeliconeApiKey()?.trim();
+  if (!heliconeApiKey || !isHeliconeBaseUrl(baseUrl)) {
+    return undefined;
+  }
+  return { "Helicone-Auth": `Bearer ${heliconeApiKey}` };
 }
 
 function buildGpuBaseUrl(gpuPath?: string): string {
@@ -728,9 +760,12 @@ async function generateWithModel(
 export function openaiDispatch(): ProviderDispatchFn {
   return async (ctx) => {
     const { createOpenAI } = await getOpenAiSdk();
+    const baseURL = resolveHeliconeBaseUrl(ctx, OPENAI_BASE_URL, getHeliconeOpenaiBaseUrl);
+    const headers = resolveHeliconeHeaders(baseURL);
     const openai = createOpenAI({
       apiKey: requireApiKey(ctx.apiKey, getOpenaiApiKey(), "OPENAI_API_KEY", "openai"),
-      baseURL: resolveBaseUrl(ctx, OPENAI_BASE_URL),
+      baseURL,
+      ...(headers ? { headers } : {}),
     });
     return generateWithModel(ctx, openai(ctx.model), resolveProviderOptions(ctx.config, "openai"));
   };
@@ -739,9 +774,12 @@ export function openaiDispatch(): ProviderDispatchFn {
 export function anthropicDispatch(): ProviderDispatchFn {
   return async (ctx) => {
     const { createAnthropic } = await getAnthropicSdk();
+    const baseURL = resolveHeliconeBaseUrl(ctx, ANTHROPIC_BASE_URL, getHeliconeAnthropicBaseUrl);
+    const headers = resolveHeliconeHeaders(baseURL);
     const anthropic = createAnthropic({
       apiKey: requireApiKey(ctx.apiKey, getAnthropicApiKey(), "ANTHROPIC_API_KEY", "anthropic"),
-      baseURL: resolveBaseUrl(ctx, ANTHROPIC_BASE_URL),
+      baseURL,
+      ...(headers ? { headers } : {}),
     });
     return generateWithModel(ctx, anthropic(ctx.model), resolveProviderOptions(ctx.config, "anthropic"));
   };
