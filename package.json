@@ -65,7 +65,7 @@
     "@ai-sdk/anthropic": "^3.0.66",
     "@ai-sdk/google": "^3.0.0",
     "@ai-sdk/openai": "^3.0.0",
-    "@anthropic-ai/sdk": "^0.82.0",
+    "@anthropic-ai/sdk": "^0.92.0",
     "@types/node": "^22.0.0",
     "@types/proper-lockfile": "^4.1.4",
     "ai": "^6.0.0",
