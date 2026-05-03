@@ -18,7 +18,7 @@ import { ConfigAccessError, ConfigNotFoundError, InvalidConfigError, type LLMCon
 import { LLMConfigSchema, validateModule, validatePreset, verifyPathContainmentAsync } from "./yaml-loader.js"
 
 /** Lockfiles that indicate project root (any package manager) */
-const LOCKFILES = ["bun.lock", "package-lock.json", "yarn.lock"]
+const LOCKFILES = ["bun.lock", "pnpm-lock.yaml", "package-lock.json", "yarn.lock"]
 
 /**
  * Check if a package.json file indicates a monorepo root (has workspaces field)
@@ -44,7 +44,7 @@ function hasLockfile(dir: string): boolean {
  * Find project root by walking up directory tree.
  * Priority (two-pass to ensure workspaces wins over lockfiles in subdirs):
  * 1. package.json with "workspaces" field (monorepo root) - checked first across ALL dirs
- * 2. Lockfile (bun.lock, package-lock.json, yarn.lock)
+ * 2. Lockfile (bun.lock, pnpm-lock.yaml, package-lock.json, yarn.lock)
  * 3. First package.json found
  * 4. process.cwd()
  */

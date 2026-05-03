@@ -56,7 +56,7 @@ _CAMEL_TO_SNAKE: dict[str, str] = {
 # Project root detection
 # ---------------------------------------------------------------------------
 
-LOCKFILES_TS = ["bun.lock", "package-lock.json", "yarn.lock"]
+LOCKFILES_TS = ["bun.lock", "pnpm-lock.yaml", "package-lock.json", "yarn.lock"]
 LOCKFILES_PY = ["uv.lock", "poetry.lock", "Pipfile.lock", "pdm.lock"]
 LOCKFILES = LOCKFILES_TS + LOCKFILES_PY
 

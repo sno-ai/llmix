@@ -13,6 +13,7 @@ const MIN_VERSION: u32 = 1;
 const MAX_VERSION: u32 = 9999;
 const LOCKFILES_TS: &[&str] = &[
     "bun.lock",
+    "pnpm-lock.yaml",
     "package-lock.json",
     "yarn.lock",
 ];
