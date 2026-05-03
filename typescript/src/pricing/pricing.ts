@@ -14,7 +14,7 @@
  * To update pricing data: cd ~/infra/onprem-infra && ./scripts/sync-llm-pricing/sync.sh
  */
 
-import pricingData from "../../../data/pricing.json"
+import pricingData from "../../../data/pricing.json" with { type: "json" }
 
 // ============================================
 // Types

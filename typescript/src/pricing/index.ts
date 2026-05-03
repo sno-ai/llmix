@@ -3,6 +3,6 @@ export {
 	getModelPricing,
 	calculateCost,
 	calculateRerankCost,
-} from "./pricing"
+} from "./pricing.js"
 
-export type { ModelPrice, CostBreakdown, ModelPricingTable } from "./pricing"
+export type { ModelPrice, CostBreakdown, ModelPricingTable } from "./pricing.js"

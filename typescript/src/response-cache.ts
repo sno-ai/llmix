@@ -15,8 +15,8 @@
 
 import { createHash } from "node:crypto";
 import { LRUCache as LRUCacheLib } from "lru-cache";
-import { lazyImport } from "./lazy-import";
-import type { CacheHitTier, CachingStrategy, ResponseCacheStrategy } from "./types";
+import { lazyImport } from "./lazy-import.js";
+import type { CacheHitTier, CachingStrategy, ResponseCacheStrategy } from "./types.js";
 
 // Lazy ioredis import — don't fail if not installed
 const getIoredis = lazyImport<typeof import("ioredis")>("ioredis", "ioredis");

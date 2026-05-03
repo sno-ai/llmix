@@ -33,8 +33,8 @@
 // PUBLIC API
 // =============================================================================
 
-export { loadConfig, loadConfigPreset, resolveConfigDir, type LLMixPathConfig, type ResolvedConfigDir } from "./config";
-export { ConfigRegistryManager, ConfigRegistryPublisher, type PublishedRevision } from "./config-registry";
+export { loadConfig, loadConfigPreset, resolveConfigDir, type LLMixPathConfig, type ResolvedConfigDir } from "./config.js";
+export { ConfigRegistryManager, ConfigRegistryPublisher, type PublishedRevision } from "./config-registry.js";
 
 // =============================================================================
 // CALL PIPELINE
@@ -49,7 +49,7 @@ export {
   type CallInput,
   type CallResponse,
   type PipelineConfig,
-} from "./pipeline";
+} from "./pipeline.js";
 
 export {
   anthropicDispatch,
@@ -60,7 +60,7 @@ export {
   openrouterDispatch,
   snoGpuDispatch,
   togetherDispatch,
-} from "./dispatchers";
+} from "./dispatchers.js";
 
 // =============================================================================
 // TYPES
@@ -100,7 +100,7 @@ export type {
   SnoGpuProviderOptions,
   TelemetryContext,
   TimeoutConfig,
-} from "./types";
+} from "./types.js";
 
 // =============================================================================
 // ERRORS
@@ -112,7 +112,7 @@ export {
   InvalidConfigError,
   LLMConfigError,
   SecurityError,
-} from "./types";
+} from "./types.js";
 
 // =============================================================================
 // VALIDATION CONSTANTS
@@ -127,7 +127,7 @@ export {
   VALID_PROVIDERS,
   VALID_SCOPE_PATTERN,
   VALID_USER_ID_PATTERN,
-} from "./types";
+} from "./types.js";
 
 // =============================================================================
 // MODEL CAPABILITIES (for filtering unsupported params)
@@ -139,7 +139,7 @@ export {
   getModelCapabilities,
   type FilteredParams,
   type ModelCapabilities,
-} from "./model-capabilities";
+} from "./model-capabilities.js";
 
 // =============================================================================
 // FEATURE MODULES
@@ -148,13 +148,13 @@ export {
 export {
   AdaptiveSemaphore,
   parseOpenAIRatelimitHeaders,
-} from "./adaptive-semaphore";
+} from "./adaptive-semaphore.js";
 
 export {
   KeyPool,
   KeyPoolExhaustedError,
   loadKeysFromEnv,
-} from "./key-pool";
+} from "./key-pool.js";
 
 export {
   CircuitBreaker,
@@ -171,12 +171,12 @@ export {
   type CircuitBreakerOptions,
   type FileLockLike,
   type RetryPolicyOptions,
-} from "./resilience";
+} from "./resilience.js";
 
 export {
   stripThinking,
   type StripThinkingResult,
-} from "./thinking";
+} from "./thinking.js";
 
 export {
   applyTransformKwargs,
@@ -187,14 +187,14 @@ export {
   PROVIDER_KWARGS_REGISTRY,
   type TransformKwargsCallback,
   type TransformKwargsContext,
-} from "./provider-kwargs";
+} from "./provider-kwargs.js";
 
 export {
   getProviderTransport,
   createOpenAITransport,
   PROVIDER_TRANSPORT,
   type ProviderTransportConfig,
-} from "./http2";
+} from "./http2.js";
 
 export {
   BatchProcessor,
@@ -210,13 +210,13 @@ export {
   type BatchMetadata,
   type BatchSubmitOptions,
   type DecodedBatchId,
-} from "./batch";
+} from "./batch.js";
 
 // =============================================================================
 // INTERNAL UTILITIES (for advanced use cases)
 // =============================================================================
 
-export { LRUCache } from "./lru-cache";
+export { LRUCache } from "./lru-cache.js";
 
 export {
   TwoTierCache,
@@ -225,7 +225,7 @@ export {
   isResponseCacheStrategy,
   type TwoTierCacheConfig,
   type ResponseCacheStats,
-} from "./response-cache";
+} from "./response-cache.js";
 
 export {
   AnthropicProviderOptionsSchema,
@@ -247,4 +247,4 @@ export {
   validateVersion,
   verifyPathContainment,
   verifyPathContainmentAsync,
-} from "./yaml-loader";
+} from "./yaml-loader.js";

@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { resolveStateDir } from "./resilience";
+import { resolveStateDir } from "./resilience.js";
 
 // ---------------------------------------------------------------------------
 // Constants

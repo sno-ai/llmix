@@ -10,10 +10,10 @@
  * This module is pure orchestration — no AI SDK dependency.
  */
 
-import { type StripThinkingResult, stripThinking } from "./thinking";
-import { type TransformKwargsCallback, applyTransformKwargs, PROVIDER_KWARGS_REGISTRY } from "./provider-kwargs";
-import { AdaptiveSemaphore, parseOpenAIRatelimitHeaders } from "./adaptive-semaphore";
-import { type KeyPool, KeyPoolExhaustedError } from "./key-pool";
+import { type StripThinkingResult, stripThinking } from "./thinking.js";
+import { type TransformKwargsCallback, applyTransformKwargs, PROVIDER_KWARGS_REGISTRY } from "./provider-kwargs.js";
+import { AdaptiveSemaphore, parseOpenAIRatelimitHeaders } from "./adaptive-semaphore.js";
+import { type KeyPool, KeyPoolExhaustedError } from "./key-pool.js";
 import {
   CircuitBreaker,
   CircuitOpenError,
@@ -24,14 +24,14 @@ import {
   Singleflight,
   createFileLock,
   isRetryable,
-} from "./resilience";
+} from "./resilience.js";
 import type {
   CacheHitTier,
   LLMConfig,
   LLMUsage,
   ProviderOptions,
-} from "./types";
-import { type TwoTierCache, generateCacheKey, shouldSkipCache, sortReplacer } from "./response-cache";
+} from "./types.js";
+import { type TwoTierCache, generateCacheKey, shouldSkipCache, sortReplacer } from "./response-cache.js";
 
 // ---------------------------------------------------------------------------
 // Types

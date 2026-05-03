@@ -40,7 +40,7 @@ import {
   VALID_PRESET_PATTERN,
   VALID_SCOPE_PATTERN,
   VALID_USER_ID_PATTERN,
-} from "./types";
+} from "./types.js";
 
 // =============================================================================
 // VALIDATION FUNCTIONS

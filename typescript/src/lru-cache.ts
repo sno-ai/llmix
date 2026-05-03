@@ -5,7 +5,7 @@
  * Port of Python LRUCache from lib/prompt/prompt_redis_loader.py
  */
 
-import type { LRUCacheStats } from "./types";
+import type { LRUCacheStats } from "./types.js";
 
 // =============================================================================
 // LRU CACHE ENTRY

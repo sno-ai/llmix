@@ -10,8 +10,8 @@
   "types": "./typescript/dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./typescript/dist/index.js",
-      "types": "./typescript/dist/index.d.ts"
+      "types": "./typescript/dist/index.d.ts",
+      "import": "./typescript/dist/index.js"
     }
   },
   "files": [

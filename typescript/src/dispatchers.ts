@@ -13,10 +13,10 @@ import {
   getOpenrouterApiKey,
   getSnoLlmApiKey,
   getTogetherApiKey,
-} from "./env";
-import { lazyImport } from "./lazy-import";
-import type { DispatchContext, ProviderDispatchFn, ProviderResult } from "./pipeline";
-import type { LLMConfig, LLMUsage, ProviderOptions as LLMixProviderOptions } from "./types";
+} from "./env.js";
+import { lazyImport } from "./lazy-import.js";
+import type { DispatchContext, ProviderDispatchFn, ProviderResult } from "./pipeline.js";
+import type { LLMConfig, LLMUsage, ProviderOptions as LLMixProviderOptions } from "./types.js";
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";

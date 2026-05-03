@@ -20,7 +20,7 @@
  * @see https://ai-sdk.dev/providers/ai-sdk-providers/openai
  */
 
-import type { OpenAIProviderOptions } from "./types";
+import type { OpenAIProviderOptions } from "./types.js";
 
 /**
  * Model capability flags

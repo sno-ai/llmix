@@ -9,9 +9,9 @@
  * Ported from repo-reference/llm-provider/src/llm_provider/providers/_registry.py
  */
 
-import { getGpuBaseUrl } from "./env";
-import { getModelCapabilities } from "./model-capabilities";
-import type { ProviderOptions } from "./types";
+import { getGpuBaseUrl } from "./env.js";
+import { getModelCapabilities } from "./model-capabilities.js";
+import type { ProviderOptions } from "./types.js";
 
 // =============================================================================
 // Types

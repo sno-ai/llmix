@@ -13,9 +13,8 @@ const MIN_VERSION: u32 = 1;
 const MAX_VERSION: u32 = 9999;
 const LOCKFILES_TS: &[&str] = &[
     "bun.lock",
-    "pnpm-lock.yaml",
-    "yarn.lock",
     "package-lock.json",
+    "yarn.lock",
 ];
 const LOCKFILES_PY: &[&str] = &["uv.lock", "poetry.lock", "Pipfile.lock", "pdm.lock"];
 const DANGEROUS_PARTS: &[&str] = &["/", "\\", "..", "~", "$", "`"];

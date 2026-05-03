@@ -9,9 +9,9 @@ import { createHash } from "node:crypto"
 import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 
-import { loadConfig } from "./config"
-import { ConfigAccessError, ConfigNotFoundError, InvalidConfigError, type LLMConfig, SecurityError } from "./types"
-import { LLMConfigSchema, validateModule, validatePreset, verifyPathContainmentAsync } from "./yaml-loader"
+import { loadConfig } from "./config.js"
+import { ConfigAccessError, ConfigNotFoundError, InvalidConfigError, type LLMConfig, SecurityError } from "./types.js"
+import { LLMConfigSchema, validateModule, validatePreset, verifyPathContainmentAsync } from "./yaml-loader.js"
 
 const MANIFEST_SCHEMA_VERSION = 1
 const REVISION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
