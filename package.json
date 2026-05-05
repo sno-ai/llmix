@@ -12,6 +12,14 @@
     ".": {
       "types": "./typescript/dist/index.d.ts",
       "import": "./typescript/dist/index.js"
+    },
+    "./src": {
+      "types": "./typescript/src/index.ts",
+      "default": "./typescript/src/index.ts"
+    },
+    "./src/pricing": {
+      "types": "./typescript/src/pricing/index.ts",
+      "default": "./typescript/src/pricing/index.ts"
     }
   },
   "files": [
