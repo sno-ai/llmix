@@ -38,7 +38,8 @@
     "dev": "bun run tsc --watch",
     "check": "bunx tsc -p tsconfig.check.json",
     "clean": "rm -rf typescript/dist",
-    "test": "bun test"
+    "test": "bun test",
+    "prepublishOnly": "bun run clean && bun run build"
   },
   "dependencies": {
     "@openrouter/sdk": "^0.12.21",
