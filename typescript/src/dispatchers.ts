@@ -865,7 +865,7 @@ export function snoGpuDispatch(): ProviderDispatchFn {
     const apiKey = requireApiKey(
       ctx.apiKey,
       getSnoLlmApiKey(),
-      "SNO_LLM_API_KEY or INTERNAL_SERVICE_SECRET",
+      "SNO_LLM_API_KEY",
       "sno-gpu",
     );
     const openai = createOpenAI({

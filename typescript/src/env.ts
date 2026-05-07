@@ -30,9 +30,7 @@ export function getOpenrouterApiKey(): string | undefined {
   return process.env["OPENROUTER_API_KEY"];
 }
 export function getSnoLlmApiKey(): string | undefined {
-  // LH: Current sno-gpu deployments still expose INTERNAL_SERVICE_SECRET
-  // even when SNO_LLM_API_KEY is absent, so keep both env names valid.
-  return process.env["SNO_LLM_API_KEY"] ?? process.env["INTERNAL_SERVICE_SECRET"];
+  return process.env["SNO_LLM_API_KEY"];
 }
 export function getDeepinfraApiKey(): string | undefined {
   return process.env["DEEPINFRA_API_KEY"];

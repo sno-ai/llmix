@@ -438,8 +438,7 @@ def openrouter_dispatch(client: OpenRouterClient | None = None) -> ProviderDispa
         )
         return _normalize_response(response, resolved_model)
 
-    dispatch = _mark_bypass(dispatch, client, "deepseek")
-    return _mark_bypass(dispatch, client, "openrouter")
+    return _mark_bypass(_mark_bypass(dispatch, client, "deepseek"), client, "openrouter")
 
 
 def novita_dispatch(client: NovitaClient | None = None) -> ProviderDispatchFn:

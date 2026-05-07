@@ -206,7 +206,7 @@ fn gemini_preserves_existing_budget_and_supports_camel_case_aliases() {
 #[test]
 fn sno_gpu_constructs_base_url_and_validates_inputs() {
     let mut context = ctx("qwen3.6-27b-extract", "sno-gpu");
-    context.base_url = Some("https://rt3-llm.sno.ai".to_string());
+    context.base_url = Some("https://gpu.example.com".to_string());
     context.provider_options = Some(object(json!({
         "sno-gpu": { "gpu_path": "extract" }
     })));
@@ -214,7 +214,7 @@ fn sno_gpu_constructs_base_url_and_validates_inputs() {
     let result = sno_gpu_transform_kwargs(&context, Map::new()).unwrap();
     assert_eq!(
         result.get("base_url"),
-        Some(&json!("https://rt3-llm.sno.ai/extract/v1"))
+        Some(&json!("https://gpu.example.com/extract/v1"))
     );
 
     let mut no_path_context = context.clone();
@@ -222,26 +222,26 @@ fn sno_gpu_constructs_base_url_and_validates_inputs() {
     let no_path_result = sno_gpu_transform_kwargs(&no_path_context, Map::new()).unwrap();
     assert_eq!(
         no_path_result.get("base_url"),
-        Some(&json!("https://rt3-llm.sno.ai/v1"))
+        Some(&json!("https://gpu.example.com/v1"))
     );
 
     let mut with_v1_context = context.clone();
     with_v1_context.model = "qwen3.6-27b-reason".to_string();
-    with_v1_context.base_url = Some("https://rt3-llm.sno.ai/v1".to_string());
+    with_v1_context.base_url = Some("https://gpu.example.com/v1".to_string());
     with_v1_context.provider_options = Some(object(json!({
         "sno-gpu": { "gpuPath": "reason" }
     })));
     let with_v1_result = sno_gpu_transform_kwargs(&with_v1_context, Map::new()).unwrap();
     assert_eq!(
         with_v1_result.get("base_url"),
-        Some(&json!("https://rt3-llm.sno.ai/reason/v1"))
+        Some(&json!("https://gpu.example.com/reason/v1"))
     );
 }
 
 #[test]
 fn sno_gpu_uses_camel_output_key_when_input_kwargs_do() {
     let mut context = ctx("qwen3.6-27b-extract", "sno-gpu");
-    context.base_url = Some("https://rt3-llm.sno.ai".to_string());
+    context.base_url = Some("https://gpu.example.com".to_string());
     context.provider_options = Some(object(json!({
         "sno-gpu": { "gpuPath": "extract" }
     })));
@@ -250,7 +250,7 @@ fn sno_gpu_uses_camel_output_key_when_input_kwargs_do() {
         sno_gpu_transform_kwargs(&context, object(json!({ "baseUrl": "ignored" }))).unwrap();
     assert_eq!(
         result.get("baseUrl"),
-        Some(&json!("https://rt3-llm.sno.ai/extract/v1"))
+        Some(&json!("https://gpu.example.com/extract/v1"))
     );
 }
 
@@ -264,7 +264,7 @@ fn sno_gpu_errors_on_missing_base_url_and_invalid_paths() {
     );
 
     let mut context = ctx("qwen3.6-27b-reason", "sno-gpu");
-    context.base_url = Some("https://rt3-llm.sno.ai".to_string());
+    context.base_url = Some("https://gpu.example.com".to_string());
     context.provider_options = Some(object(json!({
         "sno-gpu": { "gpu_path": "../escape" }
     })));
