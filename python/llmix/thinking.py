@@ -5,7 +5,7 @@ Strips <think>...</think> blocks from LLM response content.
 Used to clean reasoning model output (e.g., Qwen3, DeepSeek-R1) before
 returning to callers.
 
-Controlled by `common.keep_thinking_output` in YAML config:
+Controlled by `common.keep_thinking_output` in LLMix config:
 - False (default): strips thinking blocks, captures to response.thinking_content
 - True: preserves thinking blocks in content as-is
 """
@@ -30,7 +30,7 @@ def strip_thinking(content: str) -> tuple[str, str | None]:
     Note:
         This will match ``<think>`` tags anywhere in the content, including
         inside code blocks or XML output. If this is a concern, set
-        ``common.keep_thinking_output: true`` in the YAML config to bypass
+        ``common.keep_thinking_output: true`` in config to bypass
         stripping entirely and preserve the raw content.
     """
     # Fast guard: skip regex if no thinking tags present

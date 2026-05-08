@@ -100,7 +100,7 @@ Caching strategy for LLM calls:
 
 class CachingConfig(TypedDict, total=False):
     """
-    Caching configuration from YAML config.
+    Caching configuration from LLMix config.
 
     Mirrors TypeScript CachingConfig in package/llmix/src/types.ts.
     """

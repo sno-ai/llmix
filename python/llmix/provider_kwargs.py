@@ -170,7 +170,7 @@ def sno_gpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]
     common) into ``extra_body`` in BOTH the top-level form (the wrapper
     translates this to ``chat_template_kwargs.enable_thinking``) AND directly
     under ``chat_template_kwargs`` (so direct-vLLM endpoints honor it without
-    the wrapper). Without this, the YAML's ``enableThinking: false`` is
+    the wrapper). Without this, the MDA preset's ``enableThinking: false`` is
     silently dropped and the reasoning model burns the whole token budget on
     chain-of-thought, returning empty ``content``.
     """
