@@ -40,8 +40,12 @@ _LAZY_IMPORTS: dict[str, str] = {
     "LLMixPathConfig": "llmix.config",
     "ResolvedConfigDir": "llmix.config",
     "resolve_config_dir": "llmix.config",
-    "load_config": "llmix.config",
-    "load_config_preset": "llmix.config",
+    "MdaConfigLoadOptions": "llmix.mda_loader",
+    "build_mda_config_file_path": "llmix.mda_loader",
+    "load_mda_config": "llmix.mda_loader",
+    "load_mda_config_from_file": "llmix.mda_loader",
+    "load_mda_config_preset": "llmix.mda_loader",
+    "ConfigRegistryPublishOptions": "llmix.config_registry",
     "ConfigRegistryManager": "llmix.config_registry",
     "ConfigRegistryPublisher": "llmix.config_registry",
     "PublishedRevision": "llmix.config_registry",
@@ -84,12 +88,16 @@ if TYPE_CHECKING:
     from llmix.adaptive_semaphore import parse_openai_ratelimit_headers as parse_openai_ratelimit_headers
     from llmix.config import LLMixPathConfig as LLMixPathConfig
     from llmix.config import ResolvedConfigDir as ResolvedConfigDir
-    from llmix.config import load_config as load_config
-    from llmix.config import load_config_preset as load_config_preset
     from llmix.config import resolve_config_dir as resolve_config_dir
+    from llmix.config_registry import ConfigRegistryPublishOptions as ConfigRegistryPublishOptions
     from llmix.config_registry import ConfigRegistryManager as ConfigRegistryManager
     from llmix.config_registry import ConfigRegistryPublisher as ConfigRegistryPublisher
     from llmix.config_registry import PublishedRevision as PublishedRevision
+    from llmix.mda_loader import MdaConfigLoadOptions as MdaConfigLoadOptions
+    from llmix.mda_loader import build_mda_config_file_path as build_mda_config_file_path
+    from llmix.mda_loader import load_mda_config as load_mda_config
+    from llmix.mda_loader import load_mda_config_from_file as load_mda_config_from_file
+    from llmix.mda_loader import load_mda_config_preset as load_mda_config_preset
     from llmix.dispatchers import anthropic_dispatch as anthropic_dispatch
     from llmix.dispatchers import deepinfra_dispatch as deepinfra_dispatch
     from llmix.dispatchers import gemini_dispatch as gemini_dispatch
@@ -158,8 +166,12 @@ __all__ = [
     "LLMixPathConfig",
     "ResolvedConfigDir",
     "resolve_config_dir",
-    "load_config",
-    "load_config_preset",
+    "MdaConfigLoadOptions",
+    "build_mda_config_file_path",
+    "load_mda_config",
+    "load_mda_config_from_file",
+    "load_mda_config_preset",
+    "ConfigRegistryPublishOptions",
     "ConfigRegistryManager",
     "ConfigRegistryPublisher",
     "PublishedRevision",
