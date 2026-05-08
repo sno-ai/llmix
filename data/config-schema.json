@@ -1,33 +1,171 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://llmix.dev/config-schema.json",
-  "title": "LLMix YAML Preset Configuration",
-  "description": "JSON Schema for LLMix YAML preset files. TODO: Generate from Zod schemas in Phase 2.",
+  "title": "LLMix TypeScript MDA Preset Frontmatter",
+  "description": "JSON Schema for the current TypeScript MDA preset frontmatter shape. LLMix-specific settings live under metadata.snoai-llmix; MDA mechanism fields remain top-level.",
   "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "description", "metadata"],
   "properties": {
-    "common": {
-      "type": "object",
-      "description": "Common parameters shared across providers",
-      "properties": {
-        "model": { "type": "string" },
-        "provider": { "type": "string", "enum": ["openai", "anthropic", "google", "deepseek", "deepinfra", "together", "novita", "sno-gpu"] },
-        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
-        "maxOutputTokens": { "type": "integer", "minimum": 1 },
-        "enableThinking": { "type": "boolean" },
-        "keepThinkingOutput": { "type": "boolean" }
-      },
-      "required": ["model", "provider"]
+    "name": {
+      "type": "string",
+      "minLength": 1
     },
-    "providerOptions": {
-      "type": "object",
-      "description": "Provider-specific options"
+    "description": {
+      "type": "string",
+      "minLength": 1
     },
-    "caching": {
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "requires": {
       "type": "object",
+      "additionalProperties": true,
       "properties": {
-        "strategy": { "type": "string", "enum": ["redis", "redis-or-memory", "memory", "native", "gateway", "disabled"] },
-        "ttl": { "type": "integer", "minimum": 0 },
-        "maxItems": { "type": "integer", "minimum": 1 }
+        "network": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          ]
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "signatures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["snoai-llmix"],
+      "properties": {
+        "snoai-llmix": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["common"],
+          "properties": {
+            "common": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "model"],
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "openai",
+                    "anthropic",
+                    "google",
+                    "deepseek",
+                    "openrouter",
+                    "sno-gpu",
+                    "deepinfra",
+                    "novita",
+                    "together"
+                  ]
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "temperature": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 2
+                },
+                "maxOutputTokens": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "topP": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "topK": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "presencePenalty": {
+                  "type": "number"
+                },
+                "frequencyPenalty": {
+                  "type": "number"
+                },
+                "stopSequences": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "seed": {
+                  "type": "integer"
+                },
+                "maxRetries": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "enableThinking": {
+                  "type": "boolean"
+                },
+                "keepThinkingOutput": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "providerOptions": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "caching": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["strategy"],
+              "properties": {
+                "strategy": {
+                  "type": "string",
+                  "enum": ["redis", "redis-or-memory", "memory", "native", "gateway", "disabled"]
+                },
+                "key": {
+                  "type": "string"
+                },
+                "ttl": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxItems": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "timeout": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "description": {
+              "type": "string"
+            },
+            "deprecated": {
+              "type": "boolean"
+            },
+            "tags": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "bypassGateway": {
+              "type": "boolean"
+            }
+          }
+        }
       }
     }
   }

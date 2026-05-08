@@ -1,20 +1,27 @@
 /**
  * LLMix Config Registry
  *
- * Publishes immutable runtime snapshots from authoring YAML and serves the
+ * Publishes immutable runtime snapshots from authoring MDA and serves the
  * active resolved configs through a small runtime manager.
  */
 
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 
-import { loadConfig } from "./config.js"
 import { ConfigAccessError, ConfigNotFoundError, InvalidConfigError, type LLMConfig, SecurityError } from "./types.js"
-import { LLMConfigSchema, validateModule, validatePreset, verifyPathContainmentAsync } from "./yaml-loader.js"
+import {
+	LLMConfigSchema,
+	loadMdaConfig,
+	type MdaConfigLoadOptions,
+	validateModule,
+	validatePreset,
+	verifyPathContainmentAsync,
+} from "./mda-loader.js"
 
 const MANIFEST_SCHEMA_VERSION = 1
 const REVISION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
+const SHA256_PATTERN = /^[a-f0-9]{64}$/
 
 type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject
 
@@ -45,14 +52,26 @@ interface RegistryManifest {
 
 interface CurrentPointer {
 	revision: string
+	manifestSha256: string
+}
+
+interface ParsedCurrentPointer {
+	revision: string
+	manifestSha256: string | null
 }
 
 export interface PublishedRevision {
 	revision: string
 	snapshotPath: string
 	manifestPath: string
+	manifestSha256: string
 	activated: boolean
 	presetIds: string[]
+}
+
+export interface ConfigRegistryPublishOptions extends MdaConfigLoadOptions {
+	revision?: string
+	activate?: boolean
 }
 
 function isJsonObject(value: unknown): value is JsonObject {
@@ -131,10 +150,19 @@ async function writeJson(filePath: string, value: JsonValue | JsonObject): Promi
 
 async function atomicWriteJson(filePath: string, value: JsonValue | JsonObject): Promise<void> {
 	await mkdir(path.dirname(filePath), { recursive: true })
-	const tempPath = `${filePath}.tmp`
-	await writeJson(tempPath, value)
-	await rename(tempPath, filePath)
-	await fsyncDir(path.dirname(filePath))
+	const tempPath = uniqueTempPath(filePath)
+	try {
+		await writeJson(tempPath, value)
+		await rename(tempPath, filePath)
+		await fsyncDir(path.dirname(filePath))
+	} catch (error) {
+		await rm(tempPath, { force: true })
+		throw error
+	}
+}
+
+function uniqueTempPath(filePath: string): string {
+	return `${filePath}.${process.pid}.${randomUUID()}.tmp`
 }
 
 async function fsyncFile(filePath: string): Promise<void> {
@@ -189,57 +217,45 @@ function validateRevision(revision: string): void {
 	}
 }
 
-function parsePresetFilename(fileName: string): string | null {
-	if (fileName.endsWith(".yaml")) {
-		return fileName.slice(0, -5)
-	}
-	if (fileName.endsWith(".yml")) {
-		return fileName.slice(0, -4)
-	}
-	return null
+function isLegacyYamlPresetFilename(fileName: string): boolean {
+	const lowerName = fileName.toLowerCase()
+	return lowerName.endsWith(".yaml") || lowerName.endsWith(".yml")
 }
 
-function camelToSnakeKey(key: string): string {
-	return key
-		.replace(/([A-Z]+)([A-Z][a-z0-9])/g, "$1_$2")
-		.replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-		.toLowerCase()
+function parseMdaPresetFilename(fileName: string): string | null {
+	return fileName.toLowerCase().endsWith(".mda") ? fileName.slice(0, -4) : null
 }
 
-function snakeToCamelKey(key: string): string {
-	return key.replace(/_([a-z0-9])/g, (_match, letter: string) => letter.toUpperCase())
+function toMdaConfigLoadOptions(options?: ConfigRegistryPublishOptions): MdaConfigLoadOptions | undefined {
+	if (options === undefined) {
+		return undefined
+	}
+
+	const loadOptions: MdaConfigLoadOptions = {}
+	if (options.verifyIntegrity !== undefined) {
+		loadOptions.verifyIntegrity = options.verifyIntegrity
+	}
+	if (options.verifySignatures !== undefined) {
+		loadOptions.verifySignatures = options.verifySignatures
+	}
+	if (options.enforceRequires !== undefined) {
+		loadOptions.enforceRequires = options.enforceRequires
+	}
+	if (options.allowedNetworks !== undefined) {
+		loadOptions.allowedNetworks = options.allowedNetworks
+	}
+	if (options.trustPolicy !== undefined) {
+		loadOptions.trustPolicy = options.trustPolicy
+	}
+	if (options.rekorClient !== undefined) {
+		loadOptions.rekorClient = options.rekorClient
+	}
+
+	return Object.keys(loadOptions).length === 0 ? undefined : loadOptions
 }
 
-function convertKeysToSnakeCase(value: unknown): JsonValue {
-	if (Array.isArray(value)) {
-		return value.map((item) => convertKeysToSnakeCase(item))
-	}
-
-	if (!isJsonObject(value)) {
-		return value as JsonValue
-	}
-
-	const normalized: JsonObject = {}
-	for (const [key, item] of Object.entries(value)) {
-		normalized[camelToSnakeKey(key)] = convertKeysToSnakeCase(item)
-	}
-	return normalized
-}
-
-function convertKeysToCamelCase(value: JsonValue): unknown {
-	if (Array.isArray(value)) {
-		return value.map((item) => convertKeysToCamelCase(item))
-	}
-
-	if (!isJsonObject(value)) {
-		return value
-	}
-
-	const normalized: Record<string, unknown> = {}
-	for (const [key, item] of Object.entries(value)) {
-		normalized[snakeToCamelKey(key)] = convertKeysToCamelCase(item)
-	}
-	return normalized
+function legacyYamlAuthoringError(filePath: string): InvalidConfigError {
+	return new InvalidConfigError(`Legacy YAML authoring presets are not supported; use .mda: ${filePath}`)
 }
 
 function validateCanonicalResolvedObject(value: JsonObject, sourcePath: string): void {
@@ -252,7 +268,7 @@ function validateCanonicalResolvedObject(value: JsonObject, sourcePath: string):
 }
 
 function toCanonicalResolvedConfig(config: LLMConfig): JsonObject {
-	const canonical = convertKeysToSnakeCase(config)
+	const canonical = JSON.parse(JSON.stringify(config)) as unknown
 	if (!isJsonObject(canonical)) {
 		throw new InvalidConfigError("Resolved config must serialize to a JSON object")
 	}
@@ -262,8 +278,7 @@ function toCanonicalResolvedConfig(config: LLMConfig): JsonObject {
 
 function fromCanonicalResolvedConfig(value: JsonObject, sourcePath: string): LLMConfig {
 	validateCanonicalResolvedObject(value, sourcePath)
-	const normalized = convertKeysToCamelCase(value)
-	const result = LLMConfigSchema.safeParse(normalized)
+	const result = LLMConfigSchema.safeParse(value)
 	if (!result.success) {
 		const issues = result.error.issues.map((issue) => `  - ${issue.path.join(".")}: ${issue.message}`).join("\n")
 		throw new InvalidConfigError(`Schema validation failed for ${sourcePath}:\n${issues}`)
@@ -279,17 +294,25 @@ function ensureStringField(value: JsonObject, key: string, sourcePath: string): 
 	return field
 }
 
-function ensureManifestEntryString(value: string, key: string, presetId: string, sourcePath: string): string {
-	if (value.length === 0) {
-		throw new InvalidConfigError(`Config Registry manifest entry is missing ${key}: ${presetId} (${sourcePath})`)
+function validateManifestSha256(manifestSha256: string, sourcePath: string): void {
+	if (!SHA256_PATTERN.test(manifestSha256)) {
+		throw new InvalidConfigError(`Registry current pointer has invalid manifest_sha256: ${sourcePath}`)
 	}
-	return value
 }
 
-function parseCurrentPointer(value: JsonObject, sourcePath: string): CurrentPointer {
+function parseCurrentPointer(value: JsonObject, sourcePath: string): ParsedCurrentPointer {
 	const revision = ensureStringField(value, "revision", sourcePath)
 	validateRevision(revision)
-	return { revision }
+	const manifestSha256Value = value["manifest_sha256"]
+	if (manifestSha256Value === undefined) {
+		return { revision, manifestSha256: null }
+	}
+	if (typeof manifestSha256Value !== "string") {
+		throw new InvalidConfigError(`Registry file is missing string field 'manifest_sha256': ${sourcePath}`)
+	}
+	const manifestSha256 = manifestSha256Value
+	validateManifestSha256(manifestSha256, sourcePath)
+	return { revision, manifestSha256 }
 }
 
 function manifestToJsonObject(manifest: RegistryManifest): JsonObject {
@@ -374,7 +397,7 @@ export class ConfigRegistryPublisher {
 		this.currentPath = path.join(this.root, "current.json")
 	}
 
-	async publish(options?: { revision?: string; activate?: boolean }): Promise<PublishedRevision> {
+	async publish(options?: ConfigRegistryPublishOptions): Promise<PublishedRevision> {
 		const presets = await this.discoverPresets()
 		if (presets.length === 0) {
 			throw new ConfigNotFoundError(`No authoring presets found under ${this.authoringDir}`)
@@ -386,7 +409,7 @@ export class ConfigRegistryPublisher {
 		validateRevision(revisionId)
 
 		const snapshotPath = path.join(this.snapshotsDir, revisionId)
-		const stagePath = path.join(this.stagingDir, `${revisionId}.tmp`)
+		const stagePath = path.join(this.stagingDir, `${revisionId}.${process.pid}.${randomUUID()}.tmp`)
 		const manifestPath = path.join(snapshotPath, "manifest.json")
 
 		try {
@@ -398,24 +421,30 @@ export class ConfigRegistryPublisher {
 			}
 		}
 
-		await rm(stagePath, { recursive: true, force: true })
-
 		try {
-			const manifest = await this.buildStagedSnapshot(stagePath, presets, revisionId, publishedAt)
+			const manifest = await this.buildStagedSnapshot(
+				stagePath,
+				presets,
+				revisionId,
+				publishedAt,
+				toMdaConfigLoadOptions(options),
+			)
 			await this.verifyStagedSnapshot(stagePath, manifest)
+			const manifestSha256 = await sha256File(path.join(stagePath, "manifest.json"))
 			await mkdir(this.snapshotsDir, { recursive: true })
 			await mkdir(this.stagingDir, { recursive: true })
 			await rename(stagePath, snapshotPath)
 			await fsyncDir(this.snapshotsDir)
 
 			if (activate) {
-				await atomicWriteJson(this.currentPath, { revision: revisionId })
+				await atomicWriteJson(this.currentPath, { revision: revisionId, manifest_sha256: manifestSha256 })
 			}
 
 			return {
 				revision: revisionId,
 				snapshotPath,
 				manifestPath,
+				manifestSha256,
 				activated: activate,
 				presetIds: Object.keys(manifest.presets).sort(),
 			}
@@ -449,7 +478,12 @@ export class ConfigRegistryPublisher {
 					continue
 				}
 
-				const presetName = parsePresetFilename(fileEntry.name)
+				const authoringPath = path.join(modulePath, fileEntry.name)
+				if (isLegacyYamlPresetFilename(fileEntry.name)) {
+					throw legacyYamlAuthoringError(authoringPath)
+				}
+
+				const presetName = parseMdaPresetFilename(fileEntry.name)
 				if (presetName === null) {
 					continue
 				}
@@ -460,7 +494,7 @@ export class ConfigRegistryPublisher {
 					module: moduleName,
 					preset: presetName,
 					presetId: `${moduleName}/${presetName}`,
-					authoringPath: path.join(modulePath, fileEntry.name),
+					authoringPath,
 				})
 			}
 		}
@@ -487,21 +521,24 @@ export class ConfigRegistryPublisher {
 		presets: PresetSource[],
 		revisionId: string,
 		publishedAt: Date,
+		loadOptions?: MdaConfigLoadOptions,
 	): Promise<RegistryManifest> {
 		const manifestPresets: Record<string, ManifestPresetEntry> = {}
 		await mkdir(stagePath, { recursive: true })
 
 		for (const preset of presets) {
 			const authoringBytes = await readFileBytes(preset.authoringPath)
-			const resolved = await loadConfig(preset.authoringPath)
+			const authoringRel = path.posix.join("authoring", preset.module, `${preset.preset}.mda`)
+			const resolvedRel = path.posix.join("resolved", preset.module, `${preset.preset}.json`)
+			const stagedAuthoringPath = path.join(stagePath, authoringRel)
+
+			await writeBytes(stagedAuthoringPath, authoringBytes)
+
+			const resolved = await loadMdaConfig(stagedAuthoringPath, loadOptions)
 			const canonicalResolved = toCanonicalResolvedConfig(resolved)
-			fromCanonicalResolvedConfig(canonicalResolved, preset.authoringPath)
+			fromCanonicalResolvedConfig(canonicalResolved, stagedAuthoringPath)
 			const resolvedBytes = canonicalJsonString(canonicalResolved)
 
-			const authoringRel = path.posix.join("authoring", preset.module, `${preset.preset}.yaml`)
-			const resolvedRel = path.posix.join("resolved", preset.module, `${preset.preset}.json`)
-
-			await writeBytes(path.join(stagePath, authoringRel), authoringBytes)
 			await writeBytes(path.join(stagePath, resolvedRel), resolvedBytes)
 
 			manifestPresets[preset.presetId] = {
@@ -552,11 +589,12 @@ export class ConfigRegistryManager {
 	readonly currentPath: string
 
 	private activeRevisionValue: string | null = null
+	private activeManifestSha256Value: string | null = null
 	private configs = new Map<string, LLMConfig>()
 	private lastReloadErrorValue: Error | null = null
 	private lastSuccessfulReloadAtValue: Date | null = null
 	private lastReloadFailureAtValue: Date | null = null
-	private refreshPromise: Promise<void> | null = null
+	private refreshPromise: Promise<boolean> | null = null
 
 	private constructor(root: string) {
 		this.root = path.resolve(root)
@@ -589,7 +627,8 @@ export class ConfigRegistryManager {
 		return this.lastReloadFailureAtValue
 	}
 
-	availablePresets(): string[] {
+	async availablePresets(): Promise<string[]> {
+		await this.refreshIfNeeded()
 		return [...this.configs.keys()].sort()
 	}
 
@@ -607,9 +646,10 @@ export class ConfigRegistryManager {
 	}
 
 	private async loadInitialRevision(): Promise<void> {
-		const revision = await this.readCurrentRevision()
-		const configs = await this.loadRevision(revision)
-		this.activeRevisionValue = revision
+		const pointer = await this.readCurrentPointer()
+		const configs = await this.loadRevision(pointer)
+		this.activeRevisionValue = pointer.revision
+		this.activeManifestSha256Value = pointer.manifestSha256
 		this.configs = configs
 		this.lastReloadErrorValue = null
 		this.lastSuccessfulReloadAtValue = new Date()
@@ -617,54 +657,70 @@ export class ConfigRegistryManager {
 	}
 
 	private async refreshIfNeeded(): Promise<void> {
-		let currentRevision: string
-		try {
-			currentRevision = await this.readCurrentRevision()
-		} catch (error) {
-			this.recordReloadError(error)
-			return
-		}
-
-		if (currentRevision === this.activeRevisionValue) {
-			return
-		}
-
-		if (this.refreshPromise === null) {
-			this.refreshPromise = this.performRefresh(currentRevision).finally(() => {
-				this.refreshPromise = null
-			})
-		}
-
-		await this.refreshPromise
-	}
-
-	private async performRefresh(candidateRevision: string): Promise<void> {
-		try {
-			const latestRevision = await this.readCurrentRevision()
-			if (latestRevision === this.activeRevisionValue) {
+		for (;;) {
+			let currentPointer: CurrentPointer
+			try {
+				currentPointer = await this.readCurrentPointer()
+			} catch (error) {
+				this.recordReloadError(error)
 				return
 			}
-			if (latestRevision !== candidateRevision) {
-				validateRevision(latestRevision)
+
+			if (
+				currentPointer.revision === this.activeRevisionValue &&
+				currentPointer.manifestSha256 === this.activeManifestSha256Value
+			) {
+				return
 			}
 
-			const configs = await this.loadRevision(latestRevision)
-			this.activeRevisionValue = latestRevision
+			if (this.refreshPromise === null) {
+				this.refreshPromise = this.performRefresh().finally(() => {
+					this.refreshPromise = null
+				})
+			}
+
+			if (!(await this.refreshPromise)) {
+				return
+			}
+		}
+	}
+
+	private async performRefresh(): Promise<boolean> {
+		try {
+			const latestPointer = await this.readCurrentPointer()
+			if (
+				latestPointer.revision === this.activeRevisionValue &&
+				latestPointer.manifestSha256 === this.activeManifestSha256Value
+			) {
+				return true
+			}
+
+			const configs = await this.loadRevision(latestPointer)
+			this.activeRevisionValue = latestPointer.revision
+			this.activeManifestSha256Value = latestPointer.manifestSha256
 			this.configs = configs
 			this.lastReloadErrorValue = null
 			this.lastSuccessfulReloadAtValue = new Date()
 			this.lastReloadFailureAtValue = null
+			return true
 		} catch (error) {
 			this.recordReloadError(error)
+			return false
 		}
 	}
 
-	private async readCurrentRevision(): Promise<string> {
+	private async readCurrentPointer(): Promise<CurrentPointer> {
 		const pointer = parseCurrentPointer(await readJsonObject(this.currentPath), this.currentPath)
-		return pointer.revision
+		if (pointer.manifestSha256 !== null) {
+			return { revision: pointer.revision, manifestSha256: pointer.manifestSha256 }
+		}
+
+		const manifestSha256 = await sha256File(path.join(this.snapshotsDir, pointer.revision, "manifest.json"))
+		return { revision: pointer.revision, manifestSha256 }
 	}
 
-	private async loadRevision(revision: string): Promise<Map<string, LLMConfig>> {
+	private async loadRevision(pointer: CurrentPointer): Promise<Map<string, LLMConfig>> {
+		const revision = pointer.revision
 		validateRevision(revision)
 		const snapshotPath = path.join(this.snapshotsDir, revision)
 		try {
@@ -677,13 +733,14 @@ export class ConfigRegistryManager {
 		}
 
 		const manifestPath = path.join(snapshotPath, "manifest.json")
+		await this.verifySnapshotChecksum(manifestPath, pointer.manifestSha256, revision)
 		const manifest = parseManifest(await readJsonObject(manifestPath), manifestPath, revision)
 		const configs = new Map<string, LLMConfig>()
 
 		for (const [presetId, entry] of Object.entries(manifest.presets)) {
+			const authoringPath = await this.resolveSnapshotArtifact(snapshotPath, entry.authoring_path, presetId)
+			await this.verifySnapshotChecksum(authoringPath, entry.authoring_sha256, presetId)
 			const resolvedPath = await this.resolveSnapshotArtifact(snapshotPath, entry.resolved_path, presetId)
-			ensureManifestEntryString(entry.authoring_path, "authoring_path", presetId, manifestPath)
-			ensureManifestEntryString(entry.authoring_sha256, "authoring_sha256", presetId, manifestPath)
 			await this.verifySnapshotChecksum(resolvedPath, entry.resolved_sha256, presetId)
 			const resolved = fromCanonicalResolvedConfig(await readJsonObject(resolvedPath), resolvedPath)
 			configs.set(presetId, resolved)
