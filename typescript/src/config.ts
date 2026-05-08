@@ -10,12 +10,15 @@
  */
 
 import { existsSync, readFileSync } from "node:fs"
-import { readFile } from "node:fs/promises"
 import path from "node:path"
-import { parse as parseYaml } from "yaml"
 
-import { ConfigAccessError, ConfigNotFoundError, InvalidConfigError, type LLMConfig } from "./types.js"
-import { LLMConfigSchema, validateModule, validatePreset, verifyPathContainmentAsync } from "./yaml-loader.js"
+export {
+	buildMdaConfigFilePath,
+	loadMdaConfig,
+	loadMdaConfigFromFile,
+	loadMdaConfigPreset,
+	type MdaConfigLoadOptions,
+} from "./mda-loader.js"
 
 /** Lockfiles that indicate project root (any package manager) */
 const LOCKFILES = ["bun.lock", "pnpm-lock.yaml", "package-lock.json", "yarn.lock"]
@@ -96,39 +99,6 @@ export interface ResolvedConfigDir {
 	source: "explicit" | "env" | "default"
 }
 
-function normalizeLegacyConfig(parsed: unknown): unknown {
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		return parsed
-	}
-
-	const config = { ...(parsed as Record<string, unknown>) }
-	const commonValue = config["common"]
-	if (!commonValue || typeof commonValue !== "object" || Array.isArray(commonValue)) {
-		return config
-	}
-
-	const common = { ...(commonValue as Record<string, unknown>) }
-	const provider = common["provider"]
-	const model = common["model"]
-	delete common["provider"]
-	delete common["model"]
-
-	if (provider !== undefined && config["provider"] === undefined) {
-		config["provider"] = provider
-	}
-	if (model !== undefined && config["model"] === undefined) {
-		config["model"] = model
-	}
-
-	if (Object.keys(common).length > 0) {
-		config["common"] = common
-	} else {
-		delete config["common"]
-	}
-
-	return config
-}
-
 /**
  * Resolve the LLMix config directory path
  *
@@ -146,6 +116,7 @@ export function resolveConfigDir(options?: LLMixPathConfig): ResolvedConfigDir {
 	const envVarName = options?.envVar ?? "LLMIX_CONFIG_DIR"
 	const defaultRelativePath = options?.defaultPath ?? "./config/llm"
 	const projectRoot = options?.projectRoot ?? process.cwd()
+	const actualProjectRoot = projectRoot === process.cwd() ? findProjectRoot() : projectRoot
 
 	// Priority 1: Explicit override
 	if (options?.configDir) {
@@ -159,80 +130,14 @@ export function resolveConfigDir(options?: LLMixPathConfig): ResolvedConfigDir {
 	const envValue = process.env[envVarName]
 	if (envValue) {
 		return {
-			configDir: path.resolve(findProjectRoot(), envValue),
+			configDir: path.resolve(actualProjectRoot, envValue),
 			source: "env",
 		}
 	}
 
 	// Priority 3: Default relative to project root (use findProjectRoot, not cwd)
-	const actualProjectRoot = projectRoot === process.cwd() ? findProjectRoot() : projectRoot
 	return {
 		configDir: path.resolve(actualProjectRoot, defaultRelativePath),
 		source: "default",
 	}
-}
-
-/**
- * Load a YAML config from an explicit file path.
- */
-export async function loadConfig(configPath: string): Promise<LLMConfig> {
-	const filePath = path.resolve(configPath)
-	await verifyPathContainmentAsync(filePath, path.dirname(filePath))
-
-	let content: string
-	try {
-		content = await readFile(filePath, "utf-8")
-	} catch (error) {
-		if (error instanceof Error && "code" in error) {
-			const code = (error as NodeJS.ErrnoException).code
-			if (code === "ENOENT") {
-				throw new ConfigNotFoundError(`Config file not found: ${filePath}`)
-			}
-			if (code === "EACCES") {
-				throw new ConfigAccessError(`Permission denied reading config file: ${filePath}`)
-			}
-		}
-		throw error
-	}
-
-	let parsed: unknown
-	try {
-		parsed = parseYaml(content)
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
-		throw new InvalidConfigError(`YAML parsing failed for ${filePath}: ${message}`)
-	}
-
-	const normalized = normalizeLegacyConfig(parsed)
-	const result = LLMConfigSchema.safeParse(normalized)
-	if (!result.success) {
-		const issues = result.error.issues
-			.map((issue) => `  - ${issue.path.join(".")}: ${issue.message}`)
-			.join("\n")
-		throw new InvalidConfigError(`Schema validation failed for ${filePath}:\n${issues}`)
-	}
-
-	return result.data
-}
-
-/**
- * Load a preset file from ``{baseDir}/{name}.yaml``.
- */
-export async function loadConfigPreset(name: string, baseDir: string): Promise<LLMConfig> {
-	const presetFile = path.basename(name)
-	let preset = presetFile
-	if (preset.endsWith(".yaml")) {
-		preset = preset.slice(0, -5)
-	} else if (preset.endsWith(".yml")) {
-		preset = preset.slice(0, -4)
-	}
-
-	validatePreset(preset)
-
-	const presetsDir = path.resolve(baseDir)
-	validateModule(path.basename(presetsDir))
-
-	const filePath = path.join(presetsDir, `${preset}.yaml`)
-	await verifyPathContainmentAsync(filePath, presetsDir)
-	return loadConfig(filePath)
 }

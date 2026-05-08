@@ -24,17 +24,30 @@
  * ```
  *
  * `ConfigRegistryManager` and `ConfigRegistryPublisher` are the preferred
- * preset runtime path. Direct YAML helpers remain available through
- * `loadConfig` and `loadConfigPreset`, but they are best treated as low-level
- * authoring, test, and migration helpers.
+ * preset runtime path. TypeScript presets are authored as MDA Source Mode
+ * files and projected into the runtime LLMConfig shape.
  */
 
 // =============================================================================
 // PUBLIC API
 // =============================================================================
 
-export { loadConfig, loadConfigPreset, resolveConfigDir, type LLMixPathConfig, type ResolvedConfigDir } from "./config.js";
-export { ConfigRegistryManager, ConfigRegistryPublisher, type PublishedRevision } from "./config-registry.js";
+export {
+  buildMdaConfigFilePath,
+  loadMdaConfig,
+  loadMdaConfigFromFile,
+  loadMdaConfigPreset,
+  resolveConfigDir,
+  type LLMixPathConfig,
+  type MdaConfigLoadOptions,
+  type ResolvedConfigDir,
+} from "./config.js";
+export {
+  ConfigRegistryManager,
+  ConfigRegistryPublisher,
+  type ConfigRegistryPublishOptions,
+  type PublishedRevision,
+} from "./config-registry.js";
 
 // =============================================================================
 // CALL PIPELINE
@@ -229,14 +242,13 @@ export {
 
 export {
   AnthropicProviderOptionsSchema,
-  buildConfigFilePath,
   CachingConfigSchema,
   // Zod schemas for external validation
   CommonParamsSchema,
   DeepSeekProviderOptionsSchema,
   GoogleProviderOptionsSchema,
   LLMConfigSchema,
-  loadConfigFromFile,
+  LLMixMdaPresetSchema,
   OpenAIProviderOptionsSchema,
   ProviderOptionsSchema,
   SnoGpuProviderOptionsSchema,
@@ -247,4 +259,5 @@ export {
   validateVersion,
   verifyPathContainment,
   verifyPathContainmentAsync,
-} from "./yaml-loader.js";
+  type LLMixMdaPreset,
+} from "./mda-loader.js";

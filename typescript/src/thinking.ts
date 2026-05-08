@@ -5,7 +5,7 @@
  * Used to clean reasoning model output (e.g., Qwen3, DeepSeek-R1) before
  * returning to callers.
  *
- * Controlled by `common.keepThinkingOutput` in YAML config:
+ * Controlled by `common.keepThinkingOutput` in LLMix config:
  * - false (default): strips thinking blocks, captures to response.thinkingContent
  * - true: preserves thinking blocks in content as-is
  */

@@ -83,7 +83,7 @@ export interface CachingConfig {
  *
  * @example
  * ```yaml
- * # In LLM config YAML
+ * # In LLMix MDA preset frontmatter under metadata.snoai-llmix
  * timeout:
  *   totalTime: 900  # 15 minutes for reasoning models
  *   streamFirstChunkTime: 120  # 2 minutes to first chunk
@@ -115,7 +115,16 @@ export interface TimeoutConfig {
 /**
  * Supported LLM providers
  */
-export type Provider = "openai" | "anthropic" | "google" | "deepseek" | "openrouter" | "sno-gpu";
+export type Provider =
+  | "openai"
+  | "anthropic"
+  | "google"
+  | "deepseek"
+  | "openrouter"
+  | "sno-gpu"
+  | "deepinfra"
+  | "novita"
+  | "together";
 
 /** Provider type with unknown for error cases (config load failures) */
 export type ProviderOrUnknown = Provider | "unknown";
@@ -188,7 +197,7 @@ export interface OpenAIProviderOptions {
   logprobs?: boolean | number | undefined;
 
   /** Modify likelihood of specific tokens */
-  logitBias?: Record<number, number> | undefined;
+  logitBias?: Record<string, number> | undefined;
 
   /** Enable structured outputs */
   structuredOutputs?: boolean | undefined;
@@ -788,7 +797,11 @@ export const VALID_PROVIDERS: readonly Provider[] = [
   "anthropic",
   "google",
   "deepseek",
+  "openrouter",
   "sno-gpu",
+  "deepinfra",
+  "novita",
+  "together",
 ] as const;
 
 /** Minimum budgetTokens for Anthropic extended thinking */
