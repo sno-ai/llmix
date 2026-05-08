@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://llmix.dev/config-schema.json",
-  "title": "LLMix TypeScript MDA Preset Frontmatter",
-  "description": "JSON Schema for the current TypeScript MDA preset frontmatter shape. LLMix-specific settings live under metadata.snoai-llmix; MDA mechanism fields remain top-level.",
+  "title": "LLMix MDA Preset Frontmatter",
+  "description": "JSON Schema for the current cross-runtime MDA preset frontmatter shape. LLMix-specific settings live under metadata.snoai-llmix; MDA mechanism fields remain top-level.",
   "type": "object",
   "additionalProperties": false,
   "required": ["name", "description", "metadata"],
@@ -138,8 +138,8 @@
                   "type": "string"
                 },
                 "ttl": {
-                  "type": "number",
-                  "minimum": 0
+                  "type": "integer",
+                  "minimum": 1
                 },
                 "maxItems": {
                   "type": "integer",
