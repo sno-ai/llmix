@@ -1,7 +1,7 @@
 {
   "name": "@snoai/llmix",
   "version": "2.0.0",
-  "description": "Config-driven harness around your LLM SDK. YAML-driven model swap, two-tier cache, circuit breaker, key-pool rotation. TypeScript and Python parity.",
+  "description": "Config-driven harness around your LLM SDK. MDA-driven model swap, two-tier cache, circuit breaker, key-pool rotation.",
   "author": "Sno AI",
   "license": "Apache-2.0",
   "homepage": "https://github.com/sno-ai/llmix#readme",
@@ -16,6 +16,9 @@
     "access": "public"
   },
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "./typescript/dist/index.js",
   "types": "./typescript/dist/index.d.ts",
   "exports": {
@@ -42,10 +45,10 @@
     "prepublishOnly": "bun run clean && bun run build"
   },
   "dependencies": {
+    "@snoai/mda-config": "^1.0.2",
     "@openrouter/sdk": "^0.12.21",
     "lru-cache": "^11.3.0",
     "proper-lockfile": "^4.1.2",
-    "yaml": "^2.6.0",
     "zod": "^3.24.0"
   },
   "peerDependencies": {
