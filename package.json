@@ -34,7 +34,8 @@
   "files": [
     "typescript/dist",
     "typescript/src",
-    "data"
+    "data",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "bun run tsc",
