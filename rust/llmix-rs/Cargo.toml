@@ -30,7 +30,7 @@ httpdate = "1.0.3"
 indexmap = "=2.7.1"
 lru = "0.12.5"
 hyper-rustls = { version = "=0.27.7", optional = true }
-reqwest = { version = "=0.12.12", optional = true, default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "=0.12.28", optional = true, default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
 serde_yaml_ng = "0.10"
