@@ -1,11 +1,10 @@
 # LLMix
 
 [![npm version](https://img.shields.io/npm/v/@snoai/llmix.svg)](https://www.npmjs.com/package/@snoai/llmix)
-[![crates.io](https://img.shields.io/crates/v/llmix-rs.svg)](https://crates.io/crates/llmix-rs)
+[![PyPI](https://img.shields.io/pypi/v/llmix.svg)](https://pypi.org/project/llmix/)
 [![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-blue.svg)](https://www.python.org/downloads/)
 [![TypeScript 5.0+](https://img.shields.io/badge/TypeScript-5.0%2B-blue.svg)](https://www.typescriptlang.org/)
 [![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-orange.svg)](https://www.rust-lang.org/)
-[![AI SDK v6](https://img.shields.io/badge/AI_SDK-v6-green.svg)](https://ai-sdk.dev/)
 [![License: Apache--2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
 > **Config-driven harness around your LLM SDK.**
