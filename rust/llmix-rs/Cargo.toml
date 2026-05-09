@@ -36,12 +36,12 @@ serde_json = "1.0.138"
 serde_yaml_ng = "0.10"
 sha2 = "0.10.8"
 thiserror = "2.0.18"
-tokio = { version = "1.43.0", features = ["fs", "macros", "rt", "sync", "time"] }
+tokio = { version = "1.52.3", features = ["fs", "macros", "rt", "sync", "time"] }
 redis = { version = "1.2.1", optional = true, default-features = false, features = ["tokio-comp"] }
 url = { version = "=2.5.0", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.43.0", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.52.3", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 
 [package.metadata.docs.rs]
 all-features = true
