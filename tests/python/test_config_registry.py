@@ -3,14 +3,28 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 import pytest
+from snoai_mda_config import (
+    AllowedSigner,
+    RekorEntry,
+    SignatureEntry,
+    SigstoreVerificationResult,
+    TrustPolicy,
+)
+from snoai_mda_config.integrity import canonicalize_artifact, hash_canonical
 
-from llmix import ConfigRegistryManager, ConfigRegistryPublishOptions, ConfigRegistryPublisher
+from llmix import (
+    ConfigRegistryManager,
+    ConfigRegistryPublishOptions,
+    ConfigRegistryPublisher,
+)
 from llmix.types import ConfigNotFoundError, InvalidConfigError, SecurityError
 
 
@@ -42,13 +56,110 @@ def _write_authoring_preset(
             }
         },
     }
-    path.write_text(f"---\n{json.dumps(frontmatter, indent=2)}\n---\n# {preset}\n", encoding="utf-8")
+    path.write_text(
+        f"---\n{json.dumps(frontmatter, indent=2)}\n---\n# {preset}\n", encoding="utf-8"
+    )
     return path
 
 
-def test_publish_creates_active_revision_and_manager_reads_resolved_json(tmp_path: Path) -> None:
+SIGNER = "sigstore-oidc:https://accounts.google.com#releases@snoai.com"
+KEY_ID = "fulcio:test-key"
+SIGNATURE = "MEUCIQDkXFIXTUREONLYBASE64=="
+
+
+class FakeRekorClient:
+    def __init__(self, entry: RekorEntry | None) -> None:
+        self.entry = entry
+
+    def fetch_entry(self, log_id: str, log_index: int) -> RekorEntry | None:
+        assert log_id == "test-log"
+        assert log_index == 42
+        return self.entry
+
+
+class FakeSigstoreVerifier:
+    def __init__(self, identity: str = "releases@snoai.com") -> None:
+        self.identity = identity
+
+    def verify(
+        self, entry: RekorEntry, signature: SignatureEntry, pae_bytes: bytes
+    ) -> SigstoreVerificationResult:
+        assert entry["kind"] == "dsse-v0.0.1"
+        assert signature["signature"] == SIGNATURE
+        assert pae_bytes.startswith(b"DSSEv1 ")
+        return SigstoreVerificationResult(
+            issuer="https://accounts.google.com",
+            subject_alternative_name=self.identity,
+        )
+
+
+def _trust_policy() -> TrustPolicy:
+    return TrustPolicy(
+        allowed_signers=(
+            AllowedSigner(
+                "https://accounts.google.com", re.compile(r"^releases@snoai\.com$")
+            ),
+        )
+    )
+
+
+def _write_signed_authoring_preset(root: Path) -> dict[str, str]:
+    path = root / "authoring" / "search" / "summary.mda"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = "# summary\n"
+    frontmatter: dict[str, Any] = {
+        "name": "summary",
+        "description": "search/summary",
+        "metadata": {
+            "snoai-llmix": {
+                "common": {
+                    "provider": "openai",
+                    "model": "gpt-4.1-mini",
+                    "temperature": 0.2,
+                }
+            }
+        },
+    }
+    digest = "sha256:" + hash_canonical(canonicalize_artifact(frontmatter, body), "sha256")
+    integrity = {"algorithm": "sha256", "digest": digest}
+    frontmatter["integrity"] = integrity
+    frontmatter["signatures"] = [
+        {
+            "signer": SIGNER,
+            "key-id": KEY_ID,
+            "payload-digest": digest,
+            "algorithm": "ecdsa-p256",
+            "signature": SIGNATURE,
+            "rekor-log-id": "test-log",
+            "rekor-log-index": 42,
+        }
+    ]
+    path.write_text(
+        f"---\n{json.dumps(frontmatter, indent=2)}\n---\n{body}", encoding="utf-8"
+    )
+    return integrity
+
+
+def _rekor_entry(integrity: dict[str, str]) -> RekorEntry:
+    payload = json.dumps(integrity, separators=(",", ":"), sort_keys=True).encode()
+    return {
+        "kind": "dsse-v0.0.1",
+        "certificate_pem": "",
+        "dsse_envelope": {
+            "payload_type": "application/vnd.mda.integrity+json",
+            "payload": base64.b64encode(payload).decode(),
+            "signatures": [{"sig": SIGNATURE, "keyid": KEY_ID}],
+        },
+    }
+
+
+def test_publish_creates_active_revision_and_manager_reads_resolved_json(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary", model="gpt-5-mini", temperature=0.7)
+    _write_authoring_preset(
+        root, "search", "summary", model="gpt-5-mini", temperature=0.7
+    )
 
     published = ConfigRegistryPublisher(root).publish()
     manager = ConfigRegistryManager.open(root)
@@ -70,12 +181,16 @@ def test_publish_creates_active_revision_and_manager_reads_resolved_json(tmp_pat
 
 def test_manager_reloads_after_current_revision_changes(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary", model="gpt-4.1-mini", temperature=0.2)
+    _write_authoring_preset(
+        root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
+    )
 
     first = ConfigRegistryPublisher(root).publish()
     manager = ConfigRegistryManager.open(root)
 
-    _write_authoring_preset(root, "search", "summary", model="gpt-5-mini", temperature=0.9)
+    _write_authoring_preset(
+        root, "search", "summary", model="gpt-5-mini", temperature=0.9
+    )
     second = ConfigRegistryPublisher(root).publish()
 
     config = manager.get_preset("search", "summary")
@@ -86,7 +201,9 @@ def test_manager_reloads_after_current_revision_changes(tmp_path: Path) -> None:
     assert config["common"]["temperature"] == 0.9
 
 
-def test_available_presets_refreshes_after_current_revision_changes(tmp_path: Path) -> None:
+def test_available_presets_refreshes_after_current_revision_changes(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "config" / "llm"
     _write_authoring_preset(root, "search", "summary")
 
@@ -99,19 +216,27 @@ def test_available_presets_refreshes_after_current_revision_changes(tmp_path: Pa
     assert manager.available_presets() == ("rerank/default", "search/summary")
 
 
-def test_manager_rolls_back_when_current_revision_points_to_older_snapshot(tmp_path: Path) -> None:
+def test_manager_rolls_back_when_current_revision_points_to_older_snapshot(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary", model="gpt-4.1-mini", temperature=0.2)
+    _write_authoring_preset(
+        root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
+    )
 
     first = ConfigRegistryPublisher(root).publish()
     manager = ConfigRegistryManager.open(root)
 
-    _write_authoring_preset(root, "search", "summary", model="gpt-5-mini", temperature=0.9)
+    _write_authoring_preset(
+        root, "search", "summary", model="gpt-5-mini", temperature=0.9
+    )
     second = ConfigRegistryPublisher(root).publish()
     assert second.revision != first.revision
     assert manager.get_preset("search", "summary")["model"] == "gpt-5-mini"
 
-    (root / "current.json").write_text(json.dumps({"revision": first.revision}) + "\n", encoding="utf-8")
+    (root / "current.json").write_text(
+        json.dumps({"revision": first.revision}) + "\n", encoding="utf-8"
+    )
     config = manager.get_preset("search", "summary")
 
     assert manager.active_revision == first.revision
@@ -119,14 +244,20 @@ def test_manager_rolls_back_when_current_revision_points_to_older_snapshot(tmp_p
     assert config["common"]["temperature"] == 0.2
 
 
-def test_manager_ignores_authoring_edits_until_a_new_revision_is_published(tmp_path: Path) -> None:
+def test_manager_ignores_authoring_edits_until_a_new_revision_is_published(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary", model="gpt-4.1-mini", temperature=0.2)
+    _write_authoring_preset(
+        root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
+    )
 
     published = ConfigRegistryPublisher(root).publish()
     manager = ConfigRegistryManager.open(root)
 
-    _write_authoring_preset(root, "search", "summary", model="gpt-5-mini", temperature=0.9)
+    _write_authoring_preset(
+        root, "search", "summary", model="gpt-5-mini", temperature=0.9
+    )
     config = manager.get_preset("search", "summary")
 
     assert manager.active_revision == published.revision
@@ -134,7 +265,9 @@ def test_manager_ignores_authoring_edits_until_a_new_revision_is_published(tmp_p
     assert config["common"]["temperature"] == 0.2
 
 
-def test_manager_reads_resolved_json_without_mda_loader_hot_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_manager_reads_resolved_json_without_mda_loader_hot_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     root = tmp_path / "config" / "llm"
     _write_authoring_preset(root, "search", "summary")
     ConfigRegistryPublisher(root).publish()
@@ -165,14 +298,20 @@ def test_manager_fails_fast_with_malformed_current_pointer(tmp_path: Path) -> No
         ConfigRegistryManager.open(root)
 
 
-def test_manager_keeps_last_known_good_config_when_pointer_changes_to_missing_revision(tmp_path: Path) -> None:
+def test_manager_keeps_last_known_good_config_when_pointer_changes_to_missing_revision(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary", model="gpt-4.1-mini", temperature=0.2)
+    _write_authoring_preset(
+        root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
+    )
 
     published = ConfigRegistryPublisher(root).publish()
     manager = ConfigRegistryManager.open(root)
 
-    (root / "current.json").write_text('{"revision":"missing-revision"}\n', encoding="utf-8")
+    (root / "current.json").write_text(
+        '{"revision":"missing-revision"}\n', encoding="utf-8"
+    )
     config = manager.get_preset("search", "summary")
 
     assert manager.active_revision == published.revision
@@ -184,21 +323,30 @@ def test_manager_keeps_last_known_good_config_when_pointer_changes_to_missing_re
 
 def test_publish_failure_leaves_active_revision_unchanged(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary", model="gpt-4.1-mini", temperature=0.2)
+    _write_authoring_preset(
+        root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
+    )
 
     first = ConfigRegistryPublisher(root).publish()
     broken_path = root / "authoring" / "search" / "summary.mda"
-    broken_path.write_text("---\nname: broken\nmetadata: [broken\n---\n", encoding="utf-8")
+    broken_path.write_text(
+        "---\nname: broken\nmetadata: [broken\n---\n", encoding="utf-8"
+    )
 
     with pytest.raises(InvalidConfigError):
         ConfigRegistryPublisher(root).publish()
 
     pointer = json.loads((root / "current.json").read_text(encoding="utf-8"))
     assert pointer["revision"] == first.revision
-    assert not any(path.name.endswith(".tmp") for path in (root / "snapshots" / ".staging").glob("*"))
+    assert not any(
+        path.name.endswith(".tmp")
+        for path in (root / "snapshots" / ".staging").glob("*")
+    )
 
 
-def test_legacy_yaml_authoring_blocks_publish_without_changing_active_revision(tmp_path: Path) -> None:
+def test_legacy_yaml_authoring_blocks_publish_without_changing_active_revision(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "config" / "llm"
     _write_authoring_preset(root, "search", "summary")
     first = ConfigRegistryPublisher(root).publish()
@@ -221,7 +369,9 @@ def test_publish_rejects_authoring_module_symlink_escape(tmp_path: Path) -> None
     authoring_dir = root / "authoring"
     authoring_dir.mkdir(parents=True)
     try:
-        (authoring_dir / "search").symlink_to(outside_root / "authoring" / "search", target_is_directory=True)
+        (authoring_dir / "search").symlink_to(
+            outside_root / "authoring" / "search", target_is_directory=True
+        )
     except OSError:
         pytest.skip("symlinks are not available on this filesystem")
 
@@ -248,18 +398,106 @@ def test_publish_can_enforce_mda_integrity(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
     path = _write_authoring_preset(root, "search", "summary")
     text = path.read_text(encoding="utf-8")
-    path.write_text(text.replace('"metadata"', '"integrity": {"algorithm": "sha256", "digest": "sha256:bad"},\n  "metadata"'), encoding="utf-8")
+    path.write_text(
+        text.replace(
+            '"metadata"',
+            '"integrity": {"algorithm": "sha256", "digest": "sha256:bad"},\n  "metadata"',
+        ),
+        encoding="utf-8",
+    )
 
     with pytest.raises(InvalidConfigError):
-        ConfigRegistryPublisher(root).publish(options=ConfigRegistryPublishOptions(verify_integrity=True))
+        ConfigRegistryPublisher(root).publish(
+            options=ConfigRegistryPublishOptions(verify_integrity=True)
+        )
+
+
+def test_publish_passes_mda_verification_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_authoring_preset(root, "search", "summary")
+    captured: list[Any] = []
+
+    def fake_load_mda_config(_path: Path, options: Any = None) -> dict[str, Any]:
+        captured.append(options)
+        return {
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "common": {"temperature": 0.2},
+        }
+
+    monkeypatch.setattr("llmix.config_registry.load_mda_config", fake_load_mda_config)
+    trust_policy = {"trusted": ["example"]}
+    rekor_client = object()
+    sigstore_verifier = object()
+
+    ConfigRegistryPublisher(root).publish(
+        options=ConfigRegistryPublishOptions(
+            verify_integrity=True,
+            verify_signatures=True,
+            enforce_requires=True,
+            allowed_networks=["none"],
+            trust_policy=trust_policy,
+            rekor_client=rekor_client,
+            sigstore_verifier=sigstore_verifier,
+        )
+    )
+
+    assert len(captured) == 1
+    options = captured[0]
+    assert options.verify_integrity is True
+    assert options.verify_signatures is True
+    assert options.enforce_requires is True
+    assert options.allowed_networks == ["none"]
+    assert options.trust_policy is trust_policy
+    assert options.rekor_client is rekor_client
+    assert options.sigstore_verifier is sigstore_verifier
+
+
+def test_registry_publish_verify_signatures_happy_path(tmp_path: Path) -> None:
+    root = tmp_path / "config" / "llm"
+    integrity = _write_signed_authoring_preset(root)
+
+    published = ConfigRegistryPublisher(root).publish(
+        options=ConfigRegistryPublishOptions(
+            verify_signatures=True,
+            trust_policy=_trust_policy(),
+            rekor_client=FakeRekorClient(_rekor_entry(integrity)),
+            sigstore_verifier=FakeSigstoreVerifier(),
+        )
+    )
+    manager = ConfigRegistryManager.open(root)
+
+    assert published.activated is True
+    assert manager.get_preset("search", "summary")["model"] == "gpt-4.1-mini"
+
+
+def test_registry_publish_verify_signatures_fail_closed(tmp_path: Path) -> None:
+    root = tmp_path / "config" / "llm"
+    integrity = _write_signed_authoring_preset(root)
+
+    with pytest.raises(InvalidConfigError):
+        ConfigRegistryPublisher(root).publish(
+            options=ConfigRegistryPublishOptions(
+                verify_signatures=True,
+                trust_policy=_trust_policy(),
+                rekor_client=FakeRekorClient(_rekor_entry(integrity)),
+                sigstore_verifier=FakeSigstoreVerifier(identity="other@snoai.com"),
+            )
+        )
 
 
 def test_manager_rejects_tampered_resolved_snapshot_on_startup(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary", model="gpt-4.1-mini", temperature=0.2)
+    _write_authoring_preset(
+        root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
+    )
 
     published = ConfigRegistryPublisher(root).publish()
-    resolved_path = root / "snapshots" / published.revision / "resolved" / "search" / "summary.json"
+    resolved_path = (
+        root / "snapshots" / published.revision / "resolved" / "search" / "summary.json"
+    )
     resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
     resolved["model"] = "tampered-model"
     resolved_path.write_text(json.dumps(resolved), encoding="utf-8")
@@ -270,7 +508,9 @@ def test_manager_rejects_tampered_resolved_snapshot_on_startup(tmp_path: Path) -
 
 def test_manager_revalidates_resolved_json_shape_on_startup(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary", model="gpt-4.1-mini", temperature=0.2)
+    _write_authoring_preset(
+        root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
+    )
 
     published = ConfigRegistryPublisher(root).publish()
     snapshot_dir = root / "snapshots" / published.revision
@@ -282,7 +522,9 @@ def test_manager_revalidates_resolved_json_shape_on_startup(tmp_path: Path) -> N
     resolved_path.write_bytes(resolved_bytes)
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["presets"]["search/summary"]["resolved_sha256"] = hashlib.sha256(resolved_bytes).hexdigest()
+    manifest["presets"]["search/summary"]["resolved_sha256"] = hashlib.sha256(
+        resolved_bytes
+    ).hexdigest()
     manifest_path.write_bytes(_canonical_json_bytes(manifest))
 
     with pytest.raises(InvalidConfigError, match="temperature"):
