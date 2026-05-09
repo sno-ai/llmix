@@ -1,0 +1,9 @@
+# Default owner for everything in the repo
+*                              @LarHope
+
+# Language-specific ownership (tighten as the team grows)
+/python/                       @LarHope
+/typescript/                   @LarHope
+/rust/                         @LarHope
+/data/                         @LarHope
+/.github/                      @LarHope

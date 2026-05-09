@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussions
+    url: https://github.com/sno-ai/llmix/discussions
+    about: Use Discussions for questions, ideas, and design conversations.
+  - name: Security
+    url: https://github.com/sno-ai/llmix/security/advisories/new
+    about: Report a vulnerability privately.

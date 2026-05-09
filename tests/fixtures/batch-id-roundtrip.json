@@ -1,0 +1,87 @@
+{
+  "description": "Shared fixtures for batch ID encode/decode roundtrip tests",
+  "roundtrips": [
+    {
+      "provider": "openai",
+      "apiKey": "sk-test-key-openai-1234567890",
+      "nPrompts": 5,
+      "rawBatchId": "batch_abc123",
+      "note": "Simple OpenAI batch ID"
+    },
+    {
+      "provider": "anthropic",
+      "apiKey": "sk-ant-test-key-anthropic",
+      "nPrompts": 10,
+      "rawBatchId": "msgbatch_xyz789",
+      "note": "Simple Anthropic batch ID"
+    },
+    {
+      "provider": "gemini",
+      "apiKey": "AIzaSyTestKey-Gemini",
+      "nPrompts": 3,
+      "rawBatchId": "operations/batchpredict/12345",
+      "note": "Gemini batch ID with slashes"
+    },
+    {
+      "provider": "openai",
+      "apiKey": "sk-proj-test-with-colons",
+      "nPrompts": 100,
+      "rawBatchId": "batch_id:with:colons:inside",
+      "note": "Colon-safe: rawBatchId contains colons"
+    },
+    {
+      "provider": "anthropic",
+      "apiKey": "sk-ant-api-key-with-special-chars",
+      "nPrompts": 1,
+      "rawBatchId": "msgbatch_single",
+      "note": "Single prompt batch"
+    }
+  ],
+  "invalidBatchIds": [
+    {
+      "batchId": "no-colons-at-all",
+      "reason": "No colons"
+    },
+    {
+      "batchId": "openai:abcd1234",
+      "reason": "Only one colon (missing nPrompts and rawBatchId)"
+    },
+    {
+      "batchId": "openai:abcd1234:5",
+      "reason": "Only two colons (missing rawBatchId)"
+    },
+    {
+      "batchId": "invalid_provider:abcd1234:5:batch_123",
+      "reason": "Unknown provider"
+    },
+    {
+      "batchId": "openai:short:5:batch_123",
+      "reason": "Fingerprint too short (not 8 chars)"
+    },
+    {
+      "batchId": "openai:abcd1234:0:batch_123",
+      "reason": "nPrompts is 0"
+    },
+    {
+      "batchId": "openai:abcd1234:-1:batch_123",
+      "reason": "nPrompts is negative"
+    },
+    {
+      "batchId": "openai:abcd1234:abc:batch_123",
+      "reason": "nPrompts is not a number"
+    },
+    {
+      "batchId": "openai:abcd1234:5:",
+      "reason": "Empty rawBatchId"
+    }
+  ],
+  "metadataScenarios": [
+    {
+      "batchId": "openai:abcd1234:5:batch_meta_test",
+      "apiKey": "sk-test-metadata-key",
+      "provider": "openai",
+      "nPrompts": 5,
+      "note": "Basic metadata write/read/delete"
+    }
+  ]
+}

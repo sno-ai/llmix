@@ -1,0 +1,125 @@
+{
+  "description": "Circuit breaker test scenarios shared between Python and TypeScript",
+  "defaults": {
+    "failureThreshold": 3,
+    "cooldownMs": 30000,
+    "provider": "openai",
+    "baseUrl": "https://api.openai.com"
+  },
+  "retryableStatusCodes": [429, 500, 502, 503, 504],
+  "nonRetryableStatusCodes": [400, 401, 403, 404, 422],
+  "authErrorStatusCodes": [401, 403],
+  "scenarios": {
+    "closedToOpen": {
+      "description": "CLOSED -> OPEN after 3 consecutive retryable failures",
+      "initialState": "CLOSED",
+      "actions": [
+        { "type": "failure", "statusCode": 500 },
+        { "type": "failure", "statusCode": 502 },
+        { "type": "failure", "statusCode": 503 }
+      ],
+      "expectedState": "OPEN"
+    },
+    "closedStaysClosedOnAuthError": {
+      "description": "Auth errors (401/403) do NOT trip the circuit breaker",
+      "initialState": "CLOSED",
+      "actions": [
+        { "type": "failure", "statusCode": 401 },
+        { "type": "failure", "statusCode": 403 },
+        { "type": "failure", "statusCode": 401 },
+        { "type": "failure", "statusCode": 403 },
+        { "type": "failure", "statusCode": 401 }
+      ],
+      "expectedState": "CLOSED"
+    },
+    "closedStaysClosedOnNonRetryable": {
+      "description": "Non-retryable errors (4xx except 429) do NOT trip the breaker",
+      "initialState": "CLOSED",
+      "actions": [
+        { "type": "failure", "statusCode": 400 },
+        { "type": "failure", "statusCode": 404 },
+        { "type": "failure", "statusCode": 422 }
+      ],
+      "expectedState": "CLOSED"
+    },
+    "successResetsCounter": {
+      "description": "A success resets the consecutive failure counter",
+      "initialState": "CLOSED",
+      "actions": [
+        { "type": "failure", "statusCode": 500 },
+        { "type": "failure", "statusCode": 500 },
+        { "type": "success" },
+        { "type": "failure", "statusCode": 500 },
+        { "type": "failure", "statusCode": 500 }
+      ],
+      "expectedState": "CLOSED"
+    },
+    "openBlocksRequests": {
+      "description": "OPEN state rejects check() calls",
+      "initialState": "CLOSED",
+      "actions": [
+        { "type": "failure", "statusCode": 500 },
+        { "type": "failure", "statusCode": 500 },
+        { "type": "failure", "statusCode": 500 },
+        { "type": "check", "expectError": true }
+      ],
+      "expectedState": "OPEN"
+    },
+    "halfOpenOnSuccess": {
+      "description": "HALF_OPEN -> CLOSED on success",
+      "initialState": "HALF_OPEN",
+      "actions": [
+        { "type": "success" }
+      ],
+      "expectedState": "CLOSED"
+    },
+    "halfOpenOnFailure": {
+      "description": "HALF_OPEN -> OPEN on failure",
+      "initialState": "HALF_OPEN",
+      "actions": [
+        { "type": "failure", "statusCode": 500 }
+      ],
+      "expectedState": "OPEN"
+    },
+    "rateLimitTripsBreaker": {
+      "description": "429 (rate limit) counts as retryable failure",
+      "initialState": "CLOSED",
+      "actions": [
+        { "type": "failure", "statusCode": 429 },
+        { "type": "failure", "statusCode": 429 },
+        { "type": "failure", "statusCode": 429 }
+      ],
+      "expectedState": "OPEN"
+    },
+    "networkErrorTripsBreaker": {
+      "description": "Network errors count as retryable failures",
+      "initialState": "CLOSED",
+      "actions": [
+        { "type": "failure", "networkError": true },
+        { "type": "failure", "networkError": true },
+        { "type": "failure", "networkError": true }
+      ],
+      "expectedState": "OPEN"
+    },
+    "mixedRetryableFailures": {
+      "description": "Mix of 429, 5xx, and network errors all count",
+      "initialState": "CLOSED",
+      "actions": [
+        { "type": "failure", "statusCode": 429 },
+        { "type": "failure", "statusCode": 503 },
+        { "type": "failure", "networkError": true }
+      ],
+      "expectedState": "OPEN"
+    }
+  },
+  "retryDelayScenarios": {
+    "description": "Expected delay ranges for retry backoff calculation",
+    "attempts": [
+      { "attempt": 0, "minMs": 1000, "maxMs": 2000, "note": "2^0*1000=1000 + jitter(0..1000)" },
+      { "attempt": 1, "minMs": 2000, "maxMs": 3000, "note": "2^1*1000=2000 + jitter(0..1000)" },
+      { "attempt": 2, "minMs": 4000, "maxMs": 5000, "note": "2^2*1000=4000 + jitter(0..1000)" },
+      { "attempt": 3, "minMs": 8000, "maxMs": 9000, "note": "2^3*1000=8000 + jitter(0..1000)" },
+      { "attempt": 10, "minMs": 30000, "maxMs": 31000, "note": "capped at 30000 + jitter(0..1000)" }
+    ]
+  }
+}

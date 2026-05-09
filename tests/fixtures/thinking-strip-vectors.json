@@ -1,0 +1,77 @@
+{
+  "description": "Shared test vectors for thinking token stripping. Both Python and TypeScript tests consume this file.",
+  "vectors": [
+    {
+      "name": "single closed block",
+      "input": "<think>reasoning here</think>the answer",
+      "expectedContent": "the answer",
+      "expectedThinking": "reasoning here"
+    },
+    {
+      "name": "closed block with trailing whitespace",
+      "input": "<think>reasoning</think>  \n  answer text",
+      "expectedContent": "answer text",
+      "expectedThinking": "reasoning"
+    },
+    {
+      "name": "unclosed block",
+      "input": "<think>reasoning incomplete",
+      "expectedContent": "",
+      "expectedThinking": "reasoning incomplete"
+    },
+    {
+      "name": "multiple closed blocks",
+      "input": "<think>first thought</think>text between<think>second thought</think>more text",
+      "expectedContent": "text betweenmore text",
+      "expectedThinking": "first thought\nsecond thought"
+    },
+    {
+      "name": "no thinking blocks",
+      "input": "just plain text",
+      "expectedContent": "just plain text",
+      "expectedThinking": null
+    },
+    {
+      "name": "empty content",
+      "input": "",
+      "expectedContent": "",
+      "expectedThinking": null
+    },
+    {
+      "name": "think tag in middle of content",
+      "input": "before<think>middle reasoning</think>after",
+      "expectedContent": "beforeafter",
+      "expectedThinking": "middle reasoning"
+    },
+    {
+      "name": "closed block followed by unclosed block",
+      "input": "<think>closed reasoning</think>answer<think>unclosed tail",
+      "expectedContent": "answer",
+      "expectedThinking": "closed reasoning\nunclosed tail"
+    },
+    {
+      "name": "multiline thinking content",
+      "input": "<think>line one\nline two\nline three</think>result",
+      "expectedContent": "result",
+      "expectedThinking": "line one\nline two\nline three"
+    },
+    {
+      "name": "only thinking block, no answer",
+      "input": "<think>all reasoning no answer</think>",
+      "expectedContent": "",
+      "expectedThinking": "all reasoning no answer"
+    },
+    {
+      "name": "content with angle brackets but not think tags",
+      "input": "use <div>html</div> tags",
+      "expectedContent": "use <div>html</div> tags",
+      "expectedThinking": null
+    },
+    {
+      "name": "nested-like think tags (inner treated as text)",
+      "input": "<think>outer <think>inner</think> rest</think>answer",
+      "expectedContent": "rest</think>answer",
+      "expectedThinking": "outer <think>inner"
+    }
+  ]
+}

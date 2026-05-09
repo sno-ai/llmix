@@ -1,0 +1,180 @@
+{
+  "description": "Shared test vectors for response cache key generation (SHA-256). Both TypeScript and Python must produce identical hashes.",
+  "prefix": "llmix:resp:",
+  "vectors": [
+    {
+      "name": "simple-openai-call",
+      "input": {
+        "provider": "openai",
+        "model": "gpt-4.1",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "temperature": 0.7,
+        "maxOutputTokens": 1000
+      },
+      "expectedKey": "llmix:resp:0a2c8273415b22d0336da4413f872cfa3fb5d0e4b228b084eb0bf5cc5cd8f019"
+    },
+    {
+      "name": "same-params-different-order",
+      "description": "Keys in different order must produce the same hash (canonical JSON sorts keys)",
+      "input": {
+        "temperature": 0.7,
+        "provider": "openai",
+        "maxOutputTokens": 1000,
+        "model": "gpt-4.1",
+        "messages": [{"role": "user", "content": "Hello"}]
+      },
+      "expectedKey": "llmix:resp:0a2c8273415b22d0336da4413f872cfa3fb5d0e4b228b084eb0bf5cc5cd8f019"
+    },
+    {
+      "name": "different-temperature-no-collision",
+      "input": {
+        "provider": "openai",
+        "model": "gpt-4.1",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "temperature": 0.9,
+        "maxOutputTokens": 1000
+      },
+      "expectedKey": "llmix:resp:e23b0e3df79b8273541aecdb7bbb43231de0587e1b01d8195cc14055c8f1aa7f"
+    },
+    {
+      "name": "different-provider-no-collision",
+      "input": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-20250514",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "temperature": 0.7,
+        "maxOutputTokens": 1000
+      },
+      "expectedKey": "llmix:resp:5393f74e8bbdc34edbece34c01aed26a797e991edd213c8f80e16c15b4b6ff9a"
+    },
+    {
+      "name": "different-baseurl-no-collision",
+      "description": "Same model via different endpoints must produce different keys",
+      "input": {
+        "provider": "openai",
+        "baseUrl": "https://proxy.example.com/v1",
+        "model": "gpt-4.1",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "temperature": 0.7,
+        "maxOutputTokens": 1000
+      },
+      "expectedKey": "llmix:resp:36a74093111c61c9c1b247067bf6a123d6f91165c13dc38038ddb705545d822a"
+    },
+    {
+      "name": "with-response-format",
+      "input": {
+        "provider": "openai",
+        "model": "gpt-4.1",
+        "messages": [{"role": "user", "content": "Extract entities"}],
+        "temperature": 0,
+        "maxOutputTokens": 2000,
+        "responseFormat": {"type": "json_object"}
+      },
+      "expectedKey": "llmix:resp:4607985b1b02b56bd44047e41de089fefb4cf04c50fb70cb41977b802862e84c"
+    },
+    {
+      "name": "with-provider-options",
+      "input": {
+        "provider": "openai",
+        "model": "gpt-4.1",
+        "messages": [{"role": "user", "content": "Think carefully"}],
+        "temperature": 0.5,
+        "maxOutputTokens": 4000,
+        "providerOptions": {"reasoningEffort": "high"}
+      },
+      "expectedKey": "llmix:resp:9daf495ef51e17586951d1826a645bbe8dda5b4f262ae283433dba6167e106bc"
+    },
+    {
+      "name": "empty-messages",
+      "input": {
+        "provider": "openai",
+        "model": "gpt-4.1",
+        "messages": [],
+        "temperature": 0.7,
+        "maxOutputTokens": 1000
+      },
+      "expectedKey": "llmix:resp:8503135118a77eac5f03ea4ad9778bbb98aa89bba48cf1bacf7885f2d341df14"
+    },
+    {
+      "name": "multi-turn-messages",
+      "input": {
+        "provider": "openai",
+        "model": "gpt-4.1",
+        "messages": [
+          {"role": "system", "content": "You are a helpful assistant."},
+          {"role": "user", "content": "What is 2+2?"},
+          {"role": "assistant", "content": "4"},
+          {"role": "user", "content": "And 3+3?"}
+        ],
+        "temperature": 0.7,
+        "maxOutputTokens": 1000
+      },
+      "expectedKey": "llmix:resp:9700dbafef1870c666f38ee6c30f70f8cfaf24e57d727fe39fc900234958a47c"
+    },
+    {
+      "name": "with-penalty-and-top-k",
+      "description": "topK, presencePenalty, frequencyPenalty, stopSequences must contribute to the cache key",
+      "input": {
+        "provider": "openai",
+        "model": "gpt-4.1",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "temperature": 0.7,
+        "maxOutputTokens": 1000,
+        "topK": 40,
+        "presencePenalty": 0.1,
+        "frequencyPenalty": 0.2,
+        "stopSequences": ["END", "STOP"]
+      },
+      "expectedKey": "llmix:resp:6822e74ab1f76336b4a4a6fa7bbd3243f8eca8160769a29616bfe6b6f6eff7d0"
+    },
+    {
+      "name": "null-and-undefined-fields-excluded",
+      "description": "Fields that are null/undefined should be omitted from the hash input, producing the same key as simple-openai-call",
+      "input": {
+        "provider": "openai",
+        "model": "gpt-4.1",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "temperature": 0.7,
+        "maxOutputTokens": 1000,
+        "baseUrl": null,
+        "responseFormat": null,
+        "providerOptions": null
+      },
+      "expectedKey": "llmix:resp:0a2c8273415b22d0336da4413f872cfa3fb5d0e4b228b084eb0bf5cc5cd8f019"
+    },
+    {
+      "name": "non-ascii-emoji",
+      "description": "Emoji content must hash identically across Python/TS/Rust (requires ensure_ascii=False in Python)",
+      "input": {
+        "provider": "openai",
+        "model": "gpt-4.1",
+        "messages": [{"role": "user", "content": "Hello 👋 World"}],
+        "temperature": 0.7,
+        "maxOutputTokens": 1000
+      },
+      "expectedKey": "llmix:resp:85bedf7a0b123ee4f90d9fb62ac0fc8ea3a209b39a5ecc61054dfa186677b4e8"
+    },
+    {
+      "name": "non-ascii-cjk",
+      "description": "CJK content must hash identically across Python/TS/Rust",
+      "input": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-20250514",
+        "messages": [{"role": "user", "content": "你好，世界"}],
+        "temperature": 0.5
+      },
+      "expectedKey": "llmix:resp:f607c77728da4f498ade559072455d09f28562dcabb3d5ad9d17f4850984064c"
+    },
+    {
+      "name": "non-ascii-accented-latin",
+      "description": "Accented Latin characters must hash identically across Python/TS/Rust",
+      "input": {
+        "provider": "openai",
+        "model": "gpt-4.1",
+        "messages": [{"role": "user", "content": "Café résumé naïve"}],
+        "temperature": 0.3
+      },
+      "expectedKey": "llmix:resp:87f405e4d9f7b4d42452142949879a3b98245db30ff7519e9cd8f0730d5ae376"
+    }
+  ]
+}

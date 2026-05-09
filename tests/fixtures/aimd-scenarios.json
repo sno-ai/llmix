@@ -1,0 +1,203 @@
+{
+  "defaults": {
+    "initial": 32,
+    "min_concurrency": 4,
+    "header_backoff_threshold": 0.10
+  },
+  "scenarios": [
+    {
+      "name": "initial_window_size",
+      "description": "Semaphore starts at initial window",
+      "initial": 32,
+      "actions": [],
+      "expected_window": 32
+    },
+    {
+      "name": "custom_initial_window",
+      "description": "Semaphore respects custom initial value",
+      "initial": 16,
+      "actions": [],
+      "expected_window": 16
+    },
+    {
+      "name": "success_at_max_is_noop",
+      "description": "on_success at max window does not increase beyond max",
+      "initial": 10,
+      "actions": [
+        { "type": "success" }
+      ],
+      "expected_window": 10
+    },
+    {
+      "name": "success_increases_by_one",
+      "description": "on_success grows window by 1 when below max",
+      "initial": 10,
+      "actions": [
+        { "type": "rate_limit" },
+        { "type": "success" }
+      ],
+      "expected_window": 6
+    },
+    {
+      "name": "rate_limit_halves",
+      "description": "on_rate_limit halves the window",
+      "initial": 32,
+      "actions": [
+        { "type": "rate_limit" }
+      ],
+      "expected_window": 16
+    },
+    {
+      "name": "rate_limit_halves_twice",
+      "description": "Two rate limits: 32 -> 16 -> 8",
+      "initial": 32,
+      "actions": [
+        { "type": "rate_limit" },
+        { "type": "rate_limit" }
+      ],
+      "expected_window": 8
+    },
+    {
+      "name": "rate_limit_floor",
+      "description": "Window never goes below min_concurrency",
+      "initial": 8,
+      "actions": [
+        { "type": "rate_limit" },
+        { "type": "rate_limit" },
+        { "type": "rate_limit" },
+        { "type": "rate_limit" },
+        { "type": "rate_limit" }
+      ],
+      "expected_window": 4
+    },
+    {
+      "name": "success_ceiling",
+      "description": "Repeated successes cannot exceed initial",
+      "initial": 10,
+      "actions": [
+        { "type": "rate_limit" },
+        { "type": "success" },
+        { "type": "success" },
+        { "type": "success" },
+        { "type": "success" },
+        { "type": "success" },
+        { "type": "success" },
+        { "type": "success" },
+        { "type": "success" },
+        { "type": "success" },
+        { "type": "success" }
+      ],
+      "expected_window": 10
+    },
+    {
+      "name": "header_above_threshold_grows",
+      "description": "Headers with >10% remaining grow window like AIMD",
+      "initial": 32,
+      "actions": [
+        { "type": "rate_limit" },
+        { "type": "header_feedback", "remaining": 250, "limit": 500 }
+      ],
+      "expected_window": 17
+    },
+    {
+      "name": "header_below_threshold_backs_off",
+      "description": "5% remaining -> scale=0.5 -> target = 4 + 0.5*28 = 18",
+      "initial": 32,
+      "actions": [
+        { "type": "header_feedback", "remaining": 25, "limit": 500 }
+      ],
+      "expected_window": 18
+    },
+    {
+      "name": "header_near_zero_hits_floor",
+      "description": "Near-zero remaining drops to min_concurrency",
+      "initial": 32,
+      "actions": [
+        { "type": "header_feedback", "remaining": 1, "limit": 500 }
+      ],
+      "expected_window": 4
+    },
+    {
+      "name": "header_suppresses_plain_aimd",
+      "description": "Once headers arrive, on_success is a no-op",
+      "initial": 10,
+      "actions": [
+        { "type": "rate_limit" },
+        { "type": "header_feedback", "remaining": 450, "limit": 500 },
+        { "type": "success" }
+      ],
+      "expected_window": 6
+    },
+    {
+      "name": "rate_limit_overrides_headers",
+      "description": "on_rate_limit halves regardless of header state",
+      "initial": 32,
+      "actions": [
+        { "type": "header_feedback", "remaining": 480, "limit": 500 },
+        { "type": "header_feedback", "remaining": 480, "limit": 500 },
+        { "type": "header_feedback", "remaining": 480, "limit": 500 },
+        { "type": "header_feedback", "remaining": 480, "limit": 500 },
+        { "type": "header_feedback", "remaining": 480, "limit": 500 },
+        { "type": "rate_limit" }
+      ],
+      "expected_window": 16
+    },
+    {
+      "name": "recovery_after_backoff",
+      "description": "After header backoff, above-threshold headers recover",
+      "initial": 32,
+      "actions": [
+        { "type": "header_feedback", "remaining": 5, "limit": 500 },
+        { "type": "header_feedback", "remaining": 400, "limit": 500 },
+        { "type": "header_feedback", "remaining": 400, "limit": 500 },
+        { "type": "header_feedback", "remaining": 400, "limit": 500 },
+        { "type": "header_feedback", "remaining": 400, "limit": 500 },
+        { "type": "header_feedback", "remaining": 400, "limit": 500 },
+        { "type": "header_feedback", "remaining": 400, "limit": 500 },
+        { "type": "header_feedback", "remaining": 400, "limit": 500 },
+        { "type": "header_feedback", "remaining": 400, "limit": 500 },
+        { "type": "header_feedback", "remaining": 400, "limit": 500 },
+        { "type": "header_feedback", "remaining": 400, "limit": 500 }
+      ],
+      "expected_window": 16
+    }
+  ],
+  "header_parsing": [
+    {
+      "name": "valid_headers",
+      "headers": {
+        "x-ratelimit-remaining-requests": "450",
+        "x-ratelimit-limit-requests": "500"
+      },
+      "expected": { "remaining": 450, "limit": 500 }
+    },
+    {
+      "name": "missing_headers",
+      "headers": {},
+      "expected": null
+    },
+    {
+      "name": "partial_headers",
+      "headers": {
+        "x-ratelimit-remaining-requests": "450"
+      },
+      "expected": null
+    },
+    {
+      "name": "zero_limit",
+      "headers": {
+        "x-ratelimit-remaining-requests": "0",
+        "x-ratelimit-limit-requests": "0"
+      },
+      "expected": null
+    },
+    {
+      "name": "non_numeric",
+      "headers": {
+        "x-ratelimit-remaining-requests": "abc",
+        "x-ratelimit-limit-requests": "500"
+      },
+      "expected": null
+    }
+  ]
+}
