@@ -11,6 +11,27 @@ const DEFAULT_RELATIVE_PATH: &str = "./config/llm";
 const MAX_NAME_LEN: usize = 64;
 const MIN_VERSION: u32 = 1;
 const MAX_VERSION: u32 = 9999;
+const LLMIX_MDA_NAMESPACE: &str = "snoai-llmix";
+const VALID_PROVIDERS: &[&str] = &[
+    "openai",
+    "anthropic",
+    "google",
+    "deepseek",
+    "openrouter",
+    "sno-gpu",
+    "deepinfra",
+    "novita",
+    "together",
+];
+const VALID_CACHE_STRATEGIES: &[&str] = &[
+    "native",
+    "gateway",
+    "disabled",
+    "redis",
+    "redis-or-memory",
+    "memory",
+];
+const OPENAI_REASONING_EFFORTS: &[&str] = &["minimal", "low", "medium", "high", "xhigh"];
 const LOCKFILES_TS: &[&str] = &[
     "bun.lock",
     "pnpm-lock.yaml",
@@ -62,7 +83,10 @@ pub fn resolve_config_dir(options: Option<&LlmixPathConfig>) -> LlmixResult<Reso
     }
 
     if let Some(env_value) = env::var_os(env_var_name) {
-        let project_root = find_project_root(None)?;
+        let project_root = match project_root.as_ref() {
+            Some(project_root) => project_root.clone(),
+            None => find_project_root(None)?,
+        };
         return Ok(ResolvedConfigDir {
             config_dir: normalize_path(&project_root.join(env_value)),
             source: ConfigDirSource::Env,
@@ -85,12 +109,13 @@ where
     P: AsRef<Path>,
 {
     let file_path = absolutize_user_path(path.as_ref())?;
+    ensure_mda_config_path(&file_path)?;
     let base_dir = file_path
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
     verify_path_containment(&file_path, &base_dir)?;
-    load_yaml_file(&file_path)
+    load_mda_file(&file_path)
 }
 
 pub fn load_config_preset<S, P>(name: S, base_dir: P) -> LlmixResult<Value>
@@ -98,6 +123,7 @@ where
     S: AsRef<str>,
     P: AsRef<Path>,
 {
+    reject_legacy_config_path(Path::new(name.as_ref()))?;
     let preset = normalize_preset_name(name.as_ref());
     validate_preset(&preset)?;
 
@@ -108,7 +134,7 @@ where
         .unwrap_or_default();
     validate_module(module_name)?;
 
-    let file_path = presets_dir.join(format!("{preset}.yaml"));
+    let file_path = presets_dir.join(format!("{preset}.mda"));
     verify_path_containment(&file_path, &presets_dir)?;
     load_config(file_path)
 }
@@ -132,7 +158,7 @@ pub fn validate_version(version: u32) -> LlmixResult<()> {
     Ok(())
 }
 
-fn load_yaml_file(file_path: &Path) -> LlmixResult<Value> {
+fn load_mda_file(file_path: &Path) -> LlmixResult<Value> {
     let content = match fs::read_to_string(file_path) {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -150,64 +176,224 @@ fn load_yaml_file(file_path: &Path) -> LlmixResult<Value> {
         Err(error) => return Err(error.into()),
     };
 
-    let parsed: Value = serde_yaml_ng::from_str(&content).map_err(|error| InvalidConfigError {
-        message: format!("YAML parsing failed for {}: {error}", file_path.display()),
-    })?;
+    let frontmatter = extract_mda_frontmatter(&content, file_path)?;
+    let parsed: Value =
+        serde_yaml_ng::from_str(frontmatter).map_err(|error| InvalidConfigError {
+            message: format!(
+                "MDA frontmatter parsing failed for {}: {error}",
+                file_path.display()
+            ),
+        })?;
 
     let Value::Object(object) = parsed else {
         return Err(InvalidConfigError {
             message: format!(
-                "Config must be a dictionary, got {}",
+                "MDA frontmatter must be a dictionary, got {}",
                 json_type_name(&parsed)
             ),
         }
         .into());
     };
 
-    let config = normalize_config_shape(Value::Object(object));
-    if config.get("provider").is_none() {
-        return Err(InvalidConfigError {
-            message: format!(
-                "Missing required field 'provider' in {}",
-                file_path.display()
-            ),
-        }
-        .into());
-    }
-    if config.get("model").is_none() {
-        return Err(InvalidConfigError {
-            message: format!("Missing required field 'model' in {}", file_path.display()),
-        }
-        .into());
-    }
+    let config = project_mda_preset_to_config(&object, file_path)?;
+    validate_runtime_config(file_path, &config)?;
 
     Ok(Value::Object(config))
 }
 
-fn normalize_config_shape(config: Value) -> Map<String, Value> {
-    let Value::Object(mut normalized) = normalize_config_keys(config) else {
-        return Map::new();
+fn extract_mda_frontmatter<'a>(content: &'a str, file_path: &Path) -> LlmixResult<&'a str> {
+    let content = content.strip_prefix('\u{feff}').unwrap_or(content);
+    let (frontmatter_start, after_opening) = if let Some(rest) = content.strip_prefix("---\r\n") {
+        (5, rest)
+    } else if let Some(rest) = content.strip_prefix("---\n") {
+        (4, rest)
+    } else {
+        return Err(InvalidConfigError {
+            message: format!(
+                "MDA source file must start with YAML frontmatter: {}",
+                file_path.display()
+            ),
+        }
+        .into());
     };
 
-    let Some(Value::Object(mut common)) = normalized.remove("common") else {
-        return normalized;
+    let mut offset = frontmatter_start;
+    for line in after_opening.split_inclusive('\n') {
+        let line_without_newline = line.trim_end_matches(['\r', '\n']);
+        if line_without_newline == "---" {
+            return Ok(&content[frontmatter_start..offset]);
+        }
+        offset += line.len();
+    }
+
+    let final_line = &content[offset..];
+    if final_line.trim_end_matches('\r') == "---" {
+        return Ok(&content[frontmatter_start..offset]);
+    }
+
+    Err(InvalidConfigError {
+        message: format!(
+            "MDA source file is missing closing frontmatter delimiter: {}",
+            file_path.display()
+        ),
+    }
+    .into())
+}
+
+fn project_mda_preset_to_config(
+    frontmatter: &Map<String, Value>,
+    file_path: &Path,
+) -> LlmixResult<Map<String, Value>> {
+    require_non_empty_string(frontmatter.get("name"), "name", file_path)?;
+    let top_level_description =
+        require_non_empty_string(frontmatter.get("description"), "description", file_path)?;
+
+    let metadata = require_object(frontmatter.get("metadata"), "metadata", file_path)?;
+    let namespace = require_object(
+        metadata.get(LLMIX_MDA_NAMESPACE),
+        "metadata.snoai-llmix",
+        file_path,
+    )?;
+    let common_raw = require_object(
+        namespace.get("common"),
+        "metadata.snoai-llmix.common",
+        file_path,
+    )?;
+    let Value::Object(mut common) = normalize_config_keys(Value::Object(common_raw.clone())) else {
+        return Err(InvalidConfigError {
+            message: format!(
+                "metadata.snoai-llmix.common must be an object in {}",
+                file_path.display()
+            ),
+        }
+        .into());
     };
 
-    let provider = common.remove("provider");
-    let model = common.remove("model");
+    let provider = common
+        .remove("provider")
+        .ok_or_else(|| InvalidConfigError {
+            message: format!(
+                "Missing required field 'provider' in {}",
+                file_path.display()
+            ),
+        })?;
+    let model = common.remove("model").ok_or_else(|| InvalidConfigError {
+        message: format!("Missing required field 'model' in {}", file_path.display()),
+    })?;
 
-    if let Some(provider) = provider {
-        normalized.entry("provider".to_string()).or_insert(provider);
-    }
-    if let Some(model) = model {
-        normalized.entry("model".to_string()).or_insert(model);
-    }
-
+    let mut config = Map::new();
+    config.insert("provider".to_string(), provider);
+    config.insert("model".to_string(), model);
     if !common.is_empty() {
-        normalized.insert("common".to_string(), Value::Object(common));
+        config.insert("common".to_string(), Value::Object(common));
     }
 
-    normalized
+    for key in [
+        "providerOptions",
+        "timeout",
+        "deprecated",
+        "caching",
+        "bypassGateway",
+    ] {
+        if let Some(value) = namespace.get(key) {
+            config.insert(
+                camel_to_snake_key(key).to_string(),
+                normalize_config_keys(value.clone()),
+            );
+        }
+    }
+
+    if let Some(value) = namespace.get("description") {
+        config.insert(
+            "description".to_string(),
+            normalize_config_keys(value.clone()),
+        );
+    } else {
+        config.insert(
+            "description".to_string(),
+            Value::String(top_level_description.to_string()),
+        );
+    }
+
+    if let Some(value) = namespace.get("tags").or_else(|| frontmatter.get("tags")) {
+        config.insert("tags".to_string(), normalize_config_keys(value.clone()));
+    }
+
+    Ok(config)
+}
+
+fn validate_runtime_config(file_path: &Path, config: &Map<String, Value>) -> LlmixResult<()> {
+    let provider = require_non_empty_string(config.get("provider"), "provider", file_path)?;
+    if !VALID_PROVIDERS.contains(&provider) {
+        return Err(InvalidConfigError {
+            message: format!(
+                "Invalid provider {provider:?} in {}. Expected one of: {}",
+                file_path.display(),
+                VALID_PROVIDERS.join(", ")
+            ),
+        }
+        .into());
+    }
+    require_non_empty_string(config.get("model"), "model", file_path)?;
+
+    if let Some(common) = config.get("common") {
+        let common = expect_object(common, "common", file_path)?;
+        validate_optional_number_range(common, "temperature", 0.0, 2.0, file_path)?;
+        validate_optional_number_range(common, "top_p", 0.0, 1.0, file_path)?;
+        validate_optional_positive_integer(common, "max_output_tokens", file_path)?;
+        validate_optional_positive_integer(common, "top_k", file_path)?;
+        validate_optional_nonnegative_integer(common, "max_retries", file_path)?;
+    }
+
+    if let Some(caching) = config.get("caching") {
+        let caching = expect_object(caching, "caching", file_path)?;
+        if let Some(strategy) = caching.get("strategy") {
+            let strategy = expect_non_empty_string(strategy, "caching.strategy", file_path)?;
+            if !VALID_CACHE_STRATEGIES.contains(&strategy) {
+                return Err(InvalidConfigError {
+                    message: format!(
+                        "Invalid caching.strategy {strategy:?} in {}. Expected one of: {}",
+                        file_path.display(),
+                        VALID_CACHE_STRATEGIES.join(", ")
+                    ),
+                }
+                .into());
+            }
+        }
+        validate_optional_positive_integer(caching, "ttl", file_path)?;
+        validate_optional_positive_integer(caching, "max_items", file_path)?;
+    }
+
+    if let Some(timeout) = config.get("timeout") {
+        let timeout = expect_object(timeout, "timeout", file_path)?;
+        validate_optional_positive_number(timeout, "total_time", file_path)?;
+        validate_optional_positive_number(timeout, "stream_first_chunk_time", file_path)?;
+    }
+
+    if let Some(provider_options) = config.get("provider_options") {
+        let provider_options = expect_object(provider_options, "provider_options", file_path)?;
+        if let Some(openai) = provider_options.get("openai") {
+            let openai = expect_object(openai, "provider_options.openai", file_path)?;
+            if let Some(reasoning_effort) = openai.get("reasoning_effort") {
+                let reasoning_effort = expect_non_empty_string(
+                    reasoning_effort,
+                    "provider_options.openai.reasoning_effort",
+                    file_path,
+                )?;
+                if !OPENAI_REASONING_EFFORTS.contains(&reasoning_effort) {
+                    return Err(InvalidConfigError {
+                        message: format!(
+                            "Invalid provider_options.openai.reasoning_effort {reasoning_effort:?} in {}",
+                            file_path.display()
+                        ),
+                    }
+                    .into());
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn normalize_config_keys(value: Value) -> Value {
@@ -228,6 +414,179 @@ fn normalize_config_keys(value: Value) -> Value {
         }
         other => other,
     }
+}
+
+fn require_object<'a>(
+    value: Option<&'a Value>,
+    field: &str,
+    file_path: &Path,
+) -> LlmixResult<&'a Map<String, Value>> {
+    let value = value.ok_or_else(|| InvalidConfigError {
+        message: format!(
+            "Missing required field '{field}' in {}",
+            file_path.display()
+        ),
+    })?;
+    expect_object(value, field, file_path)
+}
+
+fn expect_object<'a>(
+    value: &'a Value,
+    field: &str,
+    file_path: &Path,
+) -> LlmixResult<&'a Map<String, Value>> {
+    match value {
+        Value::Object(object) => Ok(object),
+        other => Err(InvalidConfigError {
+            message: format!(
+                "Field '{field}' in {} must be an object, got {}",
+                file_path.display(),
+                json_type_name(other)
+            ),
+        }
+        .into()),
+    }
+}
+
+fn require_non_empty_string<'a>(
+    value: Option<&'a Value>,
+    field: &str,
+    file_path: &Path,
+) -> LlmixResult<&'a str> {
+    let value = value.ok_or_else(|| InvalidConfigError {
+        message: format!(
+            "Missing required field '{field}' in {}",
+            file_path.display()
+        ),
+    })?;
+    expect_non_empty_string(value, field, file_path)
+}
+
+fn expect_non_empty_string<'a>(
+    value: &'a Value,
+    field: &str,
+    file_path: &Path,
+) -> LlmixResult<&'a str> {
+    match value.as_str() {
+        Some(value) if !value.is_empty() => Ok(value),
+        _ => Err(InvalidConfigError {
+            message: format!(
+                "Field '{field}' in {} must be a non-empty string",
+                file_path.display()
+            ),
+        }
+        .into()),
+    }
+}
+
+fn validate_optional_number_range(
+    object: &Map<String, Value>,
+    field: &str,
+    min: f64,
+    max: f64,
+    file_path: &Path,
+) -> LlmixResult<()> {
+    let Some(value) = object.get(field) else {
+        return Ok(());
+    };
+    let Some(number) = value.as_f64() else {
+        return Err(InvalidConfigError {
+            message: format!(
+                "Field '{field}' in {} must be a number",
+                file_path.display()
+            ),
+        }
+        .into());
+    };
+    if !(min..=max).contains(&number) {
+        return Err(InvalidConfigError {
+            message: format!(
+                "Field '{field}' in {} must be between {min} and {max}",
+                file_path.display()
+            ),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+fn validate_optional_positive_number(
+    object: &Map<String, Value>,
+    field: &str,
+    file_path: &Path,
+) -> LlmixResult<()> {
+    let Some(value) = object.get(field) else {
+        return Ok(());
+    };
+    let Some(number) = value.as_f64() else {
+        return Err(InvalidConfigError {
+            message: format!(
+                "Field '{field}' in {} must be a number",
+                file_path.display()
+            ),
+        }
+        .into());
+    };
+    if number <= 0.0 {
+        return Err(InvalidConfigError {
+            message: format!(
+                "Field '{field}' in {} must be positive",
+                file_path.display()
+            ),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+fn validate_optional_positive_integer(
+    object: &Map<String, Value>,
+    field: &str,
+    file_path: &Path,
+) -> LlmixResult<()> {
+    validate_optional_integer(object, field, file_path, |number| number > 0, "positive")
+}
+
+fn validate_optional_nonnegative_integer(
+    object: &Map<String, Value>,
+    field: &str,
+    file_path: &Path,
+) -> LlmixResult<()> {
+    validate_optional_integer(
+        object,
+        field,
+        file_path,
+        |number| number >= 0,
+        "non-negative",
+    )
+}
+
+fn validate_optional_integer(
+    object: &Map<String, Value>,
+    field: &str,
+    file_path: &Path,
+    predicate: impl FnOnce(i64) -> bool,
+    label: &str,
+) -> LlmixResult<()> {
+    let Some(value) = object.get(field) else {
+        return Ok(());
+    };
+    let Some(number) = value.as_i64() else {
+        return Err(InvalidConfigError {
+            message: format!(
+                "Field '{field}' in {} must be an integer",
+                file_path.display()
+            ),
+        }
+        .into());
+    };
+    if !predicate(number) {
+        return Err(InvalidConfigError {
+            message: format!("Field '{field}' in {} must be {label}", file_path.display()),
+        }
+        .into());
+    }
+    Ok(())
 }
 
 fn camel_to_snake_key(key: &str) -> &str {
@@ -259,8 +618,56 @@ fn camel_to_snake_key(key: &str) -> &str {
         "promptCacheRetention" => "prompt_cache_retention",
         "gpuPath" => "gpu_path",
         "maxItems" => "max_items",
+        "safetyIdentifier" => "safety_identifier",
+        "budgetTokens" => "budget_tokens",
+        "disableParallelToolUse" => "disable_parallel_tool_use",
+        "sendReasoning" => "send_reasoning",
+        "toolStreaming" => "tool_streaming",
+        "structuredOutputMode" => "structured_output_mode",
+        "thinkingLevel" => "thinking_level",
+        "thinkingConfig" => "thinking_config",
+        "includeThoughts" => "include_thoughts",
+        "cachedContent" => "cached_content",
+        "safetySettings" => "safety_settings",
+        "responseModalities" => "response_modalities",
+        "cacheControl" => "cache_control",
         other => other,
     }
+}
+
+fn ensure_mda_config_path(path: &Path) -> LlmixResult<()> {
+    reject_legacy_config_path(path)?;
+    if path_has_suffix(path, ".mda") {
+        return Ok(());
+    }
+
+    Err(InvalidConfigError {
+        message: format!(
+            "LLMix Rust configs must be MDA source files with a .mda suffix: {}",
+            path.display()
+        ),
+    }
+    .into())
+}
+
+fn reject_legacy_config_path(path: &Path) -> LlmixResult<()> {
+    if path_has_suffix(path, ".yaml") || path_has_suffix(path, ".yml") {
+        return Err(InvalidConfigError {
+            message: format!(
+                "LLMix Rust configs use .mda files; YAML configs are no longer supported: {}",
+                path.display()
+            ),
+        }
+        .into());
+    }
+
+    Ok(())
+}
+
+fn path_has_suffix(path: &Path, suffix: &str) -> bool {
+    path.to_string_lossy()
+        .to_ascii_lowercase()
+        .ends_with(suffix)
 }
 
 fn verify_path_containment(resolved_path: &Path, base_dir: &Path) -> LlmixResult<()> {
@@ -327,10 +734,7 @@ fn normalize_preset_name(name: &str) -> String {
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or(name);
-    if let Some(stripped) = file_name.strip_suffix(".yaml") {
-        return stripped.to_string();
-    }
-    if let Some(stripped) = file_name.strip_suffix(".yml") {
+    if let Some(stripped) = file_name.strip_suffix(".mda") {
         return stripped.to_string();
     }
 

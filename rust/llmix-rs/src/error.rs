@@ -17,7 +17,7 @@ pub struct KillSwitchActiveError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("all {total_keys} keys are dead (401/403). Replace keys or wait for provider resolution.")]
+#[error("all {total_keys} keys are dead (401). Replace keys or wait for provider resolution.")]
 pub struct KeyPoolExhaustedError {
     pub total_keys: usize,
 }

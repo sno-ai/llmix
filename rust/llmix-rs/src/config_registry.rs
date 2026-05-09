@@ -11,10 +11,14 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read};
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MANIFEST_SCHEMA_VERSION: u32 = 1;
+static ATOMIC_WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishedRevision {
@@ -116,14 +120,15 @@ impl ConfigRegistryPublisher {
             .into());
         }
 
-        let stage_path = self.staging_dir.join(format!("{revision_id}.tmp"));
-        if stage_path.exists() {
-            fs::remove_dir_all(&stage_path)?;
-        }
+        let stage_path = staging_attempt_path(&self.staging_dir, &revision_id, published_at);
 
         let publish_result = (|| -> LlmixResult<PublishedRevision> {
-            let manifest =
-                self.build_staged_snapshot(&stage_path, &presets, &revision_id, &published_at_text)?;
+            let manifest = self.build_staged_snapshot(
+                &stage_path,
+                &presets,
+                &revision_id,
+                &published_at_text,
+            )?;
             self.verify_staged_snapshot(&stage_path, &manifest)?;
 
             fs::create_dir_all(&self.snapshots_dir)?;
@@ -135,10 +140,14 @@ impl ConfigRegistryPublisher {
                 let pointer = CurrentPointer {
                     revision: revision_id.clone(),
                 };
-                atomic_write_json(
+                if let Err(error) = atomic_write_json(
                     &self.current_path,
                     &serde_json::to_value(pointer).map_err(LlmixError::from)?,
-                )?;
+                ) {
+                    let _ = fs::remove_dir_all(&snapshot_path);
+                    fsync_dir(&self.snapshots_dir);
+                    return Err(error);
+                }
             }
 
             Ok(PublishedRevision {
@@ -158,18 +167,23 @@ impl ConfigRegistryPublisher {
     }
 
     fn discover_presets(&self) -> LlmixResult<Vec<PresetSource>> {
-        if !self.authoring_dir.is_dir() {
-            return Err(ConfigNotFoundError {
-                path: self.authoring_dir.display().to_string(),
-            }
-            .into());
-        }
+        validate_authoring_directory(&self.authoring_dir)?;
 
         let mut presets = Vec::new();
         for module_entry in fs::read_dir(&self.authoring_dir)? {
             let module_entry = module_entry?;
             let module_path = module_entry.path();
-            if !module_path.is_dir() {
+            let module_type = module_entry.file_type()?;
+            if module_type.is_symlink() {
+                return Err(InvalidConfigError {
+                    message: format!(
+                        "Config Registry authoring modules must not be symlinks: {}",
+                        module_path.display()
+                    ),
+                }
+                .into());
+            }
+            if !module_type.is_dir() {
                 continue;
             }
 
@@ -181,13 +195,33 @@ impl ConfigRegistryPublisher {
             for preset_entry in fs::read_dir(&module_path)? {
                 let preset_entry = preset_entry?;
                 let preset_path = preset_entry.path();
-                if !preset_path.is_file() {
+                let preset_type = preset_entry.file_type()?;
+                if preset_type.is_symlink() {
+                    return Err(InvalidConfigError {
+                        message: format!(
+                            "Config Registry authoring presets must not be symlinks: {}",
+                            preset_path.display()
+                        ),
+                    }
+                    .into());
+                }
+                if !preset_type.is_file() {
                     continue;
                 }
 
-                let Some(file_name) = preset_path.file_name().and_then(|value| value.to_str()) else {
+                let Some(file_name) = preset_path.file_name().and_then(|value| value.to_str())
+                else {
                     continue;
                 };
+                if is_legacy_preset_filename(file_name) {
+                    return Err(InvalidConfigError {
+                        message: format!(
+                            "Config Registry authoring presets must use .mda files; YAML presets are no longer supported: {}",
+                            preset_path.display()
+                        ),
+                    }
+                    .into());
+                }
                 let Some(preset_name) = parse_preset_filename(file_name) else {
                     continue;
                 };
@@ -225,7 +259,7 @@ impl ConfigRegistryPublisher {
                 })?;
             digest.update(relative_path.to_string_lossy().as_bytes());
             digest.update([0u8]);
-            digest.update(read_file_bytes(&preset.authoring_path)?);
+            digest.update(read_authoring_file_bytes(&preset.authoring_path)?);
             digest.update([0u8]);
         }
 
@@ -244,15 +278,17 @@ impl ConfigRegistryPublisher {
         fs::create_dir_all(stage_path)?;
 
         for preset in presets {
-            let authoring_bytes = read_file_bytes(&preset.authoring_path)?;
-            let resolved = load_config(&preset.authoring_path)?;
-            validate_resolved_config(&preset.authoring_path, &resolved)?;
-            let resolved_bytes = canonical_json_bytes(&resolved)?;
-
-            let authoring_rel = format!("authoring/{}/{}.yaml", preset.module, preset.preset);
+            let authoring_rel = format!("authoring/{}/{}.mda", preset.module, preset.preset);
             let resolved_rel = format!("resolved/{}/{}.json", preset.module, preset.preset);
 
-            write_bytes(&stage_path.join(&authoring_rel), &authoring_bytes)?;
+            let authoring_bytes = read_authoring_file_bytes(&preset.authoring_path)?;
+            let staged_authoring_path = stage_path.join(&authoring_rel);
+            write_bytes(&staged_authoring_path, &authoring_bytes)?;
+
+            let resolved = load_config(&staged_authoring_path)?;
+            validate_resolved_config(&staged_authoring_path, &resolved)?;
+            let resolved_bytes = canonical_json_bytes(&resolved)?;
+
             write_bytes(&stage_path.join(&resolved_rel), &resolved_bytes)?;
 
             manifest_presets.insert(
@@ -396,16 +432,15 @@ impl ConfigRegistryManager {
         self.refresh_if_needed();
 
         let preset_id = format!("{module}/{preset}");
-        self.configs
-            .get(&preset_id)
-            .cloned()
-            .ok_or_else(|| ConfigNotFoundError {
+        self.configs.get(&preset_id).cloned().ok_or_else(|| {
+            ConfigNotFoundError {
                 path: format!(
                     "Preset not found in active Config Registry revision {}: {preset_id}",
                     self.active_revision
                 ),
             }
-            .into())
+            .into()
+        })
     }
 
     fn refresh_if_needed(&mut self) {
@@ -438,10 +473,7 @@ impl ConfigRegistryManager {
     }
 }
 
-fn load_revision(
-    snapshots_dir: &Path,
-    revision: &str,
-) -> LlmixResult<BTreeMap<String, Value>> {
+fn load_revision(snapshots_dir: &Path, revision: &str) -> LlmixResult<BTreeMap<String, Value>> {
     validate_revision(revision)?;
     let snapshot_path = snapshots_dir.join(revision);
     match fs::metadata(&snapshot_path) {
@@ -494,9 +526,13 @@ fn load_revision(
 
     let mut configs = BTreeMap::new();
     for (preset_id, entry) in manifest.presets {
-        let resolved_path = safe_join_relative(&snapshot_path, &entry.resolved_path)?;
         validate_manifest_entry_string(&entry.authoring_path, "authoring_path", &preset_id)?;
         validate_manifest_entry_string(&entry.authoring_sha256, "authoring_sha256", &preset_id)?;
+        validate_manifest_entry_string(&entry.resolved_path, "resolved_path", &preset_id)?;
+        validate_manifest_entry_string(&entry.resolved_sha256, "resolved_sha256", &preset_id)?;
+        let authoring_path = safe_join_relative(&snapshot_path, &entry.authoring_path)?;
+        let resolved_path = safe_join_relative(&snapshot_path, &entry.resolved_path)?;
+        verify_snapshot_checksum(&authoring_path, &entry.authoring_sha256, &preset_id)?;
         verify_snapshot_checksum(&resolved_path, &entry.resolved_sha256, &preset_id)?;
 
         let resolved = Value::Object(read_json_object(&resolved_path)?);
@@ -532,6 +568,41 @@ fn verify_snapshot_checksum(
         .into());
     }
 
+    match fs::symlink_metadata(artifact_path) {
+        Ok(metadata) if metadata.file_type().is_file() => {}
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(InvalidConfigError {
+                message: format!(
+                    "Config Registry artifact must not be a symlink: {} ({preset_id})",
+                    artifact_path.display()
+                ),
+            }
+            .into())
+        }
+        Ok(_) => {
+            return Err(InvalidConfigError {
+                message: format!(
+                    "Config Registry artifact is not a file: {} ({preset_id})",
+                    artifact_path.display()
+                ),
+            }
+            .into())
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(ConfigNotFoundError {
+                path: artifact_path.display().to_string(),
+            }
+            .into())
+        }
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => {
+            return Err(ConfigAccessError {
+                path: artifact_path.display().to_string(),
+            }
+            .into())
+        }
+        Err(error) => return Err(error.into()),
+    }
+
     let actual_sha = sha256_file(artifact_path)?;
     if actual_sha != expected_sha {
         return Err(InvalidConfigError {
@@ -559,9 +630,42 @@ fn validate_manifest_entry_string(value: &str, key: &str, preset_id: &str) -> Ll
 
 fn parse_preset_filename(file_name: &str) -> Option<String> {
     file_name
-        .strip_suffix(".yaml")
-        .or_else(|| file_name.strip_suffix(".yml"))
+        .strip_suffix(".mda")
         .map(|preset| preset.to_string())
+}
+
+fn is_legacy_preset_filename(file_name: &str) -> bool {
+    let lower = file_name.to_ascii_lowercase();
+    lower.ends_with(".yaml") || lower.ends_with(".yml")
+}
+
+fn validate_authoring_directory(path: &Path) -> LlmixResult<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_dir() => Ok(()),
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(InvalidConfigError {
+            message: format!(
+                "Config Registry authoring directory must not be a symlink: {}",
+                path.display()
+            ),
+        }
+        .into()),
+        Ok(_) => Err(InvalidConfigError {
+            message: format!(
+                "Config Registry authoring path is not a directory: {}",
+                path.display()
+            ),
+        }
+        .into()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Err(ConfigNotFoundError {
+            path: path.display().to_string(),
+        }
+        .into()),
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => Err(ConfigAccessError {
+            path: path.display().to_string(),
+        }
+        .into()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn validate_revision(revision: &str) -> LlmixResult<()> {
@@ -627,9 +731,49 @@ fn canonical_json_bytes(value: &Value) -> LlmixResult<Vec<u8>> {
     Ok(content.into_bytes())
 }
 
-fn read_file_bytes(path: &Path) -> LlmixResult<Vec<u8>> {
-    match fs::read(path) {
-        Ok(content) => Ok(content),
+fn read_authoring_file_bytes(path: &Path) -> LlmixResult<Vec<u8>> {
+    let before = validate_regular_authoring_file(path)?;
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(ConfigNotFoundError {
+                path: path.display().to_string(),
+            }
+            .into())
+        }
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => {
+            return Err(ConfigAccessError {
+                path: path.display().to_string(),
+            }
+            .into())
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let after = file.metadata()?;
+    validate_same_authoring_file(path, &before, &after)?;
+
+    let mut content = Vec::new();
+    file.read_to_end(&mut content)?;
+    Ok(content)
+}
+
+fn validate_regular_authoring_file(path: &Path) -> LlmixResult<fs::Metadata> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_file() => Ok(metadata),
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(InvalidConfigError {
+            message: format!(
+                "Config Registry authoring preset must not be a symlink: {}",
+                path.display()
+            ),
+        }
+        .into()),
+        Ok(_) => Err(InvalidConfigError {
+            message: format!(
+                "Config Registry authoring preset is not a file: {}",
+                path.display()
+            ),
+        }
+        .into()),
         Err(error) if error.kind() == ErrorKind::NotFound => Err(ConfigNotFoundError {
             path: path.display().to_string(),
         }
@@ -640,6 +784,35 @@ fn read_file_bytes(path: &Path) -> LlmixResult<Vec<u8>> {
         .into()),
         Err(error) => Err(error.into()),
     }
+}
+
+fn validate_same_authoring_file(
+    path: &Path,
+    before: &fs::Metadata,
+    after: &fs::Metadata,
+) -> LlmixResult<()> {
+    if !after.file_type().is_file() {
+        return Err(InvalidConfigError {
+            message: format!(
+                "Config Registry authoring preset is not a file: {}",
+                path.display()
+            ),
+        }
+        .into());
+    }
+
+    #[cfg(unix)]
+    if before.dev() != after.dev() || before.ino() != after.ino() {
+        return Err(InvalidConfigError {
+            message: format!(
+                "Config Registry authoring preset changed while publishing: {}",
+                path.display()
+            ),
+        }
+        .into());
+    }
+
+    Ok(())
 }
 
 fn sha256_bytes(content: &[u8]) -> String {
@@ -700,7 +873,10 @@ fn read_json_object(path: &Path) -> LlmixResult<Map<String, Value>> {
     })?;
     let Value::Object(object) = value else {
         return Err(InvalidConfigError {
-            message: format!("Registry file must contain a JSON object: {}", path.display()),
+            message: format!(
+                "Registry file must contain a JSON object: {}",
+                path.display()
+            ),
         }
         .into());
     };
@@ -725,13 +901,38 @@ fn atomic_write_json(path: &Path, value: &Value) -> LlmixResult<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let temp_path = path.with_extension("json.tmp");
+    let temp_path = atomic_temp_path(path);
     write_json(&temp_path, value)?;
-    fs::rename(&temp_path, path)?;
+    if let Err(error) = fs::rename(&temp_path, path) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(error.into());
+    }
     if let Some(parent) = path.parent() {
         fsync_dir(parent);
     }
     Ok(())
+}
+
+fn atomic_temp_path(path: &Path) -> PathBuf {
+    let counter = ATOMIC_WRITE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("target");
+    path.with_file_name(format!(
+        ".{file_name}.{}.{}.tmp",
+        std::process::id(),
+        counter
+    ))
+}
+
+fn staging_attempt_path(staging_dir: &Path, revision_id: &str, published_at: u128) -> PathBuf {
+    let counter = ATOMIC_WRITE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    staging_dir.join(format!(
+        "{revision_id}.{published_at}.{}.{}.tmp",
+        std::process::id(),
+        counter
+    ))
 }
 
 fn fsync_file(path: &Path) {

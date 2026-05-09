@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
-pub const CACHE_KEY_PREFIX: &str = "llmix:resp:";
+pub const CACHE_KEY_PREFIX: &str = "llmix:resp:v2:";
 const DEFAULT_L1_MAX: usize = 1000;
 const DEFAULT_TTL_SECONDS: u64 = 3600;
 const CACHE_KEY_FIELDS: [&str; 15] = [
@@ -184,6 +184,7 @@ struct StoredPayload {
 trait L2CacheBackend: Send + Sync {
     async fn get(&self, key: &str) -> LlmixResult<Option<String>>;
     async fn setex(&self, key: &str, ttl_seconds: u64, value: String) -> LlmixResult<()>;
+    async fn clear_prefix(&self, prefix: &str) -> LlmixResult<()>;
     async fn close(&self) -> LlmixResult<()> {
         Ok(())
     }
@@ -251,6 +252,46 @@ impl L2CacheBackend for RedisBackend {
         }
     }
 
+    async fn clear_prefix(&self, prefix: &str) -> LlmixResult<()> {
+        let mut connection = self.connection().await?;
+        let pattern = format!("{prefix}*");
+        let mut cursor = 0_u64;
+
+        loop {
+            let (next_cursor, keys): (u64, Vec<String>) = match redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg(&pattern)
+                .arg("COUNT")
+                .arg(1000_u32)
+                .query_async(&mut connection)
+                .await
+            {
+                Ok(result) => result,
+                Err(error) => {
+                    self.reset_connection().await;
+                    return Err(map_redis_error(error));
+                }
+            };
+
+            if !keys.is_empty() {
+                let deleted: redis::RedisResult<()> = redis::cmd("DEL")
+                    .arg(&keys)
+                    .query_async(&mut connection)
+                    .await;
+                if let Err(error) = deleted {
+                    self.reset_connection().await;
+                    return Err(map_redis_error(error));
+                }
+            }
+
+            if next_cursor == 0 {
+                return Ok(());
+            }
+            cursor = next_cursor;
+        }
+    }
+
     async fn close(&self) -> LlmixResult<()> {
         self.reset_connection().await;
         Ok(())
@@ -264,6 +305,7 @@ pub struct TwoTierCache {
     l1: Mutex<LruCache<String, CachedValue>>,
     l2_enabled: bool,
     l2_healthy: Mutex<bool>,
+    l2_reads_blocked: Mutex<bool>,
     l2_consecutive_write_failures: Mutex<u32>,
     backend: Option<Arc<dyn L2CacheBackend>>,
 }
@@ -306,6 +348,7 @@ impl TwoTierCache {
             l1: Mutex::new(LruCache::new(max_items)),
             l2_enabled,
             l2_healthy: Mutex::new(true),
+            l2_reads_blocked: Mutex::new(false),
             l2_consecutive_write_failures: Mutex::new(0),
             backend,
         })
@@ -325,6 +368,7 @@ impl TwoTierCache {
             l1: Mutex::new(LruCache::new(max_items)),
             l2_enabled: strategy != ResponseCacheStrategy::Memory,
             l2_healthy: Mutex::new(true),
+            l2_reads_blocked: Mutex::new(false),
             l2_consecutive_write_failures: Mutex::new(0),
             backend: Some(backend),
         })
@@ -339,6 +383,9 @@ impl TwoTierCache {
         }
 
         if !self.l2_enabled {
+            return None;
+        }
+        if *self.l2_reads_blocked.lock().await {
             return None;
         }
 
@@ -405,8 +452,26 @@ impl TwoTierCache {
         }
     }
 
-    pub async fn clear(&self) {
+    pub async fn clear(&self) -> LlmixResult<()> {
         self.l1.lock().await.clear();
+        if !self.l2_enabled {
+            return Ok(());
+        }
+        let Some(backend) = self.backend.as_ref() else {
+            return Ok(());
+        };
+        match backend.clear_prefix(CACHE_KEY_PREFIX).await {
+            Ok(()) => {
+                *self.l2_reads_blocked.lock().await = false;
+                *self.l2_healthy.lock().await = true;
+                Ok(())
+            }
+            Err(error) => {
+                *self.l2_reads_blocked.lock().await = true;
+                *self.l2_healthy.lock().await = false;
+                Err(error)
+            }
+        }
     }
 
     pub async fn close(&self) {
@@ -576,6 +641,7 @@ mod tests {
     struct MockBackend {
         store: Mutex<HashMap<String, String>>,
         fail_writes: Mutex<u32>,
+        fail_clears: Mutex<bool>,
     }
 
     #[async_trait]
@@ -598,6 +664,19 @@ mod tests {
                 ));
             }
             self.store.lock().await.insert(key.to_owned(), value);
+            Ok(())
+        }
+
+        async fn clear_prefix(&self, prefix: &str) -> crate::error::LlmixResult<()> {
+            if *self.fail_clears.lock().await {
+                return Err(crate::error::LlmixError::InvalidResponseCacheConfig(
+                    "simulated clear failure".to_owned(),
+                ));
+            }
+            self.store
+                .lock()
+                .await
+                .retain(|key, _| !key.starts_with(prefix));
             Ok(())
         }
     }
@@ -683,6 +762,78 @@ mod tests {
         assert!(cache.get_stats().await.l2_healthy);
         cache.set("key3", "value3").await;
         assert!(!cache.get_stats().await.l2_healthy);
+    }
+
+    #[tokio::test]
+    async fn clear_removes_l2_entries_before_they_can_repopulate_l1() {
+        let backend = Arc::new(MockBackend::default());
+        let cache = TwoTierCache::new_with_backend(
+            ResponseCacheStrategy::RedisOrMemory,
+            TwoTierCacheConfig {
+                max_items: 10,
+                ttl_seconds: 60,
+                redis_url: Some("redis://localhost:6379".to_owned()),
+            },
+            backend.clone(),
+        )
+        .expect("cache should construct");
+        let key = format!("{CACHE_KEY_PREFIX}clear-me");
+        backend.store.lock().await.insert(
+            key.clone(),
+            format!(
+                r#"{{"data":"stale-value","cached_at":{}}}"#,
+                super::now_seconds_f64()
+            ),
+        );
+
+        let hit = cache.get(&key).await.expect("l2 should populate l1");
+        assert_eq!(hit.tier, CacheHitTier::L2);
+
+        cache.clear().await.expect("clear should remove l2 entries");
+
+        assert!(cache.get(&key).await.is_none());
+        assert!(!backend.store.lock().await.contains_key(&key));
+    }
+
+    #[tokio::test]
+    async fn failed_clear_blocks_l2_reads_until_a_clear_succeeds() {
+        let backend = Arc::new(MockBackend::default());
+        let cache = TwoTierCache::new_with_backend(
+            ResponseCacheStrategy::RedisOrMemory,
+            TwoTierCacheConfig {
+                max_items: 10,
+                ttl_seconds: 60,
+                redis_url: Some("redis://localhost:6379".to_owned()),
+            },
+            backend.clone(),
+        )
+        .expect("cache should construct");
+        let key = format!("{CACHE_KEY_PREFIX}stale-after-clear-failure");
+        backend.store.lock().await.insert(
+            key.clone(),
+            format!(
+                r#"{{"data":"stale-value","cached_at":{}}}"#,
+                super::now_seconds_f64()
+            ),
+        );
+        *backend.fail_clears.lock().await = true;
+
+        let error = cache
+            .clear()
+            .await
+            .expect_err("clear failure should be surfaced");
+        assert!(matches!(
+            error,
+            crate::error::LlmixError::InvalidResponseCacheConfig(_)
+        ));
+        assert!(cache.get(&key).await.is_none());
+
+        *backend.fail_clears.lock().await = false;
+        cache
+            .clear()
+            .await
+            .expect("later clear should recover l2 reads");
+        assert!(cache.get_stats().await.l2_healthy);
     }
 
     #[test]

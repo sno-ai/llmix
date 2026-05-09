@@ -67,11 +67,11 @@ pub fn openai_transform_kwargs(
         "max_completion_tokens"
     };
 
+    let legacy_max_tokens = kwargs.remove("max_tokens");
+    let legacy_max_tokens_camel = kwargs.remove("maxTokens");
     if !kwargs.contains_key("max_completion_tokens") && !kwargs.contains_key("maxCompletionTokens")
     {
-        if let Some(value) = kwargs.remove("max_tokens") {
-            kwargs.insert(target_key.to_string(), value);
-        } else if let Some(value) = kwargs.remove("maxTokens") {
+        if let Some(value) = legacy_max_tokens.or(legacy_max_tokens_camel) {
             kwargs.insert(target_key.to_string(), value);
         }
     }
@@ -147,8 +147,10 @@ pub fn gemini_transform_kwargs(
         None => Value::from(0),
     };
 
-    let prefer_camel = existing_key == Some("thinkingConfig")
-        || google_opts
+    let prefer_camel = match existing_key {
+        Some("thinkingConfig") => true,
+        Some("thinking_config") => false,
+        _ => google_opts
             .map(|google| {
                 google.contains_key("thinkingConfig")
                     || google.contains_key("thinkingBudget")
@@ -156,7 +158,8 @@ pub fn gemini_transform_kwargs(
                         .map(|thinking| thinking.contains_key("thinkingBudget"))
                         .unwrap_or(false)
             })
-            .unwrap_or(false);
+            .unwrap_or(false),
+    };
 
     let container_key = if prefer_camel {
         "thinkingConfig"
@@ -171,6 +174,12 @@ pub fn gemini_transform_kwargs(
 
     let mut next_config = existing_object;
     next_config.insert(budget_key.to_string(), thinking_budget);
+    let alternate_key = if prefer_camel {
+        "thinking_config"
+    } else {
+        "thinkingConfig"
+    };
+    kwargs.remove(alternate_key);
     kwargs.insert(container_key.to_string(), Value::Object(next_config));
 
     Ok(kwargs)
@@ -222,10 +231,7 @@ pub fn sno_gpu_transform_kwargs(
 
     let rebuilt = match gpu_path {
         Some(path) if !path.is_empty() => {
-            if path.len() > MAX_GPU_PATH_LEN
-                || path.contains("..")
-                || !is_valid_gpu_path(path)
-            {
+            if path.len() > MAX_GPU_PATH_LEN || path.contains("..") || !is_valid_gpu_path(path) {
                 return Err(LlmixError::InvalidProviderKwargsConfig(format!(
                     "Invalid gpu_path: {path:?}"
                 )));

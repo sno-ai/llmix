@@ -97,6 +97,8 @@ pub struct CallPipeline {
 
 impl CallPipeline {
     pub fn new(config: PipelineConfig) -> LlmixResult<Self> {
+        AdaptiveSemaphore::new(config.semaphore_initial, config.semaphore_min)?;
+
         let retry_policy = RetryPolicy::new(RetryPolicyOptions {
             max_retries: config.max_retries,
             base_ms: config.retry_base_ms,
@@ -420,7 +422,7 @@ impl CallPipeline {
                                 Ok(())
                             });
                         }
-                        Some(401 | 403) => {
+                        Some(401) => {
                             self.with_file_lock(|| {
                                 let pool = self
                                     .get_key_pool(&provider)
@@ -651,10 +653,7 @@ impl CallPipeline {
     }
 
     fn get_semaphore(&self, provider: &str) -> Arc<AdaptiveSemaphore> {
-        let mut semaphores = self
-            .semaphores
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut semaphores = self.semaphores.lock().unwrap_or_else(|e| e.into_inner());
         semaphores
             .entry(provider.to_owned())
             .or_insert_with(|| {

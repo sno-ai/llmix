@@ -7,7 +7,7 @@ use std::fs::{self, File};
 use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::Notify;
 
@@ -87,7 +87,7 @@ impl CircuitBreaker {
             provider: provider.into(),
             base_url: base_url.into(),
             failure_threshold,
-            permitted_half_open_calls,
+            permitted_half_open_calls: permitted_half_open_calls.max(1),
             base_cooldown: cooldown,
             inner: Mutex::new(CircuitInner {
                 state: CircuitState::Closed,
@@ -140,18 +140,21 @@ impl CircuitBreaker {
 
     pub fn on_success(&self) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if inner.state == CircuitState::HalfOpen {
-            inner.half_open_successes += 1;
-            evaluate_half_open(
-                &mut inner,
-                self.base_cooldown,
-                self.permitted_half_open_calls,
-            );
-            return;
+        match inner.state {
+            CircuitState::HalfOpen => {
+                inner.half_open_successes += 1;
+                evaluate_half_open(
+                    &mut inner,
+                    self.base_cooldown,
+                    self.permitted_half_open_calls,
+                );
+            }
+            CircuitState::Open => {}
+            CircuitState::Closed => {
+                inner.consecutive_failures = 0;
+                inner.opened_at = None;
+            }
         }
-        inner.state = CircuitState::Closed;
-        inner.consecutive_failures = 0;
-        inner.opened_at = None;
     }
 
     pub fn on_failure(&self, status_code: Option<u16>, network_error: bool) {
@@ -387,6 +390,7 @@ where
         }
 
         loop {
+            let notified = entry.notify.notified();
             if let Some(result) = entry
                 .result
                 .lock()
@@ -395,7 +399,7 @@ where
             {
                 return result;
             }
-            entry.notify.notified().await;
+            notified.await;
         }
     }
 
@@ -426,7 +430,7 @@ pub fn parse_retry_after(header_value: Option<&str>, max_ms: u64) -> Option<u64>
     let value = header_value?.trim();
 
     if let Ok(seconds) = value.parse::<u64>() {
-        return Some((seconds * 1_000).min(max_ms));
+        return Some(seconds.saturating_mul(1_000).min(max_ms));
     }
 
     let parsed = httpdate::parse_http_date(value).ok()?;
@@ -542,7 +546,14 @@ impl RetryPolicy {
 pub struct FileLock {
     enabled: bool,
     lock_path: Option<PathBuf>,
-    file: Mutex<Option<File>>,
+    state: Mutex<FileLockState>,
+    available: Condvar,
+}
+
+#[derive(Debug)]
+struct FileLockState {
+    held: bool,
+    file: Option<File>,
 }
 
 #[derive(Debug)]
@@ -582,7 +593,11 @@ impl FileLock {
         Ok(Self {
             enabled,
             lock_path: enabled.then_some(path.into()),
-            file: Mutex::new(None),
+            state: Mutex::new(FileLockState {
+                held: false,
+                file: None,
+            }),
+            available: Condvar::new(),
         })
     }
 
@@ -599,6 +614,32 @@ impl FileLock {
             return Ok(());
         }
 
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        while state.held {
+            state = self
+                .available
+                .wait(state)
+                .unwrap_or_else(|e| e.into_inner());
+        }
+        state.held = true;
+        drop(state);
+
+        let file_result = self.open_locked_file();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        match file_result {
+            Ok(file) => {
+                state.file = Some(file);
+                Ok(())
+            }
+            Err(error) => {
+                state.held = false;
+                self.available.notify_one();
+                Err(error)
+            }
+        }
+    }
+
+    fn open_locked_file(&self) -> LlmixResult<File> {
         let path = self
             .lock_path
             .as_ref()
@@ -608,12 +649,12 @@ impl FileLock {
         }
         let file = File::options()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(path)?;
         file.lock_exclusive()?;
-        *self.file.lock().unwrap_or_else(|e| e.into_inner()) = Some(file);
-        Ok(())
+        Ok(file)
     }
 
     pub fn acquire_guard(&self) -> LlmixResult<FileLockGuard<'_>> {
@@ -625,11 +666,27 @@ impl FileLock {
     }
 
     pub fn release(&self) -> LlmixResult<()> {
-        let maybe_file = self.file.lock().unwrap_or_else(|e| e.into_inner()).take();
-        if let Some(file) = maybe_file {
-            file.unlock()?;
+        if !self.enabled {
+            return Ok(());
         }
-        Ok(())
+
+        let maybe_file = {
+            self.state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .file
+                .take()
+        };
+        let result = if let Some(file) = maybe_file {
+            file.unlock().map_err(LlmixError::from)
+        } else {
+            Ok(())
+        };
+
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.held = false;
+        self.available.notify_one();
+        result
     }
 }
 
@@ -654,13 +711,10 @@ impl Drop for FileLockGuard<'_> {
 
 impl Drop for FileLock {
     fn drop(&mut self) {
-        if let Some(file) = self
-            .file
-            .get_mut()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-        {
+        let state = self.state.get_mut().unwrap_or_else(|e| e.into_inner());
+        if let Some(file) = state.file.take() {
             let _ = file.unlock();
         }
+        state.held = false;
     }
 }

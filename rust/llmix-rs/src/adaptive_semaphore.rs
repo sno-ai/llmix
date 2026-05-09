@@ -1,7 +1,7 @@
 use crate::{AdaptiveSemaphoreClosedError, LlmixError, LlmixResult};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::Mutex;
-use tokio::sync::oneshot;
+use tokio::sync::Notify;
 
 pub const DEFAULT_INITIAL: usize = 32;
 pub const DEFAULT_MIN_CONCURRENCY: usize = 4;
@@ -17,9 +17,9 @@ pub struct RateLimitHeaders {
 struct AdaptiveSemaphoreState {
     window: usize,
     available: usize,
-    waiters: VecDeque<oneshot::Sender<Result<(), AdaptiveSemaphoreClosedError>>>,
     has_header_signal: bool,
     permits_to_absorb: usize,
+    waiters: usize,
     closed: bool,
 }
 
@@ -28,6 +28,7 @@ pub struct AdaptiveSemaphore {
     max: usize,
     min: usize,
     state: Mutex<AdaptiveSemaphoreState>,
+    notify: Notify,
 }
 
 #[derive(Debug)]
@@ -60,11 +61,12 @@ impl AdaptiveSemaphore {
             state: Mutex::new(AdaptiveSemaphoreState {
                 window: initial,
                 available: initial,
-                waiters: VecDeque::new(),
                 has_header_signal: false,
                 permits_to_absorb: 0,
+                waiters: 0,
                 closed: false,
             }),
+            notify: Notify::new(),
         })
     }
 
@@ -74,10 +76,7 @@ impl AdaptiveSemaphore {
     }
 
     pub fn window(&self) -> usize {
-        self.state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .window
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).window
     }
 
     pub fn max_concurrency(&self) -> usize {
@@ -89,29 +88,29 @@ impl AdaptiveSemaphore {
     }
 
     pub fn closed(&self) -> bool {
-        self.state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .closed
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).closed
     }
 
     pub fn rebind(&self) {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        state.available = state.window;
-        state.waiters.clear();
-        state.permits_to_absorb = 0;
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let outstanding = state
+            .window
+            .saturating_sub(state.available)
+            .saturating_add(state.permits_to_absorb);
+        state.available = state.window.saturating_sub(outstanding.min(state.window));
+        state.permits_to_absorb = outstanding.saturating_sub(state.window);
+        let waiters = state.waiters;
+        drop(state);
+        self.notify_n(waiters);
     }
 
     pub async fn acquire(&self) -> Result<(), AdaptiveSemaphoreClosedError> {
         loop {
-            let receiver = {
-                let mut state = self
-                    .state
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let waiter_guard = {
+                let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
 
                 if state.closed {
                     return Err(AdaptiveSemaphoreClosedError);
@@ -122,19 +121,12 @@ impl AdaptiveSemaphore {
                     return Ok(());
                 }
 
-                let (tx, rx) = oneshot::channel();
-                state.waiters.push_back(tx);
-                rx
+                state.waiters += 1;
+                WaiterGuard { semaphore: self }
             };
 
-            match receiver.await {
-                Ok(result) => return result,
-                Err(_) => {
-                    if self.closed() {
-                        return Err(AdaptiveSemaphoreClosedError);
-                    }
-                }
-            }
+            notified.await;
+            drop(waiter_guard);
         }
     }
 
@@ -150,69 +142,56 @@ impl AdaptiveSemaphore {
 
     pub fn close(&self) {
         let waiters = {
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             state.closed = true;
-            state.waiters.drain(..).collect::<Vec<_>>()
+            state.waiters
         };
-
-        for waiter in waiters {
-            let _ = waiter.send(Err(AdaptiveSemaphoreClosedError));
-        }
+        self.notify_n(waiters);
     }
 
     pub fn release(&self) {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
 
         if state.permits_to_absorb > 0 {
             state.permits_to_absorb -= 1;
             return;
         }
 
-        if wake_waiter(&mut state.waiters) {
-            return;
-        }
-
         if state.available < state.window {
             state.available += 1;
+            self.notify.notify_one();
         }
     }
 
     pub fn on_success(&self) {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.closed || state.has_header_signal || state.window >= self.max {
             return;
         }
         let target = state.window + 1;
-        adjust_window(&mut state, self.min, self.max, target);
+        let added = adjust_window(&mut state, self.min, self.max, target);
+        drop(state);
+        if added > 0 {
+            self.notify_n(added);
+        }
     }
 
     pub fn on_rate_limit(&self) {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.closed {
             return;
         }
         let target = (state.window / 2).max(self.min);
-        adjust_window(&mut state, self.min, self.max, target);
+        let added = adjust_window(&mut state, self.min, self.max, target);
         state.has_header_signal = false;
+        drop(state);
+        if added > 0 {
+            self.notify_n(added);
+        }
     }
 
     pub fn on_header_feedback(&self, remaining: usize, limit: usize) {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.closed || limit == 0 {
             return;
         }
@@ -222,14 +201,28 @@ impl AdaptiveSemaphore {
         if ratio >= HEADER_BACKOFF_THRESHOLD {
             if state.window < self.max {
                 let target = state.window + 1;
-                adjust_window(&mut state, self.min, self.max, target);
+                let added = adjust_window(&mut state, self.min, self.max, target);
+                drop(state);
+                if added > 0 {
+                    self.notify_n(added);
+                }
             }
             return;
         }
 
         let scale = ratio / HEADER_BACKOFF_THRESHOLD;
         let target = (self.min as f64 + scale * (self.max - self.min) as f64) as usize;
-        adjust_window(&mut state, self.min, self.max, target);
+        let added = adjust_window(&mut state, self.min, self.max, target);
+        drop(state);
+        if added > 0 {
+            self.notify_n(added);
+        }
+    }
+
+    fn notify_n(&self, count: usize) {
+        for _ in 0..count {
+            self.notify.notify_one();
+        }
     }
 }
 
@@ -242,6 +235,21 @@ impl AdaptiveSemaphorePermit<'_> {
     }
 }
 
+struct WaiterGuard<'a> {
+    semaphore: &'a AdaptiveSemaphore,
+}
+
+impl Drop for WaiterGuard<'_> {
+    fn drop(&mut self) {
+        let mut state = self
+            .semaphore
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        state.waiters = state.waiters.saturating_sub(1);
+    }
+}
+
 impl Drop for AdaptiveSemaphorePermit<'_> {
     fn drop(&mut self) {
         if !self.released {
@@ -251,33 +259,25 @@ impl Drop for AdaptiveSemaphorePermit<'_> {
     }
 }
 
-fn wake_waiter(
-    waiters: &mut VecDeque<oneshot::Sender<Result<(), AdaptiveSemaphoreClosedError>>>,
-) -> bool {
-    while let Some(waiter) = waiters.pop_front() {
-        if waiter.send(Ok(())).is_ok() {
-            return true;
-        }
-    }
-    false
-}
-
-fn adjust_window(state: &mut AdaptiveSemaphoreState, min: usize, max: usize, mut target: usize) {
+fn adjust_window(
+    state: &mut AdaptiveSemaphoreState,
+    min: usize,
+    max: usize,
+    mut target: usize,
+) -> usize {
     target = target.max(min).min(max);
     if target == state.window {
-        return;
+        return 0;
     }
 
+    let mut added = 0;
     if target > state.window {
         let mut grow = target - state.window;
         let absorbed = grow.min(state.permits_to_absorb);
         state.permits_to_absorb -= absorbed;
         grow -= absorbed;
-        for _ in 0..grow {
-            if !wake_waiter(&mut state.waiters) {
-                state.available += 1;
-            }
-        }
+        state.available += grow;
+        added = grow;
     } else {
         let shrink = state.window - target;
         let immediate = shrink.min(state.available);
@@ -286,16 +286,26 @@ fn adjust_window(state: &mut AdaptiveSemaphoreState, min: usize, max: usize, mut
     }
 
     state.window = target;
+    added
 }
 
 pub fn parse_openai_ratelimit_headers(
     headers: &HashMap<String, String>,
 ) -> Option<RateLimitHeaders> {
-    let remaining = headers.get("x-ratelimit-remaining-requests")?;
-    let limit = headers.get("x-ratelimit-limit-requests")?;
+    let remaining = get_header_case_insensitive(headers, "x-ratelimit-remaining-requests")?;
+    let limit = get_header_case_insensitive(headers, "x-ratelimit-limit-requests")?;
 
     let remaining = remaining.parse::<usize>().ok()?;
     let limit = limit.parse::<usize>().ok()?;
 
     (limit > 0).then_some(RateLimitHeaders { remaining, limit })
+}
+
+fn get_header_case_insensitive<'a>(
+    headers: &'a HashMap<String, String>,
+    name: &str,
+) -> Option<&'a str> {
+    headers
+        .iter()
+        .find_map(|(key, value)| key.eq_ignore_ascii_case(name).then_some(value.as_str()))
 }

@@ -52,6 +52,13 @@ pub use error::{
     InvalidConfigError, KeyPoolExhaustedError, KillSwitchActiveError, LlmixError, LlmixResult,
     ProviderError, SecurityError,
 };
+pub use key_pool::{load_keys_from_env, KeyPool};
+pub use pipeline::{CallPipeline, PipelineConfig};
+pub use provider_kwargs::{
+    apply_transform_kwargs, gemini_transform_kwargs, is_reasoning_model, openai_transform_kwargs,
+    openrouter_transform_kwargs, provider_kwargs_callback, sno_gpu_transform_kwargs,
+    TransformKwargsCallback, TransformKwargsContext, PROVIDER_KWARGS_REGISTRY,
+};
 #[cfg(feature = "providers-anthropic")]
 #[cfg_attr(docsrs, doc(cfg(feature = "providers-anthropic")))]
 pub use providers::anthropic::AnthropicChatHelper;
@@ -64,13 +71,6 @@ pub use providers::openai::OpenAiChatHelper;
 #[cfg(feature = "providers-sno-gpu")]
 #[cfg_attr(docsrs, doc(cfg(feature = "providers-sno-gpu")))]
 pub use providers::sno_gpu::SnoGpuChatHelper;
-pub use key_pool::{load_keys_from_env, KeyPool};
-pub use pipeline::{CallPipeline, PipelineConfig};
-pub use provider_kwargs::{
-    apply_transform_kwargs, gemini_transform_kwargs, is_reasoning_model, openai_transform_kwargs,
-    openrouter_transform_kwargs, provider_kwargs_callback, sno_gpu_transform_kwargs,
-    TransformKwargsCallback, TransformKwargsContext, PROVIDER_KWARGS_REGISTRY,
-};
 pub use resilience::{
     calculate_delay, is_retryable, parse_retry_after, resolve_state_dir, CircuitBreaker,
     CircuitState, FileLock, KillSwitch, RetryPolicy, RetryPolicyOptions, SharedCallResult,
