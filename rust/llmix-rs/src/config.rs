@@ -1,7 +1,12 @@
 use crate::error::{
-    ConfigAccessError, ConfigNotFoundError, InvalidConfigError, LlmixResult, SecurityError,
+    ConfigAccessError, ConfigNotFoundError, InvalidConfigError, LlmixError, LlmixResult,
+    SecurityError,
 };
 use serde_json::{Map, Value};
+use snoai_mda_config::{
+    load_mda_source_from_bytes, LoadMdaSourceOptions, MdaConfigError, RekorClient,
+    SigstoreVerifier, TrustPolicy,
+};
 use std::env;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -62,6 +67,17 @@ pub struct ResolvedConfigDir {
     pub source: ConfigDirSource,
 }
 
+#[derive(Default)]
+pub struct MdaConfigLoadOptions<'a> {
+    pub verify_integrity: bool,
+    pub verify_signatures: bool,
+    pub enforce_requires: bool,
+    pub allowed_networks: Vec<String>,
+    pub trust_policy: Option<TrustPolicy>,
+    pub rekor_client: Option<&'a dyn RekorClient>,
+    pub sigstore_verifier: Option<&'a dyn SigstoreVerifier>,
+}
+
 pub fn resolve_config_dir(options: Option<&LlmixPathConfig>) -> LlmixResult<ResolvedConfigDir> {
     let env_var_name = options
         .and_then(|value| value.env_var.as_deref())
@@ -108,6 +124,16 @@ pub fn load_config<P>(path: P) -> LlmixResult<Value>
 where
     P: AsRef<Path>,
 {
+    load_config_with_options(path, &MdaConfigLoadOptions::default())
+}
+
+pub fn load_config_with_options<P>(
+    path: P,
+    options: &MdaConfigLoadOptions<'_>,
+) -> LlmixResult<Value>
+where
+    P: AsRef<Path>,
+{
     let file_path = absolutize_user_path(path.as_ref())?;
     ensure_mda_config_path(&file_path)?;
     let base_dir = file_path
@@ -115,10 +141,22 @@ where
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
     verify_path_containment(&file_path, &base_dir)?;
-    load_mda_file(&file_path)
+    load_mda_file(&file_path, options)
 }
 
 pub fn load_config_preset<S, P>(name: S, base_dir: P) -> LlmixResult<Value>
+where
+    S: AsRef<str>,
+    P: AsRef<Path>,
+{
+    load_config_preset_with_options(name, base_dir, &MdaConfigLoadOptions::default())
+}
+
+pub fn load_config_preset_with_options<S, P>(
+    name: S,
+    base_dir: P,
+    options: &MdaConfigLoadOptions<'_>,
+) -> LlmixResult<Value>
 where
     S: AsRef<str>,
     P: AsRef<Path>,
@@ -136,7 +174,7 @@ where
 
     let file_path = presets_dir.join(format!("{preset}.mda"));
     verify_path_containment(&file_path, &presets_dir)?;
-    load_config(file_path)
+    load_config_with_options(file_path, options)
 }
 
 pub fn validate_module(module: &str) -> LlmixResult<()> {
@@ -158,8 +196,8 @@ pub fn validate_version(version: u32) -> LlmixResult<()> {
     Ok(())
 }
 
-fn load_mda_file(file_path: &Path) -> LlmixResult<Value> {
-    let content = match fs::read_to_string(file_path) {
+fn load_mda_file(file_path: &Path, options: &MdaConfigLoadOptions<'_>) -> LlmixResult<Value> {
+    let file_bytes = match fs::read(file_path) {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Err(ConfigNotFoundError {
@@ -176,15 +214,8 @@ fn load_mda_file(file_path: &Path) -> LlmixResult<Value> {
         Err(error) => return Err(error.into()),
     };
 
-    let frontmatter = extract_mda_frontmatter(&content, file_path)?;
-    let parsed: Value =
-        serde_yaml_ng::from_str(frontmatter).map_err(|error| InvalidConfigError {
-            message: format!(
-                "MDA frontmatter parsing failed for {}: {error}",
-                file_path.display()
-            ),
-        })?;
-
+    let parsed: Value = load_mda_source_from_bytes(&file_bytes, to_mda_source_options(options))
+        .map_err(map_mda_config_error)?;
     let Value::Object(object) = parsed else {
         return Err(InvalidConfigError {
             message: format!(
@@ -201,43 +232,23 @@ fn load_mda_file(file_path: &Path) -> LlmixResult<Value> {
     Ok(Value::Object(config))
 }
 
-fn extract_mda_frontmatter<'a>(content: &'a str, file_path: &Path) -> LlmixResult<&'a str> {
-    let content = content.strip_prefix('\u{feff}').unwrap_or(content);
-    let (frontmatter_start, after_opening) = if let Some(rest) = content.strip_prefix("---\r\n") {
-        (5, rest)
-    } else if let Some(rest) = content.strip_prefix("---\n") {
-        (4, rest)
-    } else {
-        return Err(InvalidConfigError {
-            message: format!(
-                "MDA source file must start with YAML frontmatter: {}",
-                file_path.display()
-            ),
-        }
-        .into());
-    };
-
-    let mut offset = frontmatter_start;
-    for line in after_opening.split_inclusive('\n') {
-        let line_without_newline = line.trim_end_matches(['\r', '\n']);
-        if line_without_newline == "---" {
-            return Ok(&content[frontmatter_start..offset]);
-        }
-        offset += line.len();
+fn to_mda_source_options<'a>(options: &MdaConfigLoadOptions<'a>) -> LoadMdaSourceOptions<'a> {
+    LoadMdaSourceOptions {
+        verify_integrity: options.verify_integrity,
+        verify_signatures: options.verify_signatures,
+        enforce_requires: options.enforce_requires,
+        allowed_networks: options.allowed_networks.clone(),
+        trust_policy: options.trust_policy.clone(),
+        rekor_client: options.rekor_client,
+        sigstore_verifier: options.sigstore_verifier,
     }
+}
 
-    let final_line = &content[offset..];
-    if final_line.trim_end_matches('\r') == "---" {
-        return Ok(&content[frontmatter_start..offset]);
+fn map_mda_config_error(error: MdaConfigError) -> LlmixError {
+    InvalidConfigError {
+        message: format!("MDA source validation failed: {error}"),
     }
-
-    Err(InvalidConfigError {
-        message: format!(
-            "MDA source file is missing closing frontmatter delimiter: {}",
-            file_path.display()
-        ),
-    }
-    .into())
+    .into()
 }
 
 fn project_mda_preset_to_config(

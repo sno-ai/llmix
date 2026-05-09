@@ -66,7 +66,7 @@ cargo add llmix-rs --features providers-openai,redis
 - [TypeScript guide](docs/llmix-typescript.md)
 - [Python guide](docs/llmix-python.md)
 - [Rust guide](docs/llmix-rust.md)
-- [MDA vendor namespace](docs/mda-vendor-namespace.md)
+- [Secure LLMix configuration](docs/secure-llmix-configuration.md)
 - [Key pool operations](docs/key-pool-operations.md)
 
 ---
@@ -229,6 +229,10 @@ The defaults are meant to be boring. Tune them when real traffic gives you a rea
 ![LLMix turns editable MDA presets into immutable registry snapshots that Python, TypeScript, and Rust runtimes can read consistently.](docs/images/llmix-mda-config.png)
 
 LLMix uses MDA Source Mode for config authoring. The human notes and runtime settings live in one file. The runtime only sees the resolved JSON.
+Python, TypeScript, and Rust can require MDA integrity, `requires.network`, and
+verifier-hook based signatures while loading or publishing registry snapshots.
+Real Rekor transport and Sigstore cryptography are supplied by caller-provided
+clients/verifiers.
 
 ```mda
 ---

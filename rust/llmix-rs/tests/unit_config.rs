@@ -1,6 +1,7 @@
 use llmix_rs::{
-    load_config, load_config_preset, resolve_config_dir, validate_module, validate_preset,
-    validate_version, ConfigDirSource, LlmixError, LlmixPathConfig,
+    load_config, load_config_preset, load_config_with_options, resolve_config_dir, validate_module,
+    validate_preset, validate_version, ConfigDirSource, LlmixError, LlmixPathConfig,
+    MdaConfigLoadOptions,
 };
 use serde_json::json;
 use std::env;
@@ -116,6 +117,47 @@ metadata:
     assert_eq!(config["caching"]["max_items"], json!(99));
     assert_eq!(config["description"], json!("Public compatibility preset."));
     assert_eq!(config["tags"], json!(["rust"]));
+}
+
+#[test]
+fn load_config_with_options_uses_mda_verification() {
+    let temp_dir = unique_temp_dir("llmix-config-verification-options");
+    let file_path = temp_dir.join("signed.mda");
+    write_file(
+        &file_path,
+        &mda_source(
+            r#"
+name: signed
+description: Signed preset.
+metadata:
+  snoai-llmix:
+    common:
+      provider: openai
+      model: gpt-4.1-mini
+"#,
+        ),
+    );
+
+    for options in [
+        MdaConfigLoadOptions {
+            verify_integrity: true,
+            verify_signatures: false,
+            ..Default::default()
+        },
+        MdaConfigLoadOptions {
+            verify_integrity: false,
+            verify_signatures: true,
+            ..Default::default()
+        },
+    ] {
+        let error = load_config_with_options(&file_path, &options)
+            .expect_err("missing verification material should fail");
+        assert!(matches!(error, LlmixError::InvalidConfig(_)));
+        assert!(
+            error.to_string().contains("MDA source validation failed"),
+            "unexpected error: {error}"
+        );
+    }
 }
 
 #[test]

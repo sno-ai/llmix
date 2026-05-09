@@ -1,6 +1,6 @@
 use llmix_rs::{
     ConfigNotFoundError, ConfigRegistryManager, ConfigRegistryPublisher, InvalidConfigError,
-    LlmixError,
+    LlmixError, MdaConfigLoadOptions,
 };
 use serde_json::{json, Value};
 use std::env;
@@ -447,6 +447,40 @@ fn publish_failure_leaves_active_revision_unchanged() {
     assert!(
         !has_staging_entries,
         "staging dir should be empty after failure"
+    );
+}
+
+#[test]
+fn publish_with_mda_options_uses_mda_verification() {
+    let temp_root = unique_temp_dir("llmix-config-registry-verification-options");
+    let root = temp_root.join("config/llm");
+    write_authoring_preset(&root, "search", "summary", None);
+
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let error = publisher
+        .publish_with_mda_options(
+            Some("manual"),
+            true,
+            &MdaConfigLoadOptions {
+                verify_integrity: false,
+                verify_signatures: true,
+                ..Default::default()
+            },
+        )
+        .expect_err("missing verification material should fail");
+
+    assert!(matches!(error, LlmixError::InvalidConfig(_)));
+    assert!(
+        error.to_string().contains("MDA source validation failed"),
+        "unexpected error: {error}"
+    );
+    assert!(
+        !root.join("current.json").exists(),
+        "failed publish should not activate a revision"
+    );
+    assert!(
+        !root.join("snapshots/manual").exists(),
+        "failed publish should not keep a snapshot"
     );
 }
 

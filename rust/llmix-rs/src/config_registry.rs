@@ -1,5 +1,7 @@
 use crate::canonical_json;
-use crate::config::{load_config, validate_module, validate_preset};
+use crate::config::{
+    load_config_with_options, validate_module, validate_preset, MdaConfigLoadOptions,
+};
 use crate::error::{
     ConfigAccessError, ConfigNotFoundError, InvalidConfigError, LlmixError, LlmixResult,
     SecurityError,
@@ -95,6 +97,15 @@ impl ConfigRegistryPublisher {
         revision: Option<&str>,
         activate: bool,
     ) -> LlmixResult<PublishedRevision> {
+        self.publish_with_mda_options(revision, activate, &MdaConfigLoadOptions::default())
+    }
+
+    pub fn publish_with_mda_options(
+        &self,
+        revision: Option<&str>,
+        activate: bool,
+        mda_options: &MdaConfigLoadOptions<'_>,
+    ) -> LlmixResult<PublishedRevision> {
         let presets = self.discover_presets()?;
         if presets.is_empty() {
             return Err(ConfigNotFoundError {
@@ -128,6 +139,7 @@ impl ConfigRegistryPublisher {
                 &presets,
                 &revision_id,
                 &published_at_text,
+                mda_options,
             )?;
             self.verify_staged_snapshot(&stage_path, &manifest)?;
 
@@ -273,6 +285,7 @@ impl ConfigRegistryPublisher {
         presets: &[PresetSource],
         revision_id: &str,
         published_at: &str,
+        mda_options: &MdaConfigLoadOptions<'_>,
     ) -> LlmixResult<RegistryManifest> {
         let mut manifest_presets = BTreeMap::new();
         fs::create_dir_all(stage_path)?;
@@ -285,7 +298,7 @@ impl ConfigRegistryPublisher {
             let staged_authoring_path = stage_path.join(&authoring_rel);
             write_bytes(&staged_authoring_path, &authoring_bytes)?;
 
-            let resolved = load_config(&staged_authoring_path)?;
+            let resolved = load_config_with_options(&staged_authoring_path, mda_options)?;
             validate_resolved_config(&staged_authoring_path, &resolved)?;
             let resolved_bytes = canonical_json_bytes(&resolved)?;
 

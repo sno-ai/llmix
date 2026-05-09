@@ -42,8 +42,9 @@ pub mod types;
 
 pub use adaptive_semaphore::{parse_openai_ratelimit_headers, AdaptiveSemaphore, RateLimitHeaders};
 pub use config::{
-    load_config, load_config_preset, resolve_config_dir, validate_module, validate_preset,
-    validate_version, ConfigDirSource, LlmixPathConfig, ResolvedConfigDir,
+    load_config, load_config_preset, load_config_preset_with_options, load_config_with_options,
+    resolve_config_dir, validate_module, validate_preset, validate_version, ConfigDirSource,
+    LlmixPathConfig, MdaConfigLoadOptions, ResolvedConfigDir,
 };
 pub use config_registry::{ConfigRegistryManager, ConfigRegistryPublisher, PublishedRevision};
 pub use dispatch::DispatchFn;
@@ -81,6 +82,7 @@ pub use response_cache::{
     should_skip_cache, CacheKeyParams, CacheResult, TwoTierCache, TwoTierCacheConfig,
     CACHE_KEY_PREFIX,
 };
+pub use snoai_mda_config::{AllowedSigner, RekorClient, SigstoreVerifier, TrustPolicy};
 pub use thinking::{strip_thinking, StripThinkingResult};
 pub use types::{
     CacheHitTier, CachingStrategy, CallInput, CallResponse, DispatchContext, LlmUsage,
