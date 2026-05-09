@@ -100,8 +100,7 @@ let config = manager.get_preset("search", "summary")?;
 # }
 ```
 
-The registry contract for the monorepo is described in
-[../../docs/llmix-config-registry-plan.md](../../docs/llmix-config-registry-plan.md):
+The registry contract stays aligned across Python, TypeScript, and Rust:
 
 - `.mda` Source Mode stays as the authoring format
 - publishing creates immutable snapshot revisions
