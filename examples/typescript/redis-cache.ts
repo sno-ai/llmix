@@ -18,7 +18,7 @@ async function main(): Promise<void> {
 
   const pipeline = new CallPipeline({
     dispatch: openaiDispatch(),
-    responseCache: new TwoTierCache("redis", { url: redisUrl }),
+    responseCache: new TwoTierCache("redis", { redisUrl }),
   });
   pipeline.setKeyPool("openai", new KeyPool([process.env["OPENAI_API_KEY"]!]));
 

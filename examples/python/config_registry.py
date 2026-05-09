@@ -1,9 +1,11 @@
 """LLMix Config Registry example.
 
-Shows how to use ConfigRegistryManager to load MDA presets and
-hot-swap models at runtime without redeploying.
+Shows how to publish MDA presets into the Config Registry, then load them with
+ConfigRegistryManager at runtime.
 
-Requires a presets directory with at least one .mda config file.
+Requires a registry root with at least one authoring preset, for example:
+    config/llm/authoring/search/summary.mda
+
 See docs/mda-vendor-namespace.md for the preset format.
 
 Run with:
@@ -12,11 +14,13 @@ Run with:
 
 import asyncio
 import os
+from pathlib import Path
 
 from llmix import (
     CallInput,
     CallPipeline,
     ConfigRegistryManager,
+    ConfigRegistryPublisher,
     KeyPool,
     PipelineConfig,
     TwoTierCache,
@@ -25,8 +29,11 @@ from llmix import (
 
 
 async def main() -> None:
-    # Initialize the registry from a presets directory
-    registry = ConfigRegistryManager(config_dir="./presets")
+    registry_root = Path("./config/llm")
+
+    # Publish authoring/*.mda files into an immutable runtime snapshot.
+    ConfigRegistryPublisher(registry_root).publish()
+    registry = ConfigRegistryManager.open(registry_root)
 
     pipeline = CallPipeline(
         PipelineConfig(
@@ -36,9 +43,9 @@ async def main() -> None:
     )
     pipeline.set_key_pool("openai", KeyPool([os.environ["OPENAI_API_KEY"]]))
 
-    # Load a named preset — provider, model, and parameters come from
-    # the MDA config file, not from application code
-    config = registry.load_preset("summarize")
+    # Load a named preset. Provider, model, and parameters come from the
+    # published registry snapshot, not from application code.
+    config = registry.get_preset("search", "summary")
 
     response = await pipeline.call(
         CallInput(
@@ -51,15 +58,15 @@ async def main() -> None:
             ],
         )
     )
-    print(f"Preset: summarize")
+    print("Preset: search/summary")
     print(f"Provider: {config.get('provider')}, Model: {config.get('model')}")
     print(f"Response: {response.content}")
     print(f"Cache hit: {response.cache_hit}")
 
-    # To hot-swap: update the preset file on disk, then reload
-    # registry.reload()
-    # new_config = registry.load_preset("summarize")
-    # The next call uses the updated provider/model — no redeploy needed.
+    # To hot-swap: update the authoring MDA, publish a new revision, and the
+    # manager will observe current.json on the next preset lookup.
+    # ConfigRegistryPublisher(registry_root).publish()
+    # new_config = registry.get_preset("search", "summary")
 
 
 if __name__ == "__main__":
