@@ -1,124 +1,130 @@
-# LLMix Coding Reference
+# LLMix Usage Reference
 
-LLMix is a cross-runtime LLM orchestration library. The stable runtime center
-is the neutral pipeline API. The preferred production config path is the
-Config Registry. Python and TypeScript config authoring now use MDA Source
-Mode through installed packages: Python uses `snoai-mda-config` from PyPI and
-TypeScript uses `@snoai/mda-config` from NPM. Rust uses the same MDA Source
-Mode authoring contract through its crate-local loader.
+LLMix is a config-driven harness around the LLM SDKs you already use.
 
-## Public Contract
+You still own the provider client and the final dispatch call. LLMix adds the
+parts that become annoying once an AI product is real: model presets, retries,
+two-tier response cache, key-pool rotation, circuit breakers, singleflight, and
+the same runtime contract across Python, TypeScript, and Rust.
 
-### Python exports
+This page is the map. Start with the language guide for the runtime you ship:
 
-- `CallPipeline`
-- `PipelineConfig`
-- `CallInput`
-- `CallResponse`
-- `ProviderResult`
-- `ProviderError`
-- `LLMUsage`
-- `ConfigRegistryManager`
-- `ConfigRegistryPublisher`
-- `ConfigRegistryPublishOptions`
-- `PublishedRevision`
-- `MdaConfigLoadOptions`
-- `build_mda_config_file_path(config_dir, module, preset)` path helper
-- `load_mda_config(path)` low-level helper
-- `load_mda_config_preset(name, base_dir)` low-level helper
-- `load_mda_config_from_file(config_dir, module, preset)` low-level helper
-- `openai_dispatch()`, `anthropic_dispatch()`, `gemini_dispatch()`,
-  `novita_dispatch()`, `openrouter_dispatch()`, `sno_gpu_dispatch()`
+- [TypeScript guide](llmix-typescript.md)
+- [Python guide](llmix-python.md)
+- [Rust guide](llmix-rust.md)
+- [Key pool operations](key-pool-operations.md)
+- [MDA vendor namespace](mda-vendor-namespace.md)
 
-### TypeScript exports
+## Packages
 
-- `CallPipeline`
-- `PipelineConfig`
-- `CallInput`
-- `CallResponse`
-- `ProviderResult`
-- `ProviderError`
-- `ConfigRegistryManager`
-- `ConfigRegistryPublisher`
-- `PublishedRevision`
-- `loadMdaConfig(path)` low-level helper
-- `loadMdaConfigPreset(name, baseDir)` low-level helper
-- `loadMdaConfigFromFile(configDir, module, preset)` low-level helper
-- `buildMdaConfigFilePath(configDir, module, preset)` path helper
-- `openaiDispatch()`, `anthropicDispatch()`, `geminiDispatch()`,
-  `openrouterDispatch()`, `snoGpuDispatch()`
+| Runtime | Install | Import path | Runtime floor |
+| --- | --- | --- | --- |
+| TypeScript | `npm install @snoai/llmix` | `@snoai/llmix` | Node.js 20+ |
+| Python | `pip install sno-llmix` | `llmix` | Python 3.14+ |
+| Rust | `cargo add llmix-rs` | `llmix_rs` | Rust 1.83+ |
 
-### Rust exports
+The Python package is named `sno-llmix` on PyPI because `llmix` was already
+taken. The import module is still `llmix`.
 
-- `CallPipeline`
-- `PipelineConfig`
-- `CallInput`
-- `ProviderResult`
-- `LlmUsage`
-- `ConfigRegistryManager`
-- `ConfigRegistryPublisher`
-- `resolve_config_dir(options)`
-- `load_config(path)` low-level MDA helper
-- `load_config_preset(name, base_dir)` low-level MDA helper
+## Mental Model
 
-## Quick Start
+LLMix has five pieces:
 
-### Python
+| Piece | What it does |
+| --- | --- |
+| `CallPipeline` | Runs one LLM call through cache, retries, key rotation, circuit breaker, singleflight, and dispatch. |
+| `PipelineConfig` | Wires the dispatch function and runtime knobs. |
+| `CallInput` | Carries the resolved model config and chat messages. |
+| `KeyPool` | Rotates API keys per provider and marks dead keys on auth failures. |
+| `TwoTierCache` | Uses in-process memory as L1 and optional Redis as L2. |
 
-```python
-from llmix import CallInput, CallPipeline, KeyPool, PipelineConfig, openai_dispatch
+There is one important boundary: LLMix is not trying to replace OpenAI,
+Anthropic, AI SDK, LiteLLM, or your own provider client. It wraps the call site
+where those SDKs are used.
 
-pipeline = CallPipeline(PipelineConfig(dispatch=openai_dispatch()))
-pipeline.set_key_pool("openai", KeyPool(["sk-live-1", "sk-live-2"]))
+## Config Shape
 
-response = await pipeline.call(
-    CallInput(
-        config={
-            "provider": "openai",
-            "model": "gpt-4.1-mini",
-            "common": {"temperature": 0.2, "max_output_tokens": 512},
-            "caching": {"strategy": "memory"},
-        },
-        messages=[{"role": "user", "content": "Summarize this report."}],
-    )
-)
+The runtime config is intentionally small:
+
+```json
+{
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "common": {
+    "temperature": 0.2,
+    "max_output_tokens": 512
+  },
+  "caching": {
+    "strategy": "memory",
+    "ttl": 3600
+  },
+  "provider_options": {
+    "openai": {
+      "reasoning_effort": "medium"
+    }
+  }
+}
 ```
 
-### TypeScript
+Python and Rust use snake_case fields in direct config objects. TypeScript uses
+camelCase in code:
 
 ```typescript
-import { CallPipeline, KeyPool, TwoTierCache, openaiDispatch } from "@snoai/llmix";
-
-const pipeline = new CallPipeline({
-  dispatch: openaiDispatch(),
-  responseCache: new TwoTierCache("redis-or-memory", process.env.REDIS_URL),
-});
-pipeline.setKeyPool("openai", new KeyPool(["sk-live-1", "sk-live-2"]));
-
-const response = await pipeline.call({
-  config: {
-    provider: "openai",
-    model: "gpt-4.1-mini",
-    common: { temperature: 0.2, maxOutputTokens: 512 },
-    caching: { strategy: "redis-or-memory" },
+{
+  provider: "openai",
+  model: "gpt-4o-mini",
+  common: { temperature: 0.2, maxOutputTokens: 512 },
+  caching: { strategy: "memory", ttl: 3600 },
+  providerOptions: {
+    openai: { reasoningEffort: "medium" },
   },
-  messages: [{ role: "user", content: "Summarize this report." }],
-});
+}
 ```
+
+## Provider Coverage
+
+Built-in dispatch helpers are included where the runtime has the matching
+provider support:
+
+| Provider family | Python | TypeScript | Rust |
+| --- | --- | --- | --- |
+| OpenAI-compatible | `openai_dispatch()` | `openaiDispatch()` | `OpenAiChatHelper` with `providers-openai` |
+| Anthropic | `anthropic_dispatch()` | `anthropicDispatch()` | `AnthropicChatHelper` with `providers-anthropic` |
+| Gemini | `gemini_dispatch()` | `geminiDispatch()` | `GeminiChatHelper` with `providers-gemini` |
+| OpenRouter | `openrouter_dispatch()` | `openrouterDispatch()` | use OpenAI-compatible helper with OpenRouter base URL |
+| DeepInfra | `deepinfra_dispatch()` | `deepinfraDispatch()` | use OpenAI-compatible helper with DeepInfra base URL |
+| Novita | `novita_dispatch()` | `novitaDispatch()` | use OpenAI-compatible helper with Novita base URL |
+| Together | `together_dispatch()` | `togetherDispatch()` | use OpenAI-compatible helper with Together base URL |
+| SNO GPU | `sno_gpu_dispatch()` | `snoGpuDispatch()` | `SnoGpuChatHelper` with `providers-sno-gpu` |
+
+The Rust crate is usable today, but the Rust provider helpers are still
+earlier-stage than the Python and TypeScript bindings. The neutral pipeline,
+cache, key pool, and registry contract are the stable center.
 
 ## Config Registry
 
-The production config path is the LLMix Config Registry:
+For production services, prefer the Config Registry over reading mutable MDA
+files at request time.
 
-- TypeScript authoring uses `.mda` Source Mode presets
-- publishing creates immutable snapshot revisions
-- `current.json` is the only live switch
-- runtime reads resolved JSON snapshot artifacts, not mutable authoring MDA
+The registry layout is:
 
-That design gives the runtime a single source of truth and removes editable
-MDA parsing from the hot path.
+```text
+config/llm/
+  authoring/
+    search/
+      summary.mda
+  snapshots/
+    2026-05-09T120000Z/
+      search/
+        summary.json
+  current.json
+```
 
-### Python
+Publishing turns MDA Source Mode presets into immutable JSON snapshots.
+Runtime code reads `current.json` and the selected snapshot. That makes model
+rollouts a data switch, not a redeploy.
+
+Python:
 
 ```python
 from llmix import ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir
@@ -128,9 +134,10 @@ ConfigRegistryPublisher(root).publish()
 
 manager = ConfigRegistryManager.open(root)
 config = manager.get_preset("search", "summary")
+print(manager.active_revision)
 ```
 
-### TypeScript
+TypeScript:
 
 ```typescript
 import {
@@ -144,9 +151,10 @@ await new ConfigRegistryPublisher(configDir).publish();
 
 const manager = await ConfigRegistryManager.open(configDir);
 const config = await manager.getPreset("search", "summary");
+console.log(manager.activeRevision);
 ```
 
-### Rust
+Rust:
 
 ```rust
 use llmix_rs::{ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir};
@@ -156,230 +164,236 @@ ConfigRegistryPublisher::new(&root)?.publish()?;
 
 let mut manager = ConfigRegistryManager::open(&root)?;
 let config = manager.get_preset("search", "summary")?;
+println!("{:?}", manager.active_revision());
 ```
 
-Managers expose the active revision and reload health metadata, so runtime
-services can report which snapshot is live and whether a reload failed.
+## MDA Source Mode
 
-## Low-Level MDA Config Loading
+MDA is the authoring format for presets. Use it when you want model choice,
+provider options, cache policy, timeout policy, tags, and rollout metadata to be
+reviewed as source files instead of hidden in application code.
 
-Python, TypeScript, and Rust expose direct MDA config helpers. They are useful
-for authoring, tests, and migration tools, but the registry remains the
-recommended production config path.
+The LLMix-specific data lives under `metadata.snoai-llmix`. MDA-owned mechanism
+fields such as `requires`, `integrity`, and `signatures` stay at the top level
+and are handled by the MDA parser.
 
-### Python
+```md
+---
+name: search-summary
+title: Search Summary
+description: Summarize search results for a research workflow.
+tags:
+  - search
+  - production
+requires:
+  network: public
+metadata:
+  snoai-llmix:
+    common:
+      provider: openai
+      model: gpt-4o-mini
+      temperature: 0.2
+      maxOutputTokens: 512
+      maxRetries: 2
+    providerOptions:
+      openai:
+        reasoningEffort: medium
+        textVerbosity: low
+    timeout:
+      totalTime: 45
+      streamFirstChunkTime: 12
+    caching:
+      strategy: redis-or-memory
+      ttl: 3600
+      maxItems: 2000
+    tags:
+      - search
+      - production
+---
 
-```python
-from llmix import load_mda_config, load_mda_config_preset
-
-config = load_mda_config("./config/llm/search/summary.mda")
-preset = load_mda_config_preset("summary", "./config/llm/search")
+Summarize search results for a research workflow.
 ```
 
-### TypeScript
+Use camelCase in `.mda` files. TypeScript keeps that shape. Python and Rust
+normalize known fields into their snake_case runtime config shape after loading.
 
-```typescript
-import { loadMdaConfig, loadMdaConfigPreset } from "@snoai/llmix";
+## MDA Vendor Namespace
 
-const config = await loadMdaConfig("./config/llm/search/summary.mda");
-const preset = await loadMdaConfigPreset("summary", "./config/llm/search");
+`metadata.snoai-llmix` is strict. Unknown keys are rejected unless a field is
+documented as a provider-specific pass-through record. That is intentional:
+presets should fail during publishing, not during a production request.
+
+The namespace shape is:
+
+| Key | Required | Purpose |
+| --- | --- | --- |
+| `common` | yes | Provider, model, and portable generation parameters. |
+| `providerOptions` | no | Provider-specific options such as OpenAI reasoning effort or Anthropic thinking. |
+| `timeout` | no | Per-call timeout hints in seconds. |
+| `description` | no | Overrides the top-level MDA description in the projected runtime config. |
+| `deprecated` | no | Marks a preset as deprecated for tooling. |
+| `tags` | no | Overrides top-level MDA tags in the projected runtime config. |
+| `caching` | no | Response cache strategy and TTL. |
+| `bypassGateway` | no | Compatibility flag for deployments that route around a gateway. |
+
+`common.provider` and `common.model` are required. Put these fields inside
+`common`, not directly under `metadata.snoai-llmix`.
+
+```yaml
+metadata:
+  snoai-llmix:
+    common:
+      provider: anthropic
+      model: claude-sonnet-4-5
+      temperature: 0.4
+      maxOutputTokens: 2048
 ```
 
-### Rust
+Supported providers are:
 
-```rust
-use llmix_rs::{load_config, load_config_preset};
+- `openai`
+- `anthropic`
+- `google`
+- `deepseek`
+- `openrouter`
+- `deepinfra`
+- `novita`
+- `together`
+- `sno-gpu`
 
-let config = load_config("./config/llm/search/summary.mda")?;
-let preset = load_config_preset("summary", "./config/llm/search")?;
+Portable `common` fields include:
+
+| Field | Notes |
+| --- | --- |
+| `temperature` | Number from `0` to `2`. |
+| `maxOutputTokens` | Positive integer output-token cap. |
+| `topP`, `topK` | Sampling controls. |
+| `presencePenalty`, `frequencyPenalty` | Penalty controls where providers support them. |
+| `stopSequences` | Array of stop strings. |
+| `seed` | Integer seed where providers support deterministic sampling. |
+| `maxRetries` | Non-negative retry count for this preset. |
+| `enableThinking`, `keepThinkingOutput` | Thinking/reasoning controls used by supported providers. |
+
+Provider-specific options stay under `providerOptions.<provider>`. For example:
+
+```yaml
+metadata:
+  snoai-llmix:
+    common:
+      provider: anthropic
+      model: claude-sonnet-4-5
+    providerOptions:
+      anthropic:
+        thinking:
+          type: enabled
+          budgetTokens: 2048
+        sendReasoning: true
 ```
 
-Loader behavior:
+Common provider option namespaces:
 
-- Uses installed MDA parser packages for Source Mode parsing: `snoai-mda-config`
-  in Python and `@snoai/mda-config` in TypeScript. Rust uses crate-local
-  Source Mode frontmatter parsing for the same `metadata.snoai-llmix`
-  contract.
-- Reads LLMix-specific settings from `metadata.snoai-llmix`.
-- Rejects `.yaml` and `.yml` preset paths.
-- Preserves each runtime's public naming convention:
-  - Python returns snake_case fields such as `max_output_tokens`,
-    `keep_thinking_output`, `provider_options`.
-  - TypeScript returns camelCase fields such as `maxOutputTokens`,
-    `keepThinkingOutput`, `providerOptions`.
-  - Rust returns snake_case fields such as `max_output_tokens`,
-    `keep_thinking_output`, `provider_options`.
-- Preset helpers resolve `{baseDir}/{preset}.mda` and then delegate to the same
-  primary loader path.
+| Namespace | Examples |
+| --- | --- |
+| `openai` | `reasoningEffort`, `textVerbosity`, `parallelToolCalls`, `structuredOutputs`, `serviceTier`, `promptCacheKey`. |
+| `anthropic` | `thinking`, `cacheControl`, `disableParallelToolUse`, `sendReasoning`, `structuredOutputMode`. |
+| `google` | `thinkingConfig`, `cachedContent`, `safetySettings`, `responseModalities`. |
+| `deepseek` | `thinking`. |
+| `openrouter` | `provider`, `reasoning` pass-through records. |
+| `sno-gpu` | `enableThinking`, `thinkingBudget`, `gpuPath`. |
+| `deepinfra`, `novita`, `together` | Provider pass-through records, with `enableThinking` and `thinkingBudget` recognized for DeepInfra and Novita. |
 
-Current recommendation:
+Caching is opt-in:
 
-- use `ConfigRegistryManager` for runtime preset lookup in new service code
-- keep direct MDA helpers for authoring, tests, migration, or one-off tools
-- avoid coupling production runtime behavior to mutable live authoring files
-
-## Pipeline Flow
-
-Each `CallPipeline.call()` runs the same 19-step orchestration flow:
-
-1. Kill switch check
-2. Caller-supplied config validation boundary
-3. L1 cache lookup
-4. L2 cache lookup
-5. Circuit breaker gate
-6. Singleflight deduplication
-7. Cross-process lock
-8. Adaptive semaphore
-9. API key selection
-10. Provider kwargs transform
-11. Provider dispatch
-12. Semaphore feedback
-13. Lock release
-14. Key-pool feedback
-15. Circuit-breaker feedback
-16. Retry decision
-17. Thinking strip
-18. Cache write
-19. Telemetry hook
-
-Ordering guarantees:
-
-- Cache hits bypass resilience.
-- OPEN circuit breakers fail before singleflight admission.
-- Cache stores raw provider output; thinking stripping is a read-time transform.
-- `keepThinkingOutput` does not affect cache key generation.
-
-## Core Types
-
-### Python
-
-```python
-@dataclass
-class CallInput:
-    config: dict[str, Any]
-    messages: list[dict[str, Any]]
-    singleflight_key: str | None = None
-
-@dataclass
-class CallResponse:
-    content: str
-    model: str
-    provider: str
-    usage: LLMUsage
-    success: bool
-    error: str | None = None
-    thinking_content: str | None = None
-    cache_hit: str | None = None
-    tool_calls: list[dict[str, Any]] | None = None
+```yaml
+caching:
+  strategy: redis-or-memory
+  ttl: 3600
+  maxItems: 2000
 ```
 
-### TypeScript
+Valid strategies are `native`, `gateway`, `disabled`, `redis`,
+`redis-or-memory`, and `memory`.
 
-```typescript
-interface CallInput {
-  config: LLMConfig;
-  messages: unknown[];
-  singleflightKey?: string;
-}
+When a preset is loaded, LLMix projects it into the normal runtime config:
 
-interface CallResponse {
-  content: string;
-  model: string;
-  provider: string;
-  usage: LLMUsage;
-  success: boolean;
-  error?: string;
-  thinkingContent?: string;
-  cacheHit?: "l1" | "l2";
-  toolCalls?: unknown[];
-}
+| MDA field | Runtime config result |
+| --- | --- |
+| `metadata.snoai-llmix.common.provider` | top-level `provider` |
+| `metadata.snoai-llmix.common.model` | top-level `model` |
+| other `common` fields | `common` object |
+| `providerOptions` | `providerOptions` in TypeScript, `provider_options` in Python/Rust |
+| `timeout.totalTime` | `timeout.totalTime` in TypeScript, `timeout.total_time` in Python/Rust |
+| `caching.maxItems` | `caching.maxItems` in TypeScript, `caching.max_items` in Python/Rust |
+
+The reserved semantic payload type for signed LLMix presets is:
+
+```text
+application/vnd.snoai-llmix.preset+json
 ```
 
-## Config Shape
+LLMix does not invent a separate signature envelope. Sigstore signature
+verification, integrity fields, and trust policy are delegated to the MDA
+mechanism layer.
 
-Required fields:
+Direct MDA loading helpers still exist for authoring tools and tests:
 
-- `provider`
-- `model`
+| Runtime | Helper |
+| --- | --- |
+| Python | `load_mda_config(path)`, `load_mda_config_preset(name, base_dir)` |
+| TypeScript | `loadMdaConfig(path)`, `loadMdaConfigPreset(name, baseDir)` |
+| Rust | `load_config(path)`, `load_config_preset(name, base_dir)` |
 
-Common fields by runtime:
+For server runtime code, use `ConfigRegistryManager`.
 
-- Python `common`: `temperature`, `top_p`, `max_output_tokens`, `seed`,
-  `response_format`, `enable_thinking`, `keep_thinking_output`
-- TypeScript `common`: `temperature`, `topP`, `maxOutputTokens`, `seed`,
-  `enableThinking`, `keepThinkingOutput`
+## Runtime Features
 
-Provider options:
+| Feature | Default | Notes |
+| --- | --- | --- |
+| Retries | `maxRetries` / `max_retries` = `3` | Retries provider errors that are safe to retry and honors `Retry-After` when present. |
+| Circuit breaker | threshold `3`, cooldown `30s` | Trips per provider and base URL. Auth failures are handled by the key pool instead. |
+| Adaptive concurrency | initial `32`, min `4` | AIMD window adjusts after successes and rate-limit pressure. |
+| Singleflight | enabled | Deduplicates concurrent requests that share the same singleflight key. |
+| Two-tier cache | opt-in | Use `memory`, `redis`, or `redis-or-memory`. |
+| Key pool | opt-in | Register per provider with `set_key_pool` / `setKeyPool` / `set_key_pool`. |
+| Thinking strip | config-driven | Can remove reasoning/thinking text from returned content while preserving cache identity. |
 
-- Python uses `provider_options`
-- TypeScript uses `providerOptions`
-
-Built-in dispatcher coverage:
-
-- OpenAI
-- Anthropic
-- Gemini / Google
-- OpenRouter for DeepSeek-family routing
-- Sno GPU
-
-## Cache Contract
-
-- Cache key prefix: `llmix:resp:`
-- Key material is canonical JSON plus SHA-256 hashing
-- Python and TypeScript must generate identical keys for equivalent requests
-- L1 cache is in-memory
-- L2 cache is Redis when configured
-- `redis-or-memory` keeps L2 intent even when Redis is unavailable, but the
-  runtime degrades to L1-only behavior
-
-## Resilience Contract
-
-- Circuit breaker scope: `(provider, base_url)`
-- Auth failures (`401`, `403`) do not trip the circuit breaker
-- Retryable failures include rate limits, `5xx`, and network errors
-- Key pools rotate on retry and mark keys dead on auth failures
-- Adaptive semaphore applies AIMD-style feedback on provider throughput
-
-Kill switch state directory resolution:
-
-1. `LLMIX_STATE_DIR`
-2. `XDG_STATE_HOME/llmix`
-3. `~/.local/state/llmix`
-
-## HTTP/2
-
-- Python ships a real provider transport registry in `python/llmix/http2.py`
-  using `httpx[http2]`.
-- TypeScript ships provider transport intent metadata in
-  `typescript/src/http2.ts`.
-- OpenAI TypeScript transport remains a documented stub until upstream AI SDK
-  transport hooks are sufficient; that gap is not a blocker for the direct-loader cleanup.
+These knobs are part of the pipeline config. They are public, but most users
+should leave the defaults alone until traffic gives them a reason.
 
 ## Environment Variables
 
-Authentication:
+Key pools can be loaded from environment variables. Provider names normalize
+hyphens to underscores and uppercase.
 
-- `OPENAI_API_KEY` / `OPENAI_KEYS`
-- `ANTHROPIC_API_KEY`
-- `GEMINI_API_KEY`
-- `OPENROUTER_API_KEY`
-- `SNO_LLM_API_KEY`
+| Provider | Multi-key variable | Single-key fallback |
+| --- | --- | --- |
+| OpenAI | `OPENAI_KEYS` | `OPENAI_API_KEY` |
+| Anthropic | `ANTHROPIC_KEYS` | `ANTHROPIC_API_KEY` |
+| Gemini | `GEMINI_KEYS` | `GEMINI_API_KEY` |
+| OpenRouter | `OPENROUTER_KEYS` | `OPENROUTER_API_KEY` |
+| DeepInfra | `DEEPINFRA_KEYS` | `DEEPINFRA_API_KEY` |
+| Novita | `NOVITA_KEYS` | `NOVITA_API_KEY` |
+| Together | `TOGETHER_KEYS` | `TOGETHER_API_KEY` |
+| SNO GPU | `SNO_GPU_KEYS` | `SNO_GPU_API_KEY` |
 
-Runtime:
+`*_KEYS` is comma-separated. If both variables exist, `*_KEYS` wins.
 
-- `REDIS_URL`
-- `GPU_BASE_URL`
-- `LLMIX_STATE_DIR`
-- `XDG_STATE_HOME`
-- `LLM_GLOBAL_CONCURRENCY`
+## What Not To Put In LLMix
 
-## Verification
+Keep provider-specific policy close to your product code when it is product
+logic. LLMix is a runtime harness, not a place to hide business rules.
 
-Useful commands:
+Good fits:
 
-```bash
-bun test
-uv run pytest tests/python/test_pipeline.py tests/python/test_config_loader.py
-bunx tsc -p tsconfig.check.json
-uv run pyright
-```
+- shared model presets
+- cache policy
+- retry and concurrency defaults
+- API key rotation
+- provider kwargs normalization
+
+Bad fits:
+
+- user authorization
+- billing policy
+- product-specific prompt branching
+- provider account ownership rules
