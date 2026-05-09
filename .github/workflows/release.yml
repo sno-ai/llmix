@@ -5,6 +5,16 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
+      publish_npm:
+        description: "Publish @snoai/llmix to npm"
+        required: false
+        default: true
+        type: boolean
+      publish_pypi:
+        description: "Publish llmix to PyPI"
+        required: false
+        default: false
+        type: boolean
       publish_rust:
         description: "Publish llmix-rs to crates.io"
         required: false
@@ -17,7 +27,7 @@ permissions:
 jobs:
   publish-npm:
     name: Publish npm
-    if: ${{ github.event.repository.private == false }}
+    if: ${{ github.event.repository.private == false && (github.event_name == 'release' || inputs.publish_npm == true) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,10 +42,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
-
-      - name: Install latest npm
-        run: npm install -g npm@latest
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -62,11 +70,11 @@ jobs:
           NODE
 
       - name: Publish npm package
-        run: npm publish --access public --provenance
+        run: npm publish --access public
 
   publish-pypi:
     name: Publish PyPI
-    if: ${{ github.event.repository.private == false }}
+    if: ${{ github.event.repository.private == false && (github.event_name == 'release' || inputs.publish_pypi == true) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
