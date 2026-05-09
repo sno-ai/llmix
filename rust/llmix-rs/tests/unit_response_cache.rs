@@ -64,7 +64,7 @@ async fn memory_cache_hits_evicts_and_clears() {
         "value4"
     );
 
-    cache.clear().await;
+    cache.clear().await.expect("memory clear should succeed");
     assert_eq!(cache.get("key4").await, None);
     assert_eq!(cache.get_stats().await.l1_size, 0);
 }

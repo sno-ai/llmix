@@ -85,7 +85,21 @@ fn openai_reasoning_models_do_not_override_existing_completion_cap() {
 
     let result = openai_transform_kwargs(&ctx("gpt-5", "openai"), kwargs).unwrap();
     assert_eq!(result.get("maxCompletionTokens"), Some(&json!(200)));
-    assert_eq!(result.get("max_tokens"), Some(&json!(100)));
+    assert!(!result.contains_key("max_tokens"));
+}
+
+#[test]
+fn openai_reasoning_models_remove_legacy_aliases_when_completion_cap_exists() {
+    let kwargs = object(json!({
+        "max_tokens": 100,
+        "maxTokens": 150,
+        "max_completion_tokens": 200
+    }));
+
+    let result = openai_transform_kwargs(&ctx("gpt-5-mini", "openai"), kwargs).unwrap();
+    assert_eq!(result.get("max_completion_tokens"), Some(&json!(200)));
+    assert!(!result.contains_key("max_tokens"));
+    assert!(!result.contains_key("maxTokens"));
 }
 
 #[test]
@@ -201,6 +215,25 @@ fn gemini_preserves_existing_budget_and_supports_camel_case_aliases() {
         result_injected.get("thinkingConfig"),
         Some(&json!({ "thinkingBudget": 2048 }))
     );
+}
+
+#[test]
+fn gemini_merges_provider_budget_into_existing_snake_case_config() {
+    let mut context = ctx("gemini-2.5-pro", "google");
+    context.provider_options = Some(object(json!({
+        "google": { "thinkingConfig": { "thinkingBudget": 2048 } }
+    })));
+    let kwargs = object(json!({
+        "thinking_config": { "include_thoughts": true }
+    }));
+
+    let result = gemini_transform_kwargs(&context, kwargs).unwrap();
+
+    assert_eq!(
+        result.get("thinking_config"),
+        Some(&json!({ "include_thoughts": true, "thinking_budget": 2048 }))
+    );
+    assert!(!result.contains_key("thinkingConfig"));
 }
 
 #[test]

@@ -352,3 +352,32 @@ fn resolve_config_dir_uses_env_relative_to_detected_project_root() {
     assert_eq!(resolved.source, ConfigDirSource::Env);
     assert_eq!(resolved.config_dir, root_dir.join("config/llm"));
 }
+
+#[test]
+fn resolve_config_dir_uses_env_relative_to_supplied_project_root() {
+    let _guard = test_lock().lock().expect("lock should be acquired");
+    let original_env = env::var_os("LLMIX_CONFIG_DIR_TEST_ENV_ROOT");
+
+    let temp_dir = unique_temp_dir("llmix-config-env-root");
+    let project_root = temp_dir.join("repo");
+    fs::create_dir_all(&project_root).expect("project root should exist");
+
+    env::set_var("LLMIX_CONFIG_DIR_TEST_ENV_ROOT", "config/llm");
+
+    let resolved = resolve_config_dir(Some(&LlmixPathConfig {
+        config_dir: None,
+        env_var: Some("LLMIX_CONFIG_DIR_TEST_ENV_ROOT".to_string()),
+        default_path: None,
+        project_root: Some(project_root.clone()),
+    }))
+    .expect("env path should resolve");
+
+    if let Some(value) = original_env {
+        env::set_var("LLMIX_CONFIG_DIR_TEST_ENV_ROOT", value);
+    } else {
+        env::remove_var("LLMIX_CONFIG_DIR_TEST_ENV_ROOT");
+    }
+
+    assert_eq!(resolved.source, ConfigDirSource::Env);
+    assert_eq!(resolved.config_dir, project_root.join("config/llm"));
+}

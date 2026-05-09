@@ -120,6 +120,31 @@ fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
 }
 
 #[test]
+fn publish_uses_unique_staging_dir_for_explicit_revision() {
+    let temp_root = unique_temp_dir("llmix-config-registry-unique-stage");
+    let root = temp_root.join("config/llm");
+    write_authoring_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-4.1-mini", "medium", 256, "openai")),
+    );
+    let stale_stage_file = root.join("snapshots/.staging/manual.tmp/sentinel");
+    write_file(&stale_stage_file, "keep");
+
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let published = publisher
+        .publish_with_options(Some("manual"), false)
+        .expect("publish should succeed");
+
+    assert_eq!(published.revision, "manual");
+    assert!(
+        stale_stage_file.is_file(),
+        "publish should not delete another attempt's staging dir"
+    );
+}
+
+#[test]
 fn manager_reloads_after_current_revision_changes() {
     let temp_root = unique_temp_dir("llmix-config-registry-reload");
     let root = temp_root.join("config/llm");
@@ -331,6 +356,61 @@ fn manager_rejects_a_tampered_resolved_snapshot_on_startup() {
 }
 
 #[test]
+fn manager_rejects_a_tampered_authoring_snapshot_on_startup() {
+    let temp_root = unique_temp_dir("llmix-config-registry-authoring-tampered");
+    let root = temp_root.join("config/llm");
+    write_authoring_preset(&root, "search", "summary", None);
+
+    let published = ConfigRegistryPublisher::new(&root)
+        .expect("publisher should open")
+        .publish()
+        .expect("publish should succeed");
+    let authoring_path = root
+        .join("snapshots")
+        .join(&published.revision)
+        .join("authoring/search/summary.mda");
+    fs::write(&authoring_path, "---\nname: tampered\n---\n")
+        .expect("authoring artifact should be overwritten");
+
+    let error = ConfigRegistryManager::open(&root).expect_err("tampered snapshot should fail");
+    assert!(matches!(
+        error,
+        LlmixError::InvalidConfig(InvalidConfigError { .. })
+    ));
+}
+
+#[test]
+fn manager_rejects_manifest_with_empty_artifact_paths_before_opening_them() {
+    let temp_root = unique_temp_dir("llmix-config-registry-empty-manifest-path");
+    let root = temp_root.join("config/llm");
+    write_authoring_preset(&root, "search", "summary", None);
+
+    let published = ConfigRegistryPublisher::new(&root)
+        .expect("publisher should open")
+        .publish()
+        .expect("publish should succeed");
+    let manifest_path = root
+        .join("snapshots")
+        .join(&published.revision)
+        .join("manifest.json");
+    let mut manifest: Value =
+        serde_json::from_str(&fs::read_to_string(&manifest_path).expect("manifest should exist"))
+            .expect("manifest should parse");
+    manifest["presets"]["search/summary"]["resolved_path"] = json!("");
+    fs::write(
+        &manifest_path,
+        serde_json::to_string(&manifest).expect("manifest should serialize"),
+    )
+    .expect("manifest should be overwritten");
+
+    let error = ConfigRegistryManager::open(&root).expect_err("bad manifest should fail");
+    assert!(matches!(
+        error,
+        LlmixError::InvalidConfig(InvalidConfigError { .. })
+    ));
+}
+
+#[test]
 fn publish_failure_leaves_active_revision_unchanged() {
     let temp_root = unique_temp_dir("llmix-config-registry-publish-failure");
     let root = temp_root.join("config/llm");
@@ -371,6 +451,38 @@ fn publish_failure_leaves_active_revision_unchanged() {
 }
 
 #[test]
+fn activation_failure_removes_new_snapshot_so_revision_can_retry() {
+    let temp_root = unique_temp_dir("llmix-config-registry-activation-failure");
+    let root = temp_root.join("config/llm");
+    write_authoring_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-4.1-mini", "medium", 256, "openai")),
+    );
+    fs::create_dir_all(root.join("current.json")).expect("current path directory should exist");
+
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let error = publisher
+        .publish_with_options(Some("manual"), true)
+        .expect_err("activation should fail when current.json is a directory");
+
+    assert!(matches!(error, LlmixError::Io(_)));
+    assert!(
+        !root.join("snapshots/manual").exists(),
+        "failed activation should remove the newly renamed snapshot"
+    );
+
+    fs::remove_dir_all(root.join("current.json"))
+        .expect("current path directory should be removed");
+    let published = publisher
+        .publish_with_options(Some("manual"), true)
+        .expect("same revision should publish after cleanup");
+    assert_eq!(published.revision, "manual");
+    assert!(published.activated);
+}
+
+#[test]
 fn publisher_rejects_legacy_yaml_authoring_files() {
     let temp_root = unique_temp_dir("llmix-config-registry-legacy-yaml");
     let root = temp_root.join("config/llm");
@@ -389,6 +501,76 @@ fn publisher_rejects_legacy_yaml_authoring_files() {
         error
             .to_string()
             .contains("YAML presets are no longer supported"),
+        "unexpected error: {error}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn publisher_rejects_symlinked_authoring_modules() {
+    let temp_root = unique_temp_dir("llmix-config-registry-module-symlink");
+    let root = temp_root.join("config/llm");
+    let outside_module = temp_root.join("outside-module");
+    write_file(
+        &outside_module.join("summary.mda"),
+        &mda_source(
+            r#"
+name: summary
+metadata:
+  snoai-llmix:
+    common:
+      provider: openai
+      model: gpt-4.1-mini
+"#,
+        ),
+    );
+    fs::create_dir_all(root.join("authoring")).expect("authoring dir should exist");
+    std::os::unix::fs::symlink(&outside_module, root.join("authoring/search"))
+        .expect("module symlink should be created");
+
+    let error = ConfigRegistryPublisher::new(&root)
+        .expect("publisher should open")
+        .publish()
+        .expect_err("symlinked authoring module should fail");
+
+    assert!(matches!(error, LlmixError::InvalidConfig(_)));
+    assert!(
+        error.to_string().contains("must not be symlinks"),
+        "unexpected error: {error}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn publisher_rejects_symlinked_authoring_presets() {
+    let temp_root = unique_temp_dir("llmix-config-registry-preset-symlink");
+    let root = temp_root.join("config/llm");
+    let outside_preset = temp_root.join("outside-summary.mda");
+    write_file(
+        &outside_preset,
+        &mda_source(
+            r#"
+name: summary
+metadata:
+  snoai-llmix:
+    common:
+      provider: openai
+      model: gpt-4.1-mini
+"#,
+        ),
+    );
+    fs::create_dir_all(root.join("authoring/search")).expect("module dir should exist");
+    std::os::unix::fs::symlink(&outside_preset, root.join("authoring/search/summary.mda"))
+        .expect("preset symlink should be created");
+
+    let error = ConfigRegistryPublisher::new(&root)
+        .expect("publisher should open")
+        .publish()
+        .expect_err("symlinked authoring preset should fail");
+
+    assert!(matches!(error, LlmixError::InvalidConfig(_)));
+    assert!(
+        error.to_string().contains("must not be symlinks"),
         "unexpected error: {error}"
     );
 }

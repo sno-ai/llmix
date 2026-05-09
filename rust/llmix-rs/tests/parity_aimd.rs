@@ -134,6 +134,30 @@ fn rebind_preserves_window_state() {
 }
 
 #[tokio::test]
+async fn rebind_preserves_in_flight_permits() {
+    let sem = Arc::new(AdaptiveSemaphore::new(2, 1).unwrap());
+    let first = sem.acquire_guard().await.unwrap();
+
+    sem.rebind();
+    sem.acquire().await.unwrap();
+
+    let blocked_sem = sem.clone();
+    let blocked = tokio::spawn(async move { blocked_sem.acquire().await });
+    tokio::task::yield_now().await;
+    assert!(
+        !blocked.is_finished(),
+        "rebind should not reset capacity while permits are still held"
+    );
+
+    first.release();
+    let blocked_result = tokio::time::timeout(Duration::from_millis(100), blocked)
+        .await
+        .expect("blocked acquire should wake after a permit is released")
+        .expect("blocked task should join");
+    assert_eq!(blocked_result, Ok(()));
+}
+
+#[tokio::test]
 async fn shrink_absorbs_future_releases_until_capacity_matches_new_window() {
     let sem = Arc::new(AdaptiveSemaphore::new(4, 1).unwrap());
     for _ in 0..4 {
@@ -186,6 +210,36 @@ async fn shrink_absorbs_future_releases_until_capacity_matches_new_window() {
 }
 
 #[tokio::test]
+async fn batched_releases_wake_all_waiting_acquires() {
+    let sem = Arc::new(AdaptiveSemaphore::new(8, 1).unwrap());
+    for _ in 0..8 {
+        sem.acquire().await.unwrap();
+    }
+
+    let waiters = (0..8)
+        .map(|_| {
+            let waiter_sem = sem.clone();
+            tokio::spawn(async move { waiter_sem.acquire().await })
+        })
+        .collect::<Vec<_>>();
+    for _ in 0..4 {
+        tokio::task::yield_now().await;
+    }
+
+    for _ in 0..8 {
+        sem.release();
+    }
+
+    for waiter in waiters {
+        let result = tokio::time::timeout(Duration::from_millis(100), waiter)
+            .await
+            .expect("released waiter should wake")
+            .expect("waiter task should join");
+        assert_eq!(result, Ok(()));
+    }
+}
+
+#[tokio::test]
 async fn close_rejects_waiters_and_future_acquires() {
     let sem = Arc::new(AdaptiveSemaphore::new(2, 1).unwrap());
     sem.acquire().await.unwrap();
@@ -218,6 +272,22 @@ fn parsed_header_struct_is_exact() {
         Some(RateLimitHeaders {
             remaining: 450,
             limit: 500,
+        })
+    );
+}
+
+#[test]
+fn header_parsing_is_case_insensitive() {
+    let headers = HashMap::from([
+        ("X-RateLimit-Remaining-Requests".to_owned(), "12".to_owned()),
+        ("x-ratelimit-LIMIT-requests".to_owned(), "40".to_owned()),
+    ]);
+
+    assert_eq!(
+        parse_openai_ratelimit_headers(&headers),
+        Some(RateLimitHeaders {
+            remaining: 12,
+            limit: 40,
         })
     );
 }

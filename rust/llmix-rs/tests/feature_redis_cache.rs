@@ -1,6 +1,6 @@
 #![cfg(feature = "redis")]
 
-use llmix_rs::{CacheHitTier, ResponseCacheStrategy, TwoTierCache, TwoTierCacheConfig};
+use llmix_rs::{ResponseCacheStrategy, TwoTierCache, TwoTierCacheConfig, CACHE_KEY_PREFIX};
 use redis::AsyncCommands;
 use serde_json::Value;
 use std::env;
@@ -18,7 +18,7 @@ fn unique_key() -> String {
         .duration_since(UNIX_EPOCH)
         .expect("clock should be after unix epoch")
         .as_nanos();
-    format!("llmix:test:redis-cache:{nanos}")
+    format!("{CACHE_KEY_PREFIX}test:redis-cache:{nanos}")
 }
 
 #[tokio::test]
@@ -60,13 +60,8 @@ async fn redis_l2_round_trip_works_when_test_redis_is_available() {
     assert_eq!(payload["data"], "redis-value");
     assert!(payload["cached_at"].as_u64().is_some());
 
-    cache.clear().await;
-    let hit = cache
-        .get(&key)
-        .await
-        .expect("redis L2 should serve the value");
-    assert_eq!(hit.value, "redis-value");
-    assert_eq!(hit.tier, CacheHitTier::L2);
+    cache.clear().await.expect("redis clear should succeed");
+    assert_eq!(cache.get(&key).await, None);
 
     let _: () = connection
         .del(&key)

@@ -2,6 +2,7 @@ use llmix_rs::{
     generate_cache_key, CacheHitTier, CacheKeyParams, CallInput, CallPipeline, CircuitState,
     DispatchContext, DispatchFn, InvalidConfigError, KeyPool, LlmUsage, LlmixError, PipelineConfig,
     ProviderError, ProviderResult, ResponseCacheStrategy, TwoTierCache, TwoTierCacheConfig,
+    CACHE_KEY_PREFIX,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -53,6 +54,14 @@ fn cache_key_for(input: &CallInput) -> String {
         stop_sequences: None,
     })
     .expect("cache key should serialize")
+}
+
+fn legacy_cache_key_for(input: &CallInput) -> String {
+    let current = cache_key_for(input);
+    let hash = current
+        .strip_prefix(CACHE_KEY_PREFIX)
+        .expect("cache key should use current prefix");
+    format!("llmix:resp:{hash}")
 }
 
 fn memory_cache() -> Arc<TwoTierCache> {
@@ -119,6 +128,23 @@ fn temp_state_dir(prefix: &str) -> std::path::PathBuf {
     ))
 }
 
+#[test]
+fn pipeline_rejects_invalid_semaphore_config_at_construction() {
+    let mut config = PipelineConfig::new(|_: DispatchContext| async { Ok(success_result("ok")) });
+    config.semaphore_initial = 1;
+    config.semaphore_min = 2;
+
+    let error = match CallPipeline::new(config) {
+        Ok(_) => panic!("invalid semaphore config should fail"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(
+        error,
+        LlmixError::InvalidAdaptiveSemaphoreConfig(_)
+    ));
+}
+
 #[tokio::test]
 async fn cache_hit_avoids_dispatch_and_strips_thinking() {
     let dispatch_calls = Arc::new(AtomicUsize::new(0));
@@ -156,6 +182,43 @@ async fn cache_hit_avoids_dispatch_and_strips_thinking() {
     assert_eq!(response.cache_hit, Some(CacheHitTier::L1));
     assert_eq!(response.usage, LlmUsage::default());
     assert_eq!(dispatch_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn legacy_cache_namespace_is_not_read() {
+    let dispatch_calls = Arc::new(AtomicUsize::new(0));
+    let seen_dispatch_calls = dispatch_calls.clone();
+    let cache = memory_cache();
+    let input = base_input();
+    cache
+        .set(
+            &legacy_cache_key_for(&input),
+            "stale text-only tool-call response",
+        )
+        .await;
+
+    let pipeline = CallPipeline::new(fast_pipeline_config(
+        move |_ctx: DispatchContext| {
+            let seen_dispatch_calls = seen_dispatch_calls.clone();
+            async move {
+                seen_dispatch_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(success_result("fresh response"))
+            }
+        },
+        Some(cache),
+    ))
+    .expect("pipeline should construct");
+    pipeline.set_key_pool(
+        "openai",
+        KeyPool::new(vec!["key-a".to_owned()]).expect("key pool should construct"),
+    );
+
+    let response = pipeline.call(input).await;
+
+    assert!(response.success);
+    assert_eq!(response.content, "fresh response");
+    assert_eq!(response.cache_hit, None);
+    assert_eq!(dispatch_calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -449,6 +512,38 @@ async fn unauthorized_response_marks_key_dead_and_next_call_exhausts_pool() {
         .as_deref()
         .is_some_and(|error| error.contains("all 1 keys are dead")));
     assert_eq!(dispatch_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn forbidden_response_does_not_mark_key_dead() {
+    let dispatch_calls = Arc::new(AtomicUsize::new(0));
+    let seen_dispatch_calls = dispatch_calls.clone();
+    let input = base_input();
+
+    let pipeline = CallPipeline::new(fast_pipeline_config(
+        move |_ctx: DispatchContext| {
+            let seen_dispatch_calls = seen_dispatch_calls.clone();
+            async move {
+                seen_dispatch_calls.fetch_add(1, Ordering::SeqCst);
+                Err(provider_error("forbidden for this request", 403))
+            }
+        },
+        None,
+    ))
+    .expect("pipeline should construct");
+    pipeline.set_key_pool(
+        "openai",
+        KeyPool::new(vec!["still-valid-key".to_owned()]).expect("key pool should construct"),
+    );
+
+    let first = pipeline.call(input.clone()).await;
+    let second = pipeline.call(input).await;
+
+    assert!(!first.success);
+    assert_eq!(first.error.as_deref(), Some("forbidden for this request"));
+    assert!(!second.success);
+    assert_eq!(second.error.as_deref(), Some("forbidden for this request"));
+    assert_eq!(dispatch_calls.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

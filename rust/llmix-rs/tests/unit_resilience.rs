@@ -241,7 +241,7 @@ fn circuit_breaker_multi_probe_majority_success_closes() {
 }
 
 #[test]
-fn cancel_probe_after_failure_does_not_double_count() {
+fn stale_half_open_successes_do_not_close_reopened_circuit() {
     let breaker = CircuitBreaker::with_options(
         "sno-gpu",
         "http://gpu:8080",
@@ -264,7 +264,7 @@ fn cancel_probe_after_failure_does_not_double_count() {
     breaker.on_success();
     breaker.on_success();
 
-    assert_eq!(breaker.state(), CircuitState::Closed);
+    assert_eq!(breaker.state(), CircuitState::Open);
 }
 
 #[test]
@@ -288,6 +288,44 @@ fn reopen_doubles_cooldown_and_success_resets_it() {
     breaker.on_success();
     assert_eq!(breaker.state(), CircuitState::Closed);
     assert_eq!(breaker.cooldown(), base_cooldown);
+}
+
+#[test]
+fn zero_half_open_probe_limit_is_normalized_to_one() {
+    let breaker = CircuitBreaker::with_options(
+        "openai",
+        "https://api.openai.com",
+        1,
+        Duration::from_millis(5),
+        0,
+    );
+
+    breaker.on_failure(Some(500), false);
+    std::thread::sleep(Duration::from_millis(10));
+
+    assert_eq!(breaker.state(), CircuitState::HalfOpen);
+    breaker.check().unwrap();
+    breaker.on_success();
+    assert_eq!(breaker.state(), CircuitState::Closed);
+}
+
+#[test]
+fn stale_success_does_not_close_open_circuit() {
+    let breaker = CircuitBreaker::with_options(
+        "openai",
+        "https://api.openai.com",
+        2,
+        Duration::from_secs(60),
+        1,
+    );
+
+    breaker.on_failure(Some(500), false);
+    breaker.on_failure(Some(500), false);
+    assert_eq!(breaker.state(), CircuitState::Open);
+
+    breaker.on_success();
+
+    assert_eq!(breaker.state(), CircuitState::Open);
 }
 
 #[test]
@@ -402,9 +440,76 @@ async fn singleflight_propagates_errors_to_all_waiters() {
     assert_eq!(singleflight.in_flight_count(), 0);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn singleflight_followers_finish_after_leader_completes() {
+    let singleflight = Arc::new(Singleflight::<String, String>::new());
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let key = Singleflight::<String, String>::make_key("many-followers");
+    let (leader_entered, wait_for_leader) = tokio::sync::oneshot::channel();
+    let (release_leader, leader_released) = tokio::sync::oneshot::channel();
+
+    let leader = {
+        let singleflight = singleflight.clone();
+        let call_count = call_count.clone();
+        let key = key.clone();
+        tokio::spawn(async move {
+            singleflight
+                .do_call(key, move || async move {
+                    call_count.fetch_add(1, Ordering::SeqCst);
+                    let _ = leader_entered.send(());
+                    let _ = leader_released.await;
+                    Ok("shared".to_owned())
+                })
+                .await
+        })
+    };
+    tokio::time::timeout(Duration::from_millis(500), wait_for_leader)
+        .await
+        .expect("leader should start")
+        .expect("leader signal should be delivered");
+
+    let mut followers = Vec::new();
+    for _ in 0..16 {
+        let singleflight = singleflight.clone();
+        let key = key.clone();
+        followers.push(tokio::spawn(async move {
+            singleflight
+                .do_call(key, || async { Err("should not run".to_owned()) })
+                .await
+        }));
+    }
+    tokio::task::yield_now().await;
+    release_leader
+        .send(())
+        .expect("leader release signal should be delivered");
+
+    let leader_result = tokio::time::timeout(Duration::from_millis(500), leader)
+        .await
+        .expect("leader should not hang")
+        .expect("leader task should join")
+        .expect("leader should succeed");
+    assert_eq!(leader_result.as_ref(), "shared");
+
+    for follower in followers {
+        let result = tokio::time::timeout(Duration::from_millis(500), follower)
+            .await
+            .expect("follower should not hang")
+            .expect("follower task should join")
+            .expect("follower should receive shared result");
+        assert_eq!(result.as_ref(), "shared");
+    }
+
+    assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    assert_eq!(singleflight.in_flight_count(), 0);
+}
+
 #[test]
 fn parse_retry_after_supports_seconds_http_dates_and_caps() {
     assert_eq!(parse_retry_after(Some("3"), 60_000), Some(3_000));
+    assert_eq!(
+        parse_retry_after(Some(&u64::MAX.to_string()), 60_000),
+        Some(60_000)
+    );
     assert_eq!(parse_retry_after(Some("-1"), 60_000), None);
 
     let future = SystemTime::now() + Duration::from_secs(120);
