@@ -19,24 +19,7 @@ Provider, model, and parameters can live in a `.mda` preset. Edit the preset, pu
 
 ## At a Glance
 
-```text
-┌───────────────────────────────────────────┐
-│              Your Application             │
-├───────────────────────────────────────────┤
-│   ┌─────────────────────────────────────┐ │
-│   │              LLMix                  │ │  ← MDA config + cache + resilience
-│   │  ┌───────────────────────────────┐  │ │
-│   │  │ Your dispatch callback        │  │ │  ← you bring this
-│   │  │ uses openai / anthropic /     │  │ │
-│   │  │ AI SDK / LiteLLM / anything   │  │ │
-│   │  └───────────────────────────────┘  │ │
-│   └─────────────────────────────────────┘ │
-├───────────────────────────────────────────┤
-│   openai │ anthropic │ AI SDK │ LiteLLM   │
-├───────────────────────────────────────────┤
-│   OpenAI  Anthropic  Gemini  Self-hosted  │
-└───────────────────────────────────────────┘
-```
+![LLMix wraps your existing LLM SDK stack with MDA config, cache, resilience, and key-pool primitives.](docs/images/llmix-wraps-sdk.png)
 
 **Works with:** AI SDK v6 · `openai` (Py/JS) · `anthropic` · `google-genai` · LiteLLM · any async callable that returns your model's response.
 
@@ -46,7 +29,7 @@ Provider, model, and parameters can live in a `.mda` preset. Edit the preset, pu
 
 **Config-driven model swap.** Provider, model, and params are *data*, not code. Drop in a new MDA preset, the next call can route to a different provider. Built for agent harnesses that reshape behavior via config, not redeploys.
 
-**Production resilience, no extra code.** Two-tier cache (L1 memory + L2 Redis), circuit breaker, key-pool rotation with auto-eviction of dead keys, singleflight dedup, AIMD adaptive concurrency, retries that honor `Retry-After`. Composable with whatever SDK you already ship.
+**Production resilience, no extra code.** Two-tier cache (L1 memory + L2 Redis), circuit breaker, key-pool rotation with auto-eviction of dead keys, single flight dedup, adaptive concurrency, retries that honor `Retry-After`. Composable with whatever SDK you already ship.
 
 **Runtime parity.** Python, TypeScript, and Rust share byte-identical cache keys and retry semantics. Config authoring now uses MDA Source Mode across all three runtimes. (`llmix-rs` is currently beta — see [`rust/llmix-rs/README.md`](rust/llmix-rs/README.md).)
 
@@ -141,6 +124,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### MDA Presets
 
+![LLMix turns editable MDA presets into immutable registry snapshots that Python, TypeScript, and Rust runtimes can read consistently.](docs/images/llmix-mda-config.png)
+
 ```mda
 ---
 name: extraction
@@ -167,15 +152,7 @@ Runtime settings plus human-readable operating notes live together.
 
 ## Inside Every Call
 
-```text
-kill switch → config → cache lookup → circuit breaker → singleflight
-   ↓
-   retry loop:
-     lock → semaphore → key select → kwargs transform → dispatch
-        → semaphore feedback → unlock → key feedback → CB feedback → retry decision
-   ↓
-   thinking strip → cache write → telemetry
-```
+![LLMix request pipeline from config and cache lookup through circuit breaker, singleflight, key-pool rotation, retry loop, dispatch, and telemetry.](docs/images/llmix-call-pipeline.png)
 
 | Concern             | What LLMix does                                                                    |
 |---------------------|------------------------------------------------------------------------------------|
