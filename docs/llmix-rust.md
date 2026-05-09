@@ -127,6 +127,46 @@ let response = pipeline
 For OpenAI-compatible providers, set the provider base URL through config or
 construct the helper with `with_base_url(...)`.
 
+## Timeouts and Cancellation
+
+Treat `timeout.totalTime` in MDA config as a runtime budget, not as automatic
+transport cancellation. The Rust pipeline does not wrap dispatch calls in
+`tokio::time::timeout`, and `DispatchContext` does not carry a cancellation token.
+
+The provider helpers use `reqwest`. A default `reqwest::Client::new()` does not
+set a request timeout, so services that need a hard provider deadline should
+provide a client with transport timeout:
+
+```rust
+use llmix_rs::{CallPipeline, OpenAiChatHelper, PipelineConfig};
+use std::time::Duration;
+
+let client = reqwest::Client::builder()
+    .timeout(Duration::from_secs(120))
+    .build()?;
+
+let helper = OpenAiChatHelper::new().with_client(client);
+let pipeline = CallPipeline::new(PipelineConfig::new(helper))?;
+```
+
+For custom dispatch, put the timeout around the actual request future, and make
+sure the timed-out request future is dropped or aborted before the retry path
+starts:
+
+```rust
+let response = tokio::time::timeout(Duration::from_secs(120), async {
+    client
+        .post("https://api.example.com/v1/chat/completions")
+        .json(&body)
+        .send()
+        .await
+})
+.await??;
+```
+
+Retry without cancelling the previous provider request can create duplicate
+in-flight generations.
+
 ## Redis Cache
 
 Enable Redis:

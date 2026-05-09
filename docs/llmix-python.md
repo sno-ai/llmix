@@ -178,6 +178,56 @@ Wire it into the pipeline:
 pipeline = CallPipeline(PipelineConfig(dispatch=my_dispatch))
 ```
 
+## Timeouts and Cancellation
+
+Treat `timeout.total_time` in MDA config as a runtime budget, not as automatic
+transport cancellation. The Python pipeline does not wrap `dispatch` in
+`asyncio.wait_for`, and it does not force-cancel provider requests before retrying.
+
+The built-in provider dispatchers use provider SDK or HTTP client defaults, but
+those defaults are not derived from `config["timeout"]["total_time"]`. If your
+service needs a hard timeout, put it at the provider transport layer:
+
+```python
+import httpx
+
+from llmix import LLMUsage, ProviderResult
+
+
+async def my_dispatch(ctx):
+    total_time = ctx.config.get("timeout", {}).get("total_time", 120)
+    timeout = httpx.Timeout(total_time, connect=min(10.0, total_time))
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(
+            "https://api.example.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {ctx.api_key}"},
+            json={
+                "model": ctx.model,
+                "messages": ctx.messages,
+                **ctx.kwargs,
+            },
+        )
+        response.raise_for_status()
+
+    data = response.json()
+    usage = data.get("usage", {})
+    return ProviderResult(
+        content=data["choices"][0]["message"]["content"],
+        model=data.get("model", ctx.model),
+        usage=LLMUsage(
+            input_tokens=usage.get("prompt_tokens", 0),
+            output_tokens=usage.get("completion_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0),
+        ),
+    )
+```
+
+Do not rely on caller-side timeout wrappers alone unless cancellation reaches the
+real network request. Before retrying a timed-out attempt, make sure the previous
+provider request has been cancelled, closed, or allowed to finish; otherwise the
+service can create duplicate in-flight generations.
+
 ## Public Runtime Knobs
 
 ```python

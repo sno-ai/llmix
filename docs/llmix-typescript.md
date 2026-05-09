@@ -169,6 +169,67 @@ const myDispatch: ProviderDispatchFn = async (ctx) => {
 const pipeline = new CallPipeline({ dispatch: myDispatch });
 ```
 
+## Timeouts and Cancellation
+
+`timeout.totalTime` in an LLMix config is a runtime budget for dispatch
+implementations. The TypeScript `CallPipeline` currently passes the config into
+your dispatch function, but it does not wrap dispatch with a hard network
+timeout and it does not create an `AbortSignal` for you. The built-in
+TypeScript dispatch helpers also do not currently enforce `timeout.totalTime`
+as a transport-level abort.
+
+Do not implement dispatch timeout with `Promise.race` alone. It only rejects
+the caller-side promise; it does not cancel the provider request. Use a
+provider-native timeout or pass an `AbortController.signal` into the actual
+network call.
+
+```typescript
+import type { ProviderDispatchFn } from "@snoai/llmix";
+
+const myDispatch: ProviderDispatchFn = async (ctx) => {
+  const totalTimeMs =
+    typeof ctx.config.timeout?.totalTime === "number"
+      ? ctx.config.timeout.totalTime * 1000
+      : 120_000;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), totalTimeMs);
+
+  try {
+    const response = await fetch("https://api.example.com/v1/chat", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        authorization: `Bearer ${ctx.apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ctx.model,
+        messages: ctx.messages,
+        ...ctx.kwargs,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`provider failed with ${response.status}`);
+    }
+
+    const result = await response.json() as { text: string };
+    return {
+      content: result.text,
+      model: ctx.model,
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+```
+
+This matters when retries are enabled. If a timed-out attempt is not aborted at
+the transport layer, the next retry can create a second concurrent provider
+request while the previous one is still running.
+
 ## Public Runtime Knobs
 
 ```typescript
