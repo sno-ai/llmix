@@ -29,7 +29,7 @@ Provider, model, and parameters can live in a `.mda` preset. Edit the preset, pu
 
 **Config-driven model swap.** Provider, model, and params are *data*, not code. Drop in a new MDA preset, the next call can route to a different provider. Built for agent harnesses that reshape behavior via config, not redeploys.
 
-**Production resilience, no extra code.** Two-tier cache (L1 memory + L2 Redis), circuit breaker, key-pool rotation with auto-eviction of dead keys, singleflight dedup, AIMD adaptive concurrency, retries that honor `Retry-After`. Composable with whatever SDK you already ship.
+**Production resilience, no extra code.** Two-tier cache (L1 memory + L2 Redis), circuit breaker, key-pool rotation with auto-eviction of dead keys, single flight dedup, adaptive concurrency, retries that honor `Retry-After`. Composable with whatever SDK you already ship.
 
 **Runtime parity.** Python, TypeScript, and Rust share byte-identical cache keys and retry semantics. Config authoring now uses MDA Source Mode across all three runtimes. (`llmix-rs` is currently beta — see [`rust/llmix-rs/README.md`](rust/llmix-rs/README.md).)
 
