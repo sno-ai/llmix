@@ -582,18 +582,18 @@ export const LLMixMdaPresetSchema = z
         "snoai-llmix": LLMixMdaNamespaceSchema,
       })
       .catchall(z.unknown()),
-    integrity: z.record(z.unknown()).optional(),
-    signatures: z.array(z.record(z.unknown())).optional(),
+    integrity: z.record(z.string(), z.unknown()).optional(),
+    signatures: z.array(z.record(z.string(), z.unknown())).optional(),
     "doc-id": z.string().optional(),
     title: z.string().optional(),
     version: z.string().optional(),
     requires: MdaRequiresSchema.optional(),
-    "depends-on": z.array(z.record(z.unknown())).optional(),
+    "depends-on": z.array(z.record(z.string(), z.unknown())).optional(),
     author: z.string().optional(),
     tags: z.array(z.string()).optional(),
     "created-date": z.string().optional(),
     "updated-date": z.string().optional(),
-    relationships: z.array(z.record(z.unknown())).optional(),
+    relationships: z.array(z.record(z.string(), z.unknown())).optional(),
   })
   .strict();
 
