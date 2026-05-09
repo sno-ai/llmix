@@ -25,6 +25,10 @@ fn write_file(path: &Path, content: &str) {
     fs::write(path, content).expect("file should be written");
 }
 
+fn mda_source(frontmatter: &str) -> String {
+    format!("---\n{}\n---\n# preset\n", frontmatter.trim())
+}
+
 fn write_authoring_preset(
     root: &Path,
     module_name: &str,
@@ -36,12 +40,25 @@ fn write_authoring_preset(
     let file_path = root
         .join("authoring")
         .join(module_name)
-        .join(format!("{preset_name}.yaml"));
+        .join(format!("{preset_name}.mda"));
     write_file(
         &file_path,
-        &format!(
-            "provider: {provider}\nmodel: {model}\ncommon:\n  temperature: 0.2\n  maxOutputTokens: {max_output_tokens}\nproviderOptions:\n  openai:\n    reasoningEffort: {reasoning_effort}\n"
-        ),
+        &mda_source(&format!(
+            r#"
+name: {preset_name}
+description: {module_name}/{preset_name} preset.
+metadata:
+  snoai-llmix:
+    common:
+      provider: {provider}
+      model: {model}
+      temperature: 0.2
+      maxOutputTokens: {max_output_tokens}
+    providerOptions:
+      openai:
+        reasoningEffort: {reasoning_effort}
+"#
+        )),
     );
 }
 
@@ -49,7 +66,12 @@ fn write_authoring_preset(
 fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
     let temp_root = unique_temp_dir("llmix-config-registry-publish");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(&root, "search", "summary", Some(("gpt-5-mini", "high", 1024, "openai")));
+    write_authoring_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-5-mini", "high", 1024, "openai")),
+    );
 
     let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
     let published = publisher.publish().expect("publish should succeed");
@@ -61,9 +83,10 @@ fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
         .join("snapshots")
         .join(&published.revision)
         .join("resolved/search/summary.json");
-    let resolved: Value =
-        serde_json::from_str(&fs::read_to_string(&resolved_path).expect("resolved json should exist"))
-            .expect("resolved json should parse");
+    let resolved: Value = serde_json::from_str(
+        &fs::read_to_string(&resolved_path).expect("resolved json should exist"),
+    )
+    .expect("resolved json should parse");
 
     assert!(published.activated);
     assert_eq!(publisher.root(), root.as_path());
@@ -71,7 +94,15 @@ fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
     assert_eq!(manager.active_revision(), published.revision);
     assert_eq!(manager.current_path(), root.join("current.json").as_path());
     assert_eq!(manager.snapshots_dir(), root.join("snapshots").as_path());
-    assert_eq!(manager.available_presets(), vec!["search/summary".to_string()]);
+    assert_eq!(
+        manager.available_presets(),
+        vec!["search/summary".to_string()]
+    );
+    assert!(root
+        .join("snapshots")
+        .join(&published.revision)
+        .join("authoring/search/summary.mda")
+        .is_file());
     assert!(manager.last_successful_reload_at().is_some());
     assert!(manager.last_reload_failure_at().is_none());
     assert_eq!(config["provider"], json!("openai"));
@@ -92,13 +123,23 @@ fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
 fn manager_reloads_after_current_revision_changes() {
     let temp_root = unique_temp_dir("llmix-config-registry-reload");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(&root, "search", "summary", Some(("gpt-4.1-mini", "medium", 256, "openai")));
+    write_authoring_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-4.1-mini", "medium", 256, "openai")),
+    );
 
     let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
     let first = publisher.publish().expect("first publish should succeed");
     let mut manager = ConfigRegistryManager::open(&root).expect("manager should open");
 
-    write_authoring_preset(&root, "search", "summary", Some(("gpt-5-mini", "high", 2048, "openai")));
+    write_authoring_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-5-mini", "high", 2048, "openai")),
+    );
     let second = publisher.publish().expect("second publish should succeed");
     let config = manager
         .get_preset("search", "summary")
@@ -221,7 +262,12 @@ fn manager_fails_fast_with_malformed_current_pointer() {
 fn manager_keeps_last_known_good_config_when_pointer_changes_to_missing_revision() {
     let temp_root = unique_temp_dir("llmix-config-registry-missing-revision");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(&root, "search", "summary", Some(("gpt-4.1-mini", "medium", 256, "openai")));
+    write_authoring_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-4.1-mini", "medium", 256, "openai")),
+    );
 
     let published = ConfigRegistryPublisher::new(&root)
         .expect("publisher should open")
@@ -229,7 +275,10 @@ fn manager_keeps_last_known_good_config_when_pointer_changes_to_missing_revision
         .expect("publish should succeed");
     let mut manager = ConfigRegistryManager::open(&root).expect("manager should open");
 
-    write_file(&root.join("current.json"), "{\"revision\":\"missing-revision\"}\n");
+    write_file(
+        &root.join("current.json"),
+        "{\"revision\":\"missing-revision\"}\n",
+    );
     let config = manager
         .get_preset("search", "summary")
         .expect("last known good config should still be served");
@@ -248,7 +297,12 @@ fn manager_keeps_last_known_good_config_when_pointer_changes_to_missing_revision
 fn manager_rejects_a_tampered_resolved_snapshot_on_startup() {
     let temp_root = unique_temp_dir("llmix-config-registry-tampered");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(&root, "search", "summary", Some(("gpt-4.1-mini", "medium", 256, "openai")));
+    write_authoring_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-4.1-mini", "medium", 256, "openai")),
+    );
 
     let published = ConfigRegistryPublisher::new(&root)
         .expect("publisher should open")
@@ -258,15 +312,22 @@ fn manager_rejects_a_tampered_resolved_snapshot_on_startup() {
         .join("snapshots")
         .join(&published.revision)
         .join("resolved/search/summary.json");
-    let mut resolved: Value =
-        serde_json::from_str(&fs::read_to_string(&resolved_path).expect("resolved json should exist"))
-            .expect("resolved json should parse");
+    let mut resolved: Value = serde_json::from_str(
+        &fs::read_to_string(&resolved_path).expect("resolved json should exist"),
+    )
+    .expect("resolved json should parse");
     resolved["model"] = json!("tampered-model");
-    fs::write(&resolved_path, serde_json::to_string(&resolved).expect("json should serialize"))
-        .expect("resolved json should be overwritten");
+    fs::write(
+        &resolved_path,
+        serde_json::to_string(&resolved).expect("json should serialize"),
+    )
+    .expect("resolved json should be overwritten");
 
     let error = ConfigRegistryManager::open(&root).expect_err("tampered snapshot should fail");
-    assert!(matches!(error, LlmixError::InvalidConfig(InvalidConfigError { .. })));
+    assert!(matches!(
+        error,
+        LlmixError::InvalidConfig(InvalidConfigError { .. })
+    ));
 }
 
 #[test]
@@ -283,13 +344,13 @@ fn publish_failure_leaves_active_revision_unchanged() {
     let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
     let first = publisher.publish().expect("first publish should succeed");
     write_file(
-        &root.join("authoring/search/summary.yaml"),
-        "provider: openai\nmodel: [broken\n",
+        &root.join("authoring/search/summary.mda"),
+        "---\nname: summary\nmetadata:\n  snoai-llmix:\n    common:\n      provider: openai\n      model: [broken\n---\n",
     );
 
     let error = publisher
         .publish()
-        .expect_err("publishing invalid authoring YAML should fail");
+        .expect_err("publishing invalid authoring MDA should fail");
     assert!(matches!(error, LlmixError::InvalidConfig(_)));
 
     let pointer: Value = serde_json::from_str(
@@ -303,5 +364,31 @@ fn publish_failure_leaves_active_revision_unchanged() {
         .read_dir()
         .map(|mut entries| entries.next().is_some())
         .unwrap_or(false);
-    assert!(!has_staging_entries, "staging dir should be empty after failure");
+    assert!(
+        !has_staging_entries,
+        "staging dir should be empty after failure"
+    );
+}
+
+#[test]
+fn publisher_rejects_legacy_yaml_authoring_files() {
+    let temp_root = unique_temp_dir("llmix-config-registry-legacy-yaml");
+    let root = temp_root.join("config/llm");
+    write_file(
+        &root.join("authoring/search/summary.yaml"),
+        "provider: openai\nmodel: gpt-4.1-mini\n",
+    );
+
+    let error = ConfigRegistryPublisher::new(&root)
+        .expect("publisher should open")
+        .publish()
+        .expect_err("legacy YAML authoring should fail");
+
+    assert!(matches!(error, LlmixError::InvalidConfig(_)));
+    assert!(
+        error
+            .to_string()
+            .contains("YAML presets are no longer supported"),
+        "unexpected error: {error}"
+    );
 }

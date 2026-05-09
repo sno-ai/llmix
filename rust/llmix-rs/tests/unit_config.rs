@@ -33,11 +33,28 @@ fn write_file(path: &Path, content: &str) {
     fs::write(path, content).expect("file should be written");
 }
 
+fn mda_source(frontmatter: &str) -> String {
+    format!("---\n{}\n---\n# preset\n", frontmatter.trim())
+}
+
 #[test]
 fn load_config_rejects_missing_required_fields() {
     let temp_dir = unique_temp_dir("llmix-config-invalid");
-    let file_path = temp_dir.join("missing-provider.yaml");
-    write_file(&file_path, "common:\n  temperature: 0.2\n");
+    let file_path = temp_dir.join("missing-provider.mda");
+    write_file(
+        &file_path,
+        &mda_source(
+            r#"
+name: missing-provider
+description: Invalid preset.
+metadata:
+  snoai-llmix:
+    common:
+      model: gpt-4.1-mini
+      temperature: 0.2
+"#,
+        ),
+    );
 
     let error = load_config(&file_path).expect_err("missing provider should fail");
     assert!(matches!(error, LlmixError::InvalidConfig(_)));
@@ -52,32 +69,39 @@ fn load_config_rejects_missing_required_fields() {
 #[test]
 fn load_config_reports_missing_file() {
     let temp_dir = unique_temp_dir("llmix-config-missing");
-    let file_path = temp_dir.join("does-not-exist.yaml");
+    let file_path = temp_dir.join("does-not-exist.mda");
 
     let error = load_config(&file_path).expect_err("missing file should fail");
     assert!(matches!(error, LlmixError::ConfigNotFound(_)));
 }
 
 #[test]
-fn load_config_normalizes_legacy_camel_case_keys() {
+fn load_config_projects_mda_frontmatter_and_normalizes_keys() {
     let temp_dir = unique_temp_dir("llmix-config-camel-case");
-    let file_path = temp_dir.join("public-compat.yaml");
+    let file_path = temp_dir.join("public-compat.mda");
     write_file(
         &file_path,
-        r#"
-provider: openai
-model: gpt-4.1-mini
-common:
-  maxOutputTokens: 123
-  keepThinkingOutput: true
-providerOptions:
-  openai:
-    reasoningEffort: high
-caching:
-  strategy: memory
-  maxItems: 99
-"#
-        .trim(),
+        &mda_source(
+            r#"
+name: public-compat
+description: Public compatibility preset.
+tags:
+  - rust
+metadata:
+  snoai-llmix:
+    common:
+      provider: openai
+      model: gpt-4.1-mini
+      maxOutputTokens: 123
+      keepThinkingOutput: true
+    providerOptions:
+      openai:
+        reasoningEffort: high
+    caching:
+      strategy: redis-or-memory
+      maxItems: 99
+"#,
+        ),
     );
 
     let config = load_config(&file_path).expect("camelCase config should normalize");
@@ -88,15 +112,47 @@ caching:
         config["provider_options"]["openai"]["reasoning_effort"],
         json!("high")
     );
+    assert_eq!(config["caching"]["strategy"], json!("redis-or-memory"));
     assert_eq!(config["caching"]["max_items"], json!(99));
+    assert_eq!(config["description"], json!("Public compatibility preset."));
+    assert_eq!(config["tags"], json!(["rust"]));
+}
+
+#[test]
+fn load_config_rejects_legacy_yaml_paths() {
+    let temp_dir = unique_temp_dir("llmix-config-legacy-yaml");
+    let file_path = temp_dir.join("legacy.yaml");
+    write_file(&file_path, "provider: openai\nmodel: gpt-4.1-mini\n");
+
+    let error = load_config(&file_path).expect_err("legacy YAML should fail");
+    assert!(matches!(error, LlmixError::InvalidConfig(_)));
+    assert!(
+        error
+            .to_string()
+            .contains("YAML configs are no longer supported"),
+        "unexpected error: {error}"
+    );
 }
 
 #[cfg(unix)]
 #[test]
 fn load_config_permission_denied_maps_to_config_access_error() {
     let temp_dir = unique_temp_dir("llmix-config-denied");
-    let file_path = temp_dir.join("denied.yaml");
-    write_file(&file_path, "provider: openai\nmodel: gpt-4.1-mini\n");
+    let file_path = temp_dir.join("denied.mda");
+    write_file(
+        &file_path,
+        &mda_source(
+            r#"
+name: denied
+description: Denied preset.
+metadata:
+  snoai-llmix:
+    common:
+      provider: openai
+      model: gpt-4.1-mini
+"#,
+        ),
+    );
 
     let original_permissions = fs::metadata(&file_path)
         .expect("config metadata should exist")
@@ -112,6 +168,39 @@ fn load_config_permission_denied_maps_to_config_access_error() {
     assert!(matches!(error, LlmixError::ConfigAccess(_)));
 }
 
+#[cfg(unix)]
+#[test]
+fn load_config_rejects_symlink_escape() {
+    use std::os::unix::fs::symlink;
+
+    let temp_dir = unique_temp_dir("llmix-config-symlink");
+    let allowed_dir = temp_dir.join("allowed");
+    let outside_dir = temp_dir.join("outside");
+    fs::create_dir_all(&allowed_dir).expect("allowed dir should exist");
+    fs::create_dir_all(&outside_dir).expect("outside dir should exist");
+
+    let target = outside_dir.join("target.mda");
+    write_file(
+        &target,
+        &mda_source(
+            r#"
+name: target
+description: Escaped preset.
+metadata:
+  snoai-llmix:
+    common:
+      provider: openai
+      model: gpt-4.1-mini
+"#,
+        ),
+    );
+    let link = allowed_dir.join("linked.mda");
+    symlink(&target, &link).expect("symlink should be created");
+
+    let error = load_config(&link).expect_err("symlink escape should fail");
+    assert!(matches!(error, LlmixError::Security(_)));
+}
+
 #[test]
 fn load_config_preset_rejects_path_traversal_names() {
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -122,6 +211,56 @@ fn load_config_preset_rejects_path_traversal_names() {
 
     let error = load_config_preset("~escape", &base_dir).expect_err("dangerous name should fail");
     assert!(matches!(error, LlmixError::Security(_)));
+}
+
+#[test]
+fn load_config_preset_ignores_legacy_yaml_when_mda_exists() {
+    for suffix in ["yaml", "yml"] {
+        let temp_dir = unique_temp_dir(&format!("llmix-config-preset-mixed-{suffix}"));
+        let base_dir = temp_dir.join("search");
+        write_file(
+            &base_dir.join("summary.mda"),
+            &mda_source(
+                r#"
+name: summary
+description: MDA preset.
+metadata:
+  snoai-llmix:
+    common:
+      provider: openai
+      model: gpt-4.1-mini
+"#,
+            ),
+        );
+        write_file(
+            &base_dir.join(format!("summary.{suffix}")),
+            "provider: anthropic\nmodel: claude-sonnet-4-5\n",
+        );
+
+        let config = load_config_preset("summary", &base_dir).expect("MDA preset should load");
+        assert_eq!(config["provider"], json!("openai"));
+        assert_eq!(config["model"], json!("gpt-4.1-mini"));
+    }
+}
+
+#[test]
+fn load_config_preset_does_not_fall_back_to_yaml_only_preset() {
+    for suffix in ["yaml", "yml"] {
+        let temp_dir = unique_temp_dir(&format!("llmix-config-preset-{suffix}-only"));
+        let base_dir = temp_dir.join("search");
+        write_file(
+            &base_dir.join(format!("summary.{suffix}")),
+            "provider: anthropic\nmodel: claude-sonnet-4-5\n",
+        );
+
+        let error =
+            load_config_preset("summary", &base_dir).expect_err("YAML-only preset should fail");
+        assert!(matches!(error, LlmixError::ConfigNotFound(_)));
+        assert!(
+            error.to_string().contains("summary.mda"),
+            "unexpected error for .{suffix}: {error}"
+        );
+    }
 }
 
 #[test]

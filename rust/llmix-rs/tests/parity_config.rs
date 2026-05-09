@@ -10,8 +10,8 @@ fn fixture_dir() -> PathBuf {
 }
 
 #[test]
-fn load_config_normalizes_legacy_preset_shape() {
-    let preset_path = fixture_dir().join("sample_preset.yaml");
+fn load_config_projects_mda_fixture_shape() {
+    let preset_path = fixture_dir().join("sample_preset.mda");
     let config = load_config(&preset_path).expect("fixture should load");
 
     assert_eq!(config["provider"], "openai");
@@ -28,7 +28,7 @@ fn load_config_normalizes_legacy_preset_shape() {
 }
 
 #[test]
-fn load_config_preset_uses_same_compatibility_path() {
+fn load_config_preset_uses_mda_authoring_path() {
     let config = load_config_preset("sample_preset", fixture_dir()).expect("preset should load");
 
     assert_eq!(config["provider"], "openai");

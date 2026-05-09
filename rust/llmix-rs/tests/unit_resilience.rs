@@ -10,7 +10,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
+use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize)]
@@ -315,7 +316,6 @@ fn kill_switch_inactive_active_env_and_migration_paths_work() {
     let resolved = KillSwitch::new().unwrap();
     assert_eq!(resolved.path(), active_path.as_path());
     restore_var("LLMIX_STATE_DIR", old_state_dir);
-
 }
 
 #[tokio::test]
@@ -526,6 +526,46 @@ fn file_lock_acquires_and_releases_when_enabled() {
     lock.acquire().unwrap();
     assert!(lock_path.exists());
     lock.release().unwrap();
+
+    restore_var("LLM_GLOBAL_CONCURRENCY", old);
+}
+
+#[test]
+fn file_lock_guard_serializes_overlapping_in_process_acquires() {
+    let _guard = env_lock();
+    let temp = TestTempDir::new("file-lock-guard-overlap");
+    let lock_path = temp.path().join("llmix.lock");
+    let old = env::var("LLM_GLOBAL_CONCURRENCY").ok();
+
+    env::set_var("LLM_GLOBAL_CONCURRENCY", "4");
+    let lock = Arc::new(FileLock::with_path(lock_path).unwrap());
+    let first_guard = lock.acquire_guard().unwrap();
+
+    let (started_tx, started_rx) = mpsc::channel();
+    let (acquired_tx, acquired_rx) = mpsc::channel();
+    let worker_lock = Arc::clone(&lock);
+    let handle = thread::spawn(move || {
+        started_tx.send(()).unwrap();
+        let second_guard = worker_lock.acquire_guard().unwrap();
+        acquired_tx.send(()).unwrap();
+        drop(second_guard);
+    });
+
+    started_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("worker should start acquire attempt");
+    assert!(
+        acquired_rx
+            .recv_timeout(Duration::from_millis(100))
+            .is_err(),
+        "second guard should wait while first guard is held"
+    );
+
+    drop(first_guard);
+    acquired_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("second guard should acquire after first guard drops");
+    handle.join().expect("worker should finish");
 
     restore_var("LLM_GLOBAL_CONCURRENCY", old);
 }
