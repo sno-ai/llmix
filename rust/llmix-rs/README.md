@@ -12,7 +12,7 @@ The crate is usable today, but it should still be treated as beta. The public su
 - Provider kwargs normalization for OpenAI, Anthropic, Gemini, OpenRouter, and `sno-gpu`
 - Thinking-token stripping
 - Config Registry runtime manager and publisher for committed preset snapshots
-- Low-level YAML config helpers with `load_config` and `load_config_preset`
+- Low-level MDA Source Mode config helpers with `load_config` and `load_config_preset`
 - Optional provider modules for OpenAI-compatible, Anthropic, Gemini, and `sno-gpu` HTTP dispatch
 
 ## Feature flags
@@ -103,19 +103,20 @@ let config = manager.get_preset("search", "summary")?;
 The registry contract for the monorepo is described in
 [../../docs/llmix-config-registry-plan.md](../../docs/llmix-config-registry-plan.md):
 
-- YAML stays as the authoring format
+- `.mda` Source Mode stays as the authoring format
 - publishing creates immutable snapshot revisions
 - `current.json` is the only live switch
-- runtime reads committed snapshot artifacts instead of mutable authoring YAML
+- runtime reads committed snapshot artifacts instead of mutable authoring MDA
 
 That lets Rust stay aligned with Python and TypeScript without putting
-cross-language YAML normalization on the runtime hot path.
+cross-language MDA parsing on the runtime hot path.
 
 The manager also exposes the active revision and reload health metadata so
 service code can report which snapshot is live and whether a reload failed.
 
 `load_config` and `load_config_preset` remain available as low-level helpers
-for authoring tools, tests, and migration work.
+for authoring tools, tests, and migration work. They now hard-require `.mda`
+files and reject legacy `.yaml` / `.yml` preset paths.
 
 ## Optional provider modules
 
