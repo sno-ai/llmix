@@ -4,7 +4,7 @@
 Target: Zero 429s with N keys vs single key at 2x rate limit
 
 Requires: Multiple API keys in OPENAI_KEYS
-Run: uv run python tests/benchmarks/bench_key_rotation.py
+Run: uv run --project packages/llmix/python python packages/llmix/benchmarks/bench_key_rotation.py
 """
 
 print("TODO: Key rotation benchmark requires multiple API keys.")

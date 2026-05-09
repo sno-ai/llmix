@@ -17,7 +17,7 @@ struct TestVector {
 }
 
 fn fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/cache-key-vectors.json")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../fixtures/llmix/cache-key-vectors.json")
 }
 
 fn final_contract_key(legacy_expected_key: &str) -> String {

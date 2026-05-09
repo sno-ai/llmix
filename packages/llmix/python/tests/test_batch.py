@@ -3,7 +3,7 @@
 
 Covers batch ID encode/decode roundtrip, colon-safe decode, and
 durable metadata file create/read/cleanup.
-Uses shared fixtures from tests/fixtures/batch-id-roundtrip.json.
+Uses shared fixtures from fixtures/llmix/batch-id-roundtrip.json.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import tempfile
 from pathlib import Path
 
 # Ensure the python package is importable
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from llmix.batch import (
     BatchMetadata,
@@ -33,7 +33,7 @@ from llmix.batch import (
 )
 import llmix.batch as batch_module
 
-FIXTURE_DIR = Path(__file__).parent.parent / "fixtures"
+FIXTURE_DIR = Path(__file__).resolve().parents[4] / "fixtures" / "llmix"
 FIXTURES_PATH = FIXTURE_DIR / "batch-id-roundtrip.json"
 
 

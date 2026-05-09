@@ -28,7 +28,7 @@ from conftest import (
     skip_unless,
 )
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from llmix.response_cache import CACHE_KEY_FIELDS, TwoTierCache, generate_cache_key
 from llmix.resilience import Singleflight
 

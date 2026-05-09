@@ -59,9 +59,9 @@ structured resilience, caching, key management, and shared config loading.
 
 ### Added — Shared
 
-- `data/pricing.json` — per-model USD/1M token pricing.
-- `data/model-capabilities.json` — model capability flags.
-- `data/config-schema.json` — config validation schema.
+- `packages/llmix/typescript/data/pricing.json` — per-model USD/1M token pricing.
+- `packages/llmix/typescript/data/model-capabilities.json` — model capability flags.
+- `packages/llmix/typescript/data/config-schema.json` — config validation schema.
 
 ### Changed
 

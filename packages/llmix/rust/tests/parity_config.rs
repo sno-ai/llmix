@@ -5,8 +5,10 @@ fn fixture_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("tests")
+        .join("..")
         .join("fixtures")
+        .join("mda")
+        .join("valid")
 }
 
 #[test]

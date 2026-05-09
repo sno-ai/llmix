@@ -3,14 +3,14 @@
 
 Targets: L1 < 0.1ms, L2 < 2ms
 
-Run: uv run python tests/benchmarks/bench_cache.py
+Run: uv run --project packages/llmix/python python packages/llmix/benchmarks/bench_cache.py
 """
 
 import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 
 from llmix.response_cache import TwoTierCache, generate_cache_key
 

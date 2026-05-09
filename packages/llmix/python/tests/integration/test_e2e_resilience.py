@@ -30,7 +30,7 @@ from conftest import (
     skip_unless_tier,
 )
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from llmix.pipeline import (  # noqa: E402
     DispatchInput,
     LLMUsage,
@@ -38,7 +38,7 @@ from llmix.pipeline import (  # noqa: E402
     ProviderResult,
 )
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from llmix.resilience import (  # noqa: E402
     CircuitBreaker,
     RetryPolicy,

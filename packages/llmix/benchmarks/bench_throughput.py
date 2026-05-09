@@ -4,7 +4,7 @@
 Target: Meet throughput target
 
 Requires: OPENAI_API_KEY
-Run: uv run python tests/benchmarks/bench_throughput.py
+Run: uv run --project packages/llmix/python python packages/llmix/benchmarks/bench_throughput.py
 """
 
 print("TODO: Throughput benchmark requires API keys and real provider calls.")

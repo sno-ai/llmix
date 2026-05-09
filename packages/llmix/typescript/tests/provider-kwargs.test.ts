@@ -16,7 +16,7 @@ import {
   snoGpuTransformKwargs,
   PROVIDER_KWARGS_REGISTRY,
   type TransformKwargsContext,
-} from "../../typescript/src/provider-kwargs.js"
+} from "../src/provider-kwargs.js"
 
 let passed = 0
 let failed = 0

@@ -1,0 +1,19 @@
+{
+  "name": "llmix-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/llmix/typescript"
+  ],
+  "scripts": {
+    "build": "bun run --cwd packages/llmix/typescript build",
+    "check": "bun run --cwd packages/llmix/typescript check",
+    "test": "bun run test:typescript && bun run test:python && bun run test:rust",
+    "test:typescript": "bun run --cwd packages/llmix/typescript test",
+    "test:python": "uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests",
+    "test:rust": "cargo test --manifest-path packages/llmix/rust/Cargo.toml",
+    "check:python": "uv run --project packages/llmix/python pyright -p packages/llmix/python",
+    "check:rust": "cargo check --manifest-path packages/llmix/rust/Cargo.toml",
+    "clean": "bun run --cwd packages/llmix/typescript clean"
+  }
+}

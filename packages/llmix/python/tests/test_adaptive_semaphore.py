@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for AIMD Adaptive Semaphore.
 
-Run with: uv run python tests/python/test_adaptive_semaphore.py
+Run with: uv run --project packages/llmix/python python packages/llmix/python/tests/test_adaptive_semaphore.py
 """
 
 import asyncio
@@ -10,14 +10,14 @@ import sys
 from pathlib import Path
 
 # Add python/ to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from llmix.adaptive_semaphore import (
     AdaptiveSemaphore,
     parse_openai_ratelimit_headers,
 )
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+FIXTURES_DIR = Path(__file__).resolve().parents[4] / "fixtures" / "llmix"
 
 
 def load_scenarios() -> dict:

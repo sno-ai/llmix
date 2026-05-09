@@ -5,7 +5,7 @@ Measures how long `import llmix` takes. Target: < 100ms when no
 provider SDKs are installed (core-only path).
 
 Run:
-    uv run python tests/python/bench_import_time.py
+    uv run --project packages/llmix/python python packages/llmix/benchmarks/bench_import_time.py
 """
 
 from __future__ import annotations

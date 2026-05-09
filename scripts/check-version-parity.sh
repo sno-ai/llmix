@@ -5,8 +5,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-TS_VERSION=$(node -e "console.log(require('$REPO_ROOT/package.json').version)")
-PY_VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' "$REPO_ROOT/python/llmix/__init__.py")
+TS_VERSION=$(node -e "console.log(require('$REPO_ROOT/packages/llmix/typescript/package.json').version)")
+PY_VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' "$REPO_ROOT/packages/llmix/python/llmix/__init__.py")
 
 echo "TypeScript version: $TS_VERSION"
 echo "Python version:     $PY_VERSION"

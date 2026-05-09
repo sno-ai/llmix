@@ -3,7 +3,7 @@
  *
  * Covers batch ID encode/decode roundtrip, colon-safe decode, and
  * durable metadata file create/read/cleanup.
- * Uses shared fixtures from tests/fixtures/batch-id-roundtrip.json.
+ * Uses shared fixtures from fixtures/llmix/batch-id-roundtrip.json.
  */
 
 import { readFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
@@ -19,9 +19,9 @@ import {
   deleteMetadata,
   BatchProcessor,
   type BatchProvider,
-} from "../../typescript/src/batch.js";
+} from "../src/batch.js";
 
-const fixtureDir = resolve(import.meta.dirname, "..", "fixtures");
+const fixtureDir = resolve(import.meta.dirname, "..", "..", "..", "..", "fixtures", "llmix");
 const fixturesPath = resolve(fixtureDir, "batch-id-roundtrip.json");
 
 interface RoundtripScenario {

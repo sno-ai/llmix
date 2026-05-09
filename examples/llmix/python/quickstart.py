@@ -1,7 +1,7 @@
 """LLMix Python quickstart.
 
 Run with:
-    OPENAI_API_KEY=sk-... uv run python examples/python/quickstart.py
+    OPENAI_API_KEY=sk-... uv run --project packages/llmix/python python examples/llmix/python/quickstart.py
 """
 
 import asyncio

@@ -1,7 +1,7 @@
 /**
  * Tests for AIMD Adaptive Semaphore.
  *
- * Run with: bun run tests/typescript/adaptive-semaphore.test.ts
+ * Run with: bun test packages/llmix/typescript/tests/adaptive-semaphore.test.ts
  */
 
 import { readFileSync } from "node:fs";
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import {
   AdaptiveSemaphore,
   parseOpenAIRatelimitHeaders,
-} from "../../typescript/src/adaptive-semaphore.js";
+} from "../src/adaptive-semaphore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -41,7 +41,7 @@ interface Fixtures {
   header_parsing: HeaderCase[];
 }
 
-const fixturesPath = join(__dirname, "..", "fixtures", "aimd-scenarios.json");
+const fixturesPath = join(__dirname, "..", "..", "..", "..", "fixtures", "llmix", "aimd-scenarios.json");
 const fixtures: Fixtures = JSON.parse(readFileSync(fixturesPath, "utf-8"));
 
 function applyAction(sem: AdaptiveSemaphore, action: Action): void {

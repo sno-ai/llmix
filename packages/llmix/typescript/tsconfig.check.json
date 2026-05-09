@@ -4,6 +4,6 @@
     "rootDir": ".",
     "noEmit": true
   },
-  "include": ["typescript/src/**/*", "tests/typescript/**/*"],
-  "exclude": ["node_modules", "typescript/dist", "tests/benchmarks"]
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

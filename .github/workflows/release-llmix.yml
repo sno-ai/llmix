@@ -1,4 +1,4 @@
-name: Release
+name: Release LLMix
 
 on:
   release:
@@ -52,13 +52,14 @@ jobs:
         run: bun run build
 
       - name: Check npm package contents
+        working-directory: packages/llmix/typescript
         run: |
           npm pack --dry-run --json > /tmp/llmix-npm-pack.json
           node <<'NODE'
           const fs = require("fs");
           const pack = JSON.parse(fs.readFileSync("/tmp/llmix-npm-pack.json", "utf8"));
           const files = pack[0]?.files?.map((entry) => entry.path) ?? [];
-          const allowed = /^(typescript\/(dist|src)\/.*|data\/.*|README\.md|LICENSE|CHANGELOG\.md|package\.json)$/;
+          const allowed = /^(dist\/.*|src\/.*|data\/.*|README\.md|package\.json)$/;
           const unexpected = files.filter((path) => !allowed.test(path));
           if (unexpected.length > 0) {
             console.error("Unexpected files in npm package:");
@@ -70,6 +71,7 @@ jobs:
           NODE
 
       - name: Publish npm package
+        working-directory: packages/llmix/typescript
         run: npm publish --access public
 
   publish-pypi:
@@ -92,10 +94,12 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Build package
-        run: uv build
+        run: uv build --project packages/llmix/python
 
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/llmix/python/dist
 
   publish-crates:
     name: Publish crates.io
@@ -116,7 +120,7 @@ jobs:
         uses: rust-lang/crates-io-auth-action@v1
 
       - name: Publish crate
-        working-directory: rust/llmix-rs
+        working-directory: packages/llmix/rust
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish

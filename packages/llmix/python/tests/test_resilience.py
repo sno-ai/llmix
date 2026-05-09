@@ -2,7 +2,7 @@
 """Tests for the LLMix resilience module (Python).
 
 Covers circuit breaker, kill switch, singleflight, and retry logic.
-Uses shared fixtures from tests/fixtures/circuit-breaker-scenarios.json.
+Uses shared fixtures from fixtures/llmix/circuit-breaker-scenarios.json.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import warnings
 from pathlib import Path
 
 # Ensure the python package is importable
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from llmix.resilience import (
     CircuitBreaker,
@@ -32,7 +32,7 @@ from llmix.resilience import (
     parse_retry_after,
 )
 
-FIXTURE_DIR = Path(__file__).parent.parent / "fixtures"
+FIXTURE_DIR = Path(__file__).resolve().parents[4] / "fixtures" / "llmix"
 SCENARIOS_PATH = FIXTURE_DIR / "circuit-breaker-scenarios.json"
 
 

@@ -31,7 +31,7 @@ from llmix.config import (
 )
 from llmix.types import ConfigAccessError, InvalidConfigError, SecurityError
 
-FIXTURE_DIR = Path(__file__).parent.parent / "fixtures"
+FIXTURE_DIR = Path(__file__).resolve().parents[4] / "fixtures" / "mda" / "valid"
 PRESET_PATH = FIXTURE_DIR / "sample_preset.mda"
 
 

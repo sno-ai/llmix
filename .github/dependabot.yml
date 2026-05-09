@@ -1,21 +1,21 @@
 version: 2
 updates:
   - package-ecosystem: "npm"
-    directory: "/"
+    directory: "/packages/llmix/typescript"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
     labels: ["dependencies", "typescript"]
 
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/packages/llmix/python"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
     labels: ["dependencies", "python"]
 
   - package-ecosystem: "cargo"
-    directory: "/rust/llmix-rs"
+    directory: "/packages/llmix/rust"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

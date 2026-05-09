@@ -4,7 +4,7 @@
 Target: < 5ms overhead
 
 Requires: OPENAI_API_KEY
-Run: uv run python tests/benchmarks/bench_latency.py
+Run: uv run --project packages/llmix/python python packages/llmix/benchmarks/bench_latency.py
 """
 
 print("TODO: Latency benchmark requires API keys and real provider calls.")

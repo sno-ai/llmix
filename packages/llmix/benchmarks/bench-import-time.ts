@@ -1,11 +1,11 @@
 /**
  * LLMix TypeScript import time benchmark.
  *
- * Measures how long `import("../../typescript/src/index.ts")` takes.
+ * Measures how long `import("../typescript/src/index.ts")` takes.
  * Target: < 50ms.
  *
  * Run:
- *   bun run tests/typescript/bench-import-time.ts
+ *   bun run packages/llmix/benchmarks/bench-import-time.ts
  */
 
 export {};
@@ -19,7 +19,7 @@ async function benchImport(): Promise<void> {
     // Bun caches modules, so after the first import subsequent ones will
     // hit cache. We measure both to show cold vs warm performance.
     const start = performance.now();
-    await import("../../typescript/src/index");
+    await import("../typescript/src/index");
     const elapsed = performance.now() - start;
     times.push(elapsed);
     console.log(`  Run ${i + 1}: ${elapsed.toFixed(1)}ms`);

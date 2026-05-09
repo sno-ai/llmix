@@ -2,6 +2,11 @@ version = 1
 revision = 3
 requires-python = ">=3.14"
 
+[manifest]
+members = [
+    "sno-llmix",
+]
+
 [[package]]
 name = "annotated-types"
 version = "0.7.0"
@@ -751,7 +756,7 @@ wheels = [
 [[package]]
 name = "sno-llmix"
 version = "2.0.0"
-source = { editable = "." }
+source = { editable = "packages/llmix/python" }
 dependencies = [
     { name = "anthropic" },
     { name = "cachetools" },
@@ -788,13 +793,13 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=6.4.0,<8" },
-    { name = "snoai-mda-config", specifier = ">=1.0.0,<2" },
+    { name = "snoai-mda-config", specifier = ">=1.1.0,<2" },
 ]
 provides-extras = ["redis", "dev"]
 
 [[package]]
 name = "snoai-mda-config"
-version = "1.0.0"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jcs" },
@@ -802,9 +807,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "ruamel-yaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/55/2e/b6b5ddea375ae15f2292172af05283b5c724ad8190c3eb46050cc5961f5c/snoai_mda_config-1.0.0.tar.gz", hash = "sha256:8c0f698aa1010edda89887c9b4b1272cf64ef32db736d8e593c42af71d0b5539", size = 11074, upload-time = "2026-05-08T06:02:10.03Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/49/09/17728f2f524833900633463af2840dd033fa7301e0f8ab17fa1b4f92c57d/snoai_mda_config-1.1.0.tar.gz", hash = "sha256:a19c988ca0520010cedd8860b1966f96bb852eedfcd71a2b28db39b6ac952071", size = 14657, upload-time = "2026-05-09T20:42:37.906Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/58/e2/42e08d0b78fb01ea696e728431a1ad14336af7957fecd60ad608308fef55/snoai_mda_config-1.0.0-py3-none-any.whl", hash = "sha256:8449e7eddd15b0575d6313a93fcb16bbbb0f3b1d472473fcacb1747d46899fd5", size = 13394, upload-time = "2026-05-08T06:02:08.532Z" },
+    { url = "https://files.pythonhosted.org/packages/41/71/fec60b043136ab9a37d89b5dc1ccfe1a5823b69290d75016abf143febfc3/snoai_mda_config-1.1.0-py3-none-any.whl", hash = "sha256:143c8fbc101ccb3b3dde53310feab081baeb94675b7dc831ec7adcdc0363937f", size = 18239, upload-time = "2026-05-09T20:42:36.576Z" },
 ]
 
 [[package]]

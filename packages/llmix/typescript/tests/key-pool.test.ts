@@ -1,10 +1,10 @@
 /**
  * Unit tests for KeyPool and loadKeysFromEnv.
  *
- * Run with: bun run tests/typescript/key-pool.test.ts
+ * Run with: bun test packages/llmix/typescript/tests/key-pool.test.ts
  */
 
-import { KeyPool, KeyPoolExhaustedError, loadKeysFromEnv } from "../../typescript/src/key-pool.js";
+import { KeyPool, KeyPoolExhaustedError, loadKeysFromEnv } from "../src/key-pool.js";
 
 let passed = 0;
 let failed = 0;

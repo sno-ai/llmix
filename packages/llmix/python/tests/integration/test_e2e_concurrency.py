@@ -27,7 +27,7 @@ from conftest import (
     skip_unless_tier,
 )
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from llmix.key_pool import KeyPool
 
 

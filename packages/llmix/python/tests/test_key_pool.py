@@ -2,7 +2,7 @@
 """
 Unit tests for KeyPool and load_keys_from_env.
 
-Run with: uv run python tests/python/test_key_pool.py
+Run with: uv run --project packages/llmix/python python packages/llmix/python/tests/test_key_pool.py
 """
 
 import os
@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 # Add python/ to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from llmix.key_pool import KeyPool, KeyPoolExhaustedError, load_keys_from_env
 

@@ -1,0 +1,15 @@
+name: Release mda-config
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  placeholder:
+    name: Placeholder
+    runs-on: ubuntu-latest
+    steps:
+      - name: No mda-config packages yet
+        run: echo "mda-config code has not been migrated yet; nothing is published by this workflow."

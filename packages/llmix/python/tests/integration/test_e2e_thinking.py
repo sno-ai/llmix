@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 # Ensure llmix is importable
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from conftest import (
     InstrumentedDispatch,

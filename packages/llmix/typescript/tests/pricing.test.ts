@@ -1,4 +1,4 @@
-import { getModelPricing, calculateCost, MODEL_PRICING } from "../../typescript/src/pricing/pricing.js"
+import { getModelPricing, calculateCost, MODEL_PRICING } from "../src/pricing/pricing.js"
 
 const testCases: [string, boolean][] = [
 	// Base models (should work)

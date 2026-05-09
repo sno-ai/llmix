@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 # Ensure the python package is importable
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from llmix.pipeline import (
     CallInput,

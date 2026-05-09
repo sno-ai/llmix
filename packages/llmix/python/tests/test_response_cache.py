@@ -10,7 +10,7 @@ Tests:
 - Strategy resolution
 - Cache skip rules
 
-Run with: python tests/python/test_response_cache.py
+Run with: uv run --project packages/llmix/python python packages/llmix/python/tests/test_response_cache.py
 """
 
 import json
@@ -18,8 +18,8 @@ import sys
 import time
 from pathlib import Path
 
-# Add python/ to path so llmix is importable
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+# Add the package root to path so llmix is importable
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from llmix.response_cache import (  # noqa: E402
     TwoTierCache,
@@ -29,7 +29,7 @@ from llmix.response_cache import (  # noqa: E402
     should_skip_cache,
 )
 
-fixture_dir = Path(__file__).parent.parent / "fixtures"
+fixture_dir = Path(__file__).resolve().parents[4] / "fixtures" / "llmix"
 vectors_file = fixture_dir / "cache-key-vectors.json"
 vectors_data = json.loads(vectors_file.read_text())
 

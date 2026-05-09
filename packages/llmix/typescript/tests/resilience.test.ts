@@ -2,7 +2,7 @@
  * Tests for the LLMix resilience module (TypeScript).
  *
  * Covers circuit breaker, kill switch, singleflight, and retry logic.
- * Uses shared fixtures from tests/fixtures/circuit-breaker-scenarios.json.
+ * Uses shared fixtures from fixtures/llmix/circuit-breaker-scenarios.json.
  */
 
 import { readFileSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -20,9 +20,9 @@ import {
   calculateDelay,
   isRetryable,
   parseRetryAfter,
-} from "../../typescript/src/resilience.js";
+} from "../src/resilience.js";
 
-const fixtureDir = resolve(import.meta.dirname, "..", "fixtures");
+const fixtureDir = resolve(import.meta.dirname, "..", "..", "..", "..", "fixtures", "llmix");
 const scenariosPath = resolve(fixtureDir, "circuit-breaker-scenarios.json");
 
 interface Scenario {

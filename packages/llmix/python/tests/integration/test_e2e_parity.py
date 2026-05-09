@@ -20,18 +20,16 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent))
 from conftest import assert_eq, assert_true, print_summary
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from llmix.provider_kwargs import sno_gpu_transform_kwargs
 from llmix.resilience import is_retryable
 from llmix.response_cache import generate_cache_key
 from llmix.thinking import strip_thinking
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-TS_DIST = REPO_ROOT / "typescript" / "dist"
-
-# The tsconfig has rootDir=. and outDir=./typescript/dist, so
-# typescript/src/foo.ts compiles to typescript/dist/typescript/src/foo.js
-TS_SRC_DIST = TS_DIST / "typescript" / "src"
+REPO_ROOT = Path(__file__).resolve().parents[5]
+TS_PACKAGE = REPO_ROOT / "packages" / "llmix" / "typescript"
+TS_DIST = TS_PACKAGE / "dist"
+TS_SRC_DIST = TS_DIST
 
 
 def _has_ts_dist() -> bool:
@@ -180,7 +178,7 @@ async def test_13_1_cache_key_parity():
         # Build TS code with the same params
         params_json = json.dumps(params)
         ts_code = f"""
-import {{ generateCacheKey }} from './typescript/dist/typescript/src/response-cache.js';
+import {{ generateCacheKey }} from './packages/llmix/typescript/dist/response-cache.js';
 console.log(generateCacheKey({params_json}));
 """
         try:
@@ -224,7 +222,7 @@ async def test_13_2_thinking_strip_parity():
         # TypeScript
         escaped = json.dumps(input_text)
         ts_code = f"""
-import {{ stripThinking }} from './typescript/dist/typescript/src/thinking.js';
+import {{ stripThinking }} from './packages/llmix/typescript/dist/thinking.js';
 const result = stripThinking({escaped});
 console.log(JSON.stringify(result));
 """
@@ -293,7 +291,7 @@ async def test_13_4_response_structure_parity():
     ts_code = """
 import { readFileSync } from 'node:fs';
 // Read the TS source to check interface fields
-const src = readFileSync('./typescript/src/pipeline.ts', 'utf-8');
+const src = readFileSync('./packages/llmix/typescript/src/pipeline.ts', 'utf-8');
 // Extract CallResponse interface
 const match = src.match(/export interface CallResponse \\{([^}]+)\\}/s);
 if (match) {
@@ -318,11 +316,11 @@ if (match) {
     # Verify usage sub-fields via TS source
     ts_usage_code = """
 import { readFileSync } from 'node:fs';
-const src = readFileSync('./typescript/src/pipeline.ts', 'utf-8');
+const src = readFileSync('./packages/llmix/typescript/src/pipeline.ts', 'utf-8');
 const match = src.match(/export interface LLMUsage \\{([^}]+)\\}/s);
 if (!match) {
     // Try types.ts
-    const src2 = readFileSync('./typescript/src/types.ts', 'utf-8');
+    const src2 = readFileSync('./packages/llmix/typescript/src/types.ts', 'utf-8');
     const match2 = src2.match(/export interface LLMUsage \\{([^}]+)\\}/s);
     if (match2) {
         const fields = [...match2[1].matchAll(/(\\w+)[?]?\\s*:/g)].map(m => m[1]);
@@ -362,7 +360,7 @@ async def test_13_5_error_classification_parity():
     # Build TS code that checks all codes at once
     codes_json = json.dumps(ERROR_CLASSIFICATION_CODES)
     ts_code = f"""
-import {{ isRetryable }} from './typescript/dist/typescript/src/resilience.js';
+import {{ isRetryable }} from './packages/llmix/typescript/dist/resilience.js';
 const codes = {codes_json};
 const results = {{}};
 for (const code of codes) {{
@@ -423,7 +421,7 @@ async def test_13_6_gpu_path_validation_parity():
         # TypeScript: snoGpuTransformKwargs should throw Error
         escaped_path = json.dumps(bad_path)
         ts_code = f"""
-import {{ snoGpuTransformKwargs }} from './typescript/dist/typescript/src/provider-kwargs.js';
+import {{ snoGpuTransformKwargs }} from './packages/llmix/typescript/dist/provider-kwargs.js';
 try {{
     snoGpuTransformKwargs({{
         model: 'test-model',

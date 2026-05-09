@@ -119,7 +119,7 @@ mock.module("@openrouter/sdk", () => ({
   },
 }));
 
-const { openaiDispatch, openrouterDispatch, snoGpuDispatch } = await import("../../typescript/src/dispatchers.js");
+const { openaiDispatch, openrouterDispatch, snoGpuDispatch } = await import("../src/dispatchers.js");
 
 const dispatch = openaiDispatch();
 const result = await dispatch({

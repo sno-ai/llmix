@@ -4,7 +4,12 @@
   "workspaces": {
     "": {
       "name": "llmix",
+    },
+    "packages/llmix/typescript": {
+      "name": "@snoai/llmix",
+      "version": "2.0.0",
       "dependencies": {
+        "@ai-sdk/provider": "^3.0.10",
         "@openrouter/sdk": "^0.12.21",
         "@snoai/mda-config": "^1.0.2",
         "lru-cache": "^11.3.0",
@@ -82,6 +87,8 @@
     "@sigstore/tuf": ["@sigstore/tuf@4.0.2", "", { "dependencies": { "@sigstore/protobuf-specs": "^0.5.0", "tuf-js": "^4.1.0" } }, "sha512-TCAzTy0xzdP79EnxSjq9KQ3eaR7+FmudLC6eRKknVKZbV7ZNlGLClAAQb/HMNJ5n2OBNk2GT1tEmU0xuPr+SLQ=="],
 
     "@sigstore/verify": ["@sigstore/verify@3.1.0", "", { "dependencies": { "@sigstore/bundle": "^4.0.0", "@sigstore/core": "^3.1.0", "@sigstore/protobuf-specs": "^0.5.0" } }, "sha512-mNe0Iigql08YupSOGv197YdHpPPr+EzDZmfCgMc7RPNaZTw5aLN01nBl6CHJOh3BGtnMIj83EeN4butBchc8Ag=="],
+
+    "@snoai/llmix": ["@snoai/llmix@workspace:packages/llmix/typescript"],
 
     "@snoai/mda-config": ["@snoai/mda-config@1.0.2", "", { "dependencies": { "@truestamp/canonify": "^2.1.0", "ajv": "^8.17.1", "ajv-formats": "^3.0.1", "js-yaml": "^4.1.0", "sigstore": "^4.1.0" }, "peerDependencies": { "zod": "^3.22.0 || ^4.0.0" } }, "sha512-dyWXHKiFViV6MkH9ziimYzcUzrQeeGGb7KNfxpq6WdDbjgwUjZRx+KREir4crVQPrTWL10Rxd04KxPAMSwiLLA=="],
 

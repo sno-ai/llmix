@@ -110,7 +110,7 @@ fn restore_var(name: &str, original: Option<String>) {
 
 fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/circuit-breaker-scenarios.json")
+        .join("../../../fixtures/llmix/circuit-breaker-scenarios.json")
 }
 
 fn load_fixture() -> CircuitFixtureFile {
@@ -440,7 +440,7 @@ async fn singleflight_propagates_errors_to_all_waiters() {
     assert_eq!(singleflight.in_flight_count(), 0);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn singleflight_followers_finish_after_leader_completes() {
     let singleflight = Arc::new(Singleflight::<String, String>::new());
     let call_count = Arc::new(AtomicUsize::new(0));
@@ -477,8 +477,8 @@ async fn singleflight_followers_finish_after_leader_completes() {
                 .do_call(key, || async { Err("should not run".to_owned()) })
                 .await
         }));
+        tokio::task::yield_now().await;
     }
-    tokio::task::yield_now().await;
     release_leader
         .send(())
         .expect("leader release signal should be delivered");

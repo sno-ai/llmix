@@ -1,7 +1,7 @@
 /**
  * Tests for HTTP/2 transport configuration.
  *
- * Run with: bun run tests/typescript/http2.test.ts
+ * Run with: bun test packages/llmix/typescript/tests/http2.test.ts
  *
  * Verifies provider registry flags and factory stubs without making
  * actual network calls.
@@ -12,7 +12,7 @@ import {
   type ProviderTransportConfig,
   createOpenAITransport,
   getProviderTransport,
-} from "../../typescript/src/http2.js";
+} from "../src/http2.js";
 
 let passed = 0;
 let failed = 0;

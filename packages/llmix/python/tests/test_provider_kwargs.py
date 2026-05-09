@@ -9,14 +9,14 @@ Tests each provider's kwargs transformation callback:
 - Sno GPU: base URL construction
 - No-op when callback is null
 
-Run with: python tests/python/test_provider_kwargs.py
+Run with: uv run --project packages/llmix/python python packages/llmix/python/tests/test_provider_kwargs.py
 """
 
 import sys
 from pathlib import Path
 
 # Add python/ to path so llmix is importable
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from llmix.provider_kwargs import (  # noqa: E402
     PROVIDER_KWARGS_REGISTRY,

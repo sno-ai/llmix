@@ -6,9 +6,9 @@
 [![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-ffd43b.svg?labelColor=306998)](https://www.python.org/downloads/)
 [![TypeScript 5.0+](https://img.shields.io/badge/TypeScript-5.0%2B-3178c6.svg?labelColor=3b3b3b)](https://www.typescriptlang.org/)
 [![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-b7410e.svg?labelColor=3b3b3b)](https://www.rust-lang.org/)
-[![License: Apache--2.0](https://img.shields.io/badge/License-Apache--2.0-97ca00.svg?labelColor=3b3b3b)](../../LICENSE)
+[![License: Apache--2.0](https://img.shields.io/badge/License-Apache--2.0-97ca00.svg?labelColor=3b3b3b)](../../../LICENSE)
 
-Read in other languages: [English](../../README.md) · [中文](README.zh-CN.md) · **Deutsch** · [Español](README.es.md) · [Français](README.fr.md) · [Русский](README.ru.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · [हिन्दी](README.hi.md)
+Read in other languages: [English](../../../README.md) · [中文](README.zh-CN.md) · **Deutsch** · [Español](README.es.md) · [Français](README.fr.md) · [Русский](README.ru.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · [हिन्दी](README.hi.md)
 
 > Konfigurationsgesteuerte LLM-Aufrufe für Python, TypeScript und Rust.
 > Behalte dein SDK. Verschiebe Modellverhalten in MDA-Presets. Lege Cache, Retries, Schlüsselrotation und Rollout-Kontrolle um den Aufruf.
@@ -378,24 +378,24 @@ LLMix ist nützlich, wenn dieselbe Form von Modellaufruf in mehreren Services wi
 ```bash
 # TypeScript
 bun install
-bun test
-bunx tsc -p tsconfig.check.json
+bun run test:typescript
+bun run check
 
 # Python
-uv sync
-uv run pytest tests/python/
-uv run pyright
+uv sync --project packages/llmix/python --extra dev
+uv run --project packages/llmix/python pytest
+uv run --project packages/llmix/python pyright
 
 # Rust
-cargo test --manifest-path rust/llmix-rs/Cargo.toml
-cargo clippy --manifest-path rust/llmix-rs/Cargo.toml -- -D warnings
+cargo test --manifest-path packages/llmix/rust/Cargo.toml
+cargo clippy --manifest-path packages/llmix/rust/Cargo.toml -- -D warnings
 ```
 
 ---
 
 ## License
 
-[Apache-2.0](../../LICENSE)
+[Apache-2.0](../../../LICENSE)
 
 ## Related
 

@@ -7,7 +7,8 @@
   "homepage": "https://github.com/sno-ai/llmix#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sno-ai/llmix.git"
+    "url": "git+https://github.com/sno-ai/llmix.git",
+    "directory": "packages/llmix/typescript"
   },
   "bugs": {
     "url": "https://github.com/sno-ai/llmix/issues"
@@ -19,33 +20,34 @@
   "engines": {
     "node": ">=20"
   },
-  "main": "./typescript/dist/index.js",
-  "types": "./typescript/dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./typescript/dist/index.d.ts",
-      "import": "./typescript/dist/index.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./pricing": {
-      "types": "./typescript/dist/pricing/index.d.ts",
-      "import": "./typescript/dist/pricing/index.js"
+      "types": "./dist/pricing/index.d.ts",
+      "import": "./dist/pricing/index.js"
     }
   },
   "files": [
-    "typescript/dist",
-    "typescript/src",
+    "dist",
+    "src",
     "data",
-    "CHANGELOG.md"
+    "README.md"
   ],
   "scripts": {
     "build": "bun run tsc",
     "dev": "bun run tsc --watch",
     "check": "bunx tsc -p tsconfig.check.json",
-    "clean": "rm -rf typescript/dist",
+    "clean": "rm -rf dist",
     "test": "bun test",
     "prepublishOnly": "bun run clean && bun run build"
   },
   "dependencies": {
+    "@ai-sdk/provider": "^3.0.10",
     "@snoai/mda-config": "^1.0.2",
     "@openrouter/sdk": "^0.12.21",
     "lru-cache": "^11.3.0",

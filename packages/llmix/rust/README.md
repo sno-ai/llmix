@@ -125,7 +125,7 @@ These provider adapters are deliberately optional because the LLMix contract is 
 
 ## Shared parity tests
 
-The Rust crate consumes the same fixtures used by the rest of the repo under `tests/fixtures/`.
+The Rust crate consumes the same fixtures used by the rest of the repo under `fixtures/`.
 
 - `cargo test --all-features` runs the local parity and unit suites
 - live provider tests are opt-in and only run when `LLMIX_RUN_LIVE_TESTS=1`
@@ -133,4 +133,4 @@ The Rust crate consumes the same fixtures used by the rest of the repo under `te
 
 ## Monorepo location
 
-The crate lives at `rust/llmix-rs/` in the main LLMix monorepo alongside the Python and TypeScript bindings.
+The crate lives at `packages/llmix/rust/` in the main LLMix monorepo alongside the Python and TypeScript bindings.

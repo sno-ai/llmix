@@ -10,7 +10,7 @@ import {
 	ConfigRegistryPublisher,
 	InvalidConfigError,
 	loadMdaConfig,
-} from "../../typescript/src/index.js"
+} from "../src/index.js"
 
 let passed = 0
 let failed = 0

@@ -11,7 +11,7 @@ dependencies = [
   "httpx[http2]>=0.28.1,<0.29",
   "cachetools>=5.5.0,<8",
   "pydantic>=2,<3",
-  "snoai-mda-config>=1.0.0,<2",
+  "snoai-mda-config>=1.1.0,<2",
   "json-repair>=0.58.0,<1",
   "openrouter>=0.9.1",
 ]
@@ -25,13 +25,13 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["python"]
+where = ["."]
 
 [tool.setuptools.package-data]
 llmix = ["pricing.json", "py.typed"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/python"]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -44,4 +44,4 @@ build-backend = "setuptools.build_meta"
 [tool.pyright]
 pythonVersion = "3.14"
 typeCheckingMode = "standard"
-include = ["python/llmix"]
+include = ["llmix"]

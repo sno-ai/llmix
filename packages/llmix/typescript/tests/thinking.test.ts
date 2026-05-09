@@ -4,7 +4,7 @@
  */
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { stripThinking } from "../../typescript/src/thinking.js"
+import { stripThinking } from "../src/thinking.js"
 
 interface TestVector {
 	name: string
@@ -18,7 +18,7 @@ interface VectorsFile {
 	vectors: TestVector[]
 }
 
-const fixtureDir = resolve(import.meta.dirname, "..", "fixtures")
+const fixtureDir = resolve(import.meta.dirname, "..", "..", "..", "..", "fixtures", "llmix")
 const vectors: VectorsFile = JSON.parse(
 	readFileSync(resolve(fixtureDir, "thinking-strip-vectors.json"), "utf-8"),
 )

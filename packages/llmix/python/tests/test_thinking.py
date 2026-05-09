@@ -3,19 +3,19 @@
 Thinking token stripping tests.
 Consumes shared test vectors from fixtures/thinking-strip-vectors.json.
 
-Run with: python tests/python/test_thinking.py
+Run with: uv run --project packages/llmix/python python packages/llmix/python/tests/test_thinking.py
 """
 
 import json
 import sys
 from pathlib import Path
 
-# Add python/ to path so llmix is importable
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+# Add the package root to path so llmix is importable
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from llmix.thinking import strip_thinking  # noqa: E402
 
-fixture_dir = Path(__file__).parent.parent / "fixtures"
+fixture_dir = Path(__file__).resolve().parents[4] / "fixtures" / "llmix"
 vectors_file = fixture_dir / "thinking-strip-vectors.json"
 vectors_data = json.loads(vectors_file.read_text())
 

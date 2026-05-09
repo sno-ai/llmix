@@ -1,7 +1,7 @@
 # Contributing to LLMix
 
-LLMix is a dual-language library (Python + TypeScript). Contributions must
-maintain cross-language parity where the feature exists in both languages.
+LLMix is a cross-runtime library (Python + TypeScript + Rust). Contributions
+must maintain runtime parity where the feature exists across languages.
 
 ---
 
@@ -9,7 +9,7 @@ maintain cross-language parity where the feature exists in both languages.
 
 ```bash
 # Python
-uv sync
+uv sync --project packages/llmix/python --extra dev
 
 # TypeScript
 bun install
@@ -19,36 +19,43 @@ bun install
 
 ```bash
 # Python unit tests
-uv run pytest tests/python/test_pipeline.py
-uv run pytest tests/python/test_config_loader.py
-uv run pytest tests/python/test_response_cache.py
-uv run pytest tests/python/test_resilience.py
-uv run pytest tests/python/test_provider_kwargs.py
+uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests/test_pipeline.py
+uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests/test_config_loader.py
+uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests/test_response_cache.py
+uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests/test_resilience.py
+uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests/test_provider_kwargs.py
 
 # TypeScript unit tests
-bun test
+bun run test:typescript
+
+# Rust tests
+cargo test --manifest-path packages/llmix/rust/Cargo.toml
 
 # Type checking
-bunx tsc -p tsconfig.check.json
-uv run pyright
+bun run check
+uv run --project packages/llmix/python pyright -p packages/llmix/python
+cargo check --manifest-path packages/llmix/rust/Cargo.toml
 ```
 
 ## Code Quality
 
 Both languages use strict type checking and linting. All PRs must pass:
 
-- `bunx tsc -p tsconfig.check.json` — zero errors
-- `uv run pyright` — zero errors
-- `bun test` — all tests pass
-- `uv run pytest tests/python/` — all tests pass
+- `bun run check` — zero TypeScript errors
+- `uv run --project packages/llmix/python pyright -p packages/llmix/python` — zero Python type errors
+- `cargo check --manifest-path packages/llmix/rust/Cargo.toml` — zero Rust check errors
+- `bun run test:typescript` — TypeScript tests pass
+- `uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests` — Python tests pass
+- `cargo test --manifest-path packages/llmix/rust/Cargo.toml` — Rust tests pass
 
 ## Cross-Language Parity Rules
 
 Changes to core pipeline logic (cache key generation, circuit breaker state,
 retry behavior, AIMD semaphore) must be mirrored in both languages.
 
-The cross-language test fixtures in `tests/fixtures/` are the contract. A
-change that passes Python tests but breaks TypeScript fixtures is a regression.
+The cross-language test fixtures in `fixtures/llmix/` and `fixtures/mda/` are
+the contract. A change that passes one runtime but breaks another is a
+regression.
 
 ### Known parity gap
 
@@ -58,11 +65,13 @@ be unified in a future release. Do not add more gaps of this type.
 
 ## Data Files
 
-`data/pricing.json`, `data/model-capabilities.json`, and
-`data/config-schema.json` are the canonical source for shared data assets.
+`packages/llmix/typescript/data/pricing.json`,
+`packages/llmix/typescript/data/model-capabilities.json`, and
+`packages/llmix/typescript/data/config-schema.json` are the canonical source
+for shared data assets.
 
-`python/llmix/pricing.json` is a copy used by the Python package distribution.
-When updating pricing data, update both files.
+`packages/llmix/python/llmix/pricing.json` is a copy used by the Python
+package distribution. When updating pricing data, update both files.
 
 ## Branching
 

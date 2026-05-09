@@ -6,10 +6,10 @@ ConfigRegistryManager at runtime.
 Requires a registry root with at least one authoring preset, for example:
     config/llm/authoring/search/summary.mda
 
-See docs/secure-llmix-configuration.md for the preset format.
+See docs/llmix/secure-llmix-configuration.md for the preset format.
 
 Run with:
-    OPENAI_API_KEY=sk-... uv run python examples/python/config_registry.py
+    OPENAI_API_KEY=sk-... uv run --project packages/llmix/python python examples/llmix/python/config_registry.py
 """
 
 import asyncio

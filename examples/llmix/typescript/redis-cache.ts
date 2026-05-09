@@ -3,7 +3,7 @@
  *
  * Requires a running Redis instance. Run with:
  *   OPENAI_API_KEY=sk-... REDIS_URL=redis://localhost:6379 \
- *   bun run examples/typescript/redis-cache.ts
+ *   bun run examples/llmix/typescript/redis-cache.ts
  */
 
 import {

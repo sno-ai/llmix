@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for HTTP/2 transport configuration.
 
-Run with: uv run python tests/python/test_http2.py
+Run with: uv run --project packages/llmix/python python packages/llmix/python/tests/test_http2.py
 
 Verifies provider registry flags and factory functions without making
 actual network calls.
@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 # Add python/ to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from llmix.http2 import (
     PROVIDER_TRANSPORT,

@@ -6,7 +6,7 @@ separate state per provider.
 
 Run with:
     OPENAI_API_KEY=sk-... ANTHROPIC_API_KEY=sk-ant-... \
-    uv run python examples/python/multi_provider.py
+    uv run --project packages/llmix/python python examples/llmix/python/multi_provider.py
 """
 
 import asyncio

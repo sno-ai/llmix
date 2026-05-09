@@ -11,7 +11,7 @@ import warnings
 from pathlib import Path
 
 # Add python/ to path and import pricing directly (avoids __init__.py cascading imports)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from llmix import pricing as pricing_module  # noqa: E402
 from llmix.pricing import get_model_pricing  # noqa: E402

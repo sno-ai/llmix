@@ -9,7 +9,7 @@
  * - Strategy resolution
  * - Cache skip rules
  *
- * Run with: bun run tests/typescript/response-cache.test.ts
+ * Run with: bun test packages/llmix/typescript/tests/response-cache.test.ts
  */
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
@@ -19,7 +19,7 @@ import {
 	resolveResponseCacheStrategy,
 	isResponseCacheStrategy,
 	type CacheKeyParams,
-} from "../../typescript/src/response-cache.js"
+} from "../src/response-cache.js"
 
 // =============================================================================
 // HELPERS
@@ -38,7 +38,7 @@ interface VectorsFile {
 	vectors: TestVector[]
 }
 
-const fixtureDir = resolve(import.meta.dirname, "..", "fixtures")
+const fixtureDir = resolve(import.meta.dirname, "..", "..", "..", "..", "fixtures", "llmix")
 const vectors: VectorsFile = JSON.parse(
 	readFileSync(resolve(fixtureDir, "cache-key-vectors.json"), "utf-8"),
 )

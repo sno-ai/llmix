@@ -3,11 +3,11 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
-import { loadMdaConfig, loadMdaConfigFromFile, loadMdaConfigPreset, resolveConfigDir } from "../../typescript/src/config.js"
-import { InvalidConfigError, SecurityError, VALID_PROVIDERS } from "../../typescript/src/types.js"
-import { ProviderSchema } from "../../typescript/src/mda-loader.js"
+import { loadMdaConfig, loadMdaConfigFromFile, loadMdaConfigPreset, resolveConfigDir } from "../src/config.js"
+import { InvalidConfigError, SecurityError, VALID_PROVIDERS } from "../src/types.js"
+import { ProviderSchema } from "../src/mda-loader.js"
 
-const fixtureDir = resolve(import.meta.dirname, "..", "fixtures")
+const fixtureDir = resolve(import.meta.dirname, "..", "..", "..", "..", "fixtures", "mda", "valid")
 const presetPath = resolve(fixtureDir, "sample_preset.mda")
 
 let passed = 0

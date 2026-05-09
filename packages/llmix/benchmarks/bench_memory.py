@@ -3,13 +3,13 @@
 
 Target: < 50MB
 
-Run: uv run python tests/benchmarks/bench_memory.py
+Run: uv run --project packages/llmix/python python packages/llmix/benchmarks/bench_memory.py
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 
 from llmix.response_cache import TwoTierCache, generate_cache_key
 

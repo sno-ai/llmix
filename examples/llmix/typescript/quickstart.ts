@@ -2,7 +2,7 @@
  * LLMix TypeScript quickstart.
  *
  * Run with:
- *   OPENAI_API_KEY=sk-... bun run examples/typescript/quickstart.ts
+ *   OPENAI_API_KEY=sk-... bun run examples/llmix/typescript/quickstart.ts
  */
 
 import {

@@ -16,10 +16,10 @@ import {
   type DispatchContext,
   type PipelineConfig,
   type ProviderError,
-} from "../../typescript/src/pipeline.js";
-import { KeyPool } from "../../typescript/src/key-pool.js";
-import { TwoTierCache } from "../../typescript/src/response-cache.js";
-import type { LLMConfig, LLMUsage } from "../../typescript/src/types.js";
+} from "../src/pipeline.js";
+import { KeyPool } from "../src/key-pool.js";
+import { TwoTierCache } from "../src/response-cache.js";
+import type { LLMConfig, LLMUsage } from "../src/types.js";
 
 let passed = 0;
 let failed = 0;

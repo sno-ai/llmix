@@ -18,11 +18,11 @@ Performance benchmarks for LLMix. These require API keys and running services.
 
 ```bash
 # Requires OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
-uv run python tests/benchmarks/bench_cache.py
-uv run python tests/benchmarks/bench_memory.py
-uv run python tests/benchmarks/bench_import_time.py  # No API key needed
+uv run --project packages/llmix/python python packages/llmix/benchmarks/bench_cache.py
+uv run --project packages/llmix/python python packages/llmix/benchmarks/bench_memory.py
+uv run --project packages/llmix/python python packages/llmix/benchmarks/bench_import_time.py  # No API key needed
 ```
 
 ## Results
 
-See `docs/BENCHMARKS.md` after running all benchmarks.
+See `docs/llmix/` after running all benchmarks.

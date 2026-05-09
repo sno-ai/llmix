@@ -48,7 +48,7 @@ struct ExpectedHeaders {
 }
 
 fn fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/aimd-scenarios.json")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../fixtures/llmix/aimd-scenarios.json")
 }
 
 fn load_fixture() -> AimdFixtureFile {
