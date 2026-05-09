@@ -25,6 +25,15 @@ Provider, model, and parameters can live in a `.mda` preset. Edit the preset, pu
 
 ---
 
+## Documentation
+
+- [Usage reference](docs/llmix-usage-ref.md)
+- [TypeScript guide](docs/llmix-typescript.md)
+- [Python guide](docs/llmix-python.md)
+- [Rust guide](docs/llmix-rust.md)
+
+---
+
 ## Three Things It Does
 
 **Config-driven model swap.** Provider, model, and params are *data*, not code. Drop in a new MDA preset, the next call can route to a different provider. Built for agent harnesses that reshape behavior via config, not redeploys.
