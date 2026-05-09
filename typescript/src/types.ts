@@ -81,6 +81,10 @@ export interface CachingConfig {
  * Per-preset timeout allows reasoning models to have longer timeouts
  * than fast models, without affecting global defaults.
  *
+ * TypeScript CallPipeline treats these values as dispatch/runtime budgets.
+ * Hard cancellation must be implemented by the dispatch transport with a
+ * provider-native timeout or AbortSignal.
+ *
  * @example
  * ```yaml
  * # In LLMix MDA preset frontmatter under metadata.snoai-llmix
@@ -91,9 +95,10 @@ export interface CachingConfig {
  */
 export interface TimeoutConfig {
   /**
-   * Total time limit for the entire LLM call (seconds)
+   * Total time budget for the entire LLM call (seconds).
    *
-   * After this time, the request is aborted.
+   * Dispatch implementations should enforce this in the network transport when
+   * hard cancellation is required.
    * Default: 120 (seconds)
    */
   totalTime?: number | undefined;

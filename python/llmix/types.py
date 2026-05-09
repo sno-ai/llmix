@@ -138,14 +138,17 @@ ProviderOrUnknown = Literal["openai", "anthropic", "google", "deepseek", "openro
 
 class TimeoutConfig(TypedDict, total=False):
     """
-    Timeout configuration for LLM calls (all values in seconds).
+    Timeout budget hints for LLM calls (all values in seconds).
 
     Per-preset timeout allows reasoning models to have longer timeouts
-    than fast models, without affecting global defaults.
+    than fast models, without affecting global defaults. The pipeline does not
+    enforce or abort these timeouts automatically; dispatch implementations
+    should pass them to the provider SDK or HTTP transport when hard cancellation
+    is required.
     """
 
     total_time: float
-    """Total time limit for the entire LLM call (seconds). Default: 120"""
+    """Total budget hint for the entire LLM call (seconds). Default: 120"""
 
     stream_first_chunk_time: float
     """Max wait time for first chunk in streaming responses (seconds)."""
