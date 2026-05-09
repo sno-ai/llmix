@@ -441,50 +441,6 @@ wheels = [
 ]
 
 [[package]]
-name = "llmix"
-version = "2.0.0"
-source = { editable = "." }
-dependencies = [
-    { name = "anthropic" },
-    { name = "cachetools" },
-    { name = "google-genai" },
-    { name = "httpx", extra = ["http2"] },
-    { name = "json-repair" },
-    { name = "openai" },
-    { name = "openrouter" },
-    { name = "pydantic" },
-    { name = "snoai-mda-config" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-redis = [
-    { name = "redis" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "anthropic", specifier = ">=0.40.0" },
-    { name = "cachetools", specifier = ">=5.5.0,<8" },
-    { name = "google-genai", specifier = ">=1.18.0,<3" },
-    { name = "httpx", extras = ["http2"], specifier = ">=0.28.1,<0.29" },
-    { name = "json-repair", specifier = ">=0.58.0,<1" },
-    { name = "openai", specifier = ">=2.0.0" },
-    { name = "openrouter", specifier = ">=0.9.1" },
-    { name = "pydantic", specifier = ">=2,<3" },
-    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
-    { name = "redis", marker = "extra == 'redis'", specifier = ">=6.4.0,<8" },
-    { name = "snoai-mda-config", specifier = ">=1.0.0,<2" },
-]
-provides-extras = ["redis", "dev"]
-
-[[package]]
 name = "nodeenv"
 version = "1.10.0"
 source = { registry = "https://pypi.org/simple" }
@@ -791,6 +747,50 @@ sdist = { url = "https://files.pythonhosted.org/packages/a2/87/a6771e1546d97e7e0
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e9/44/75a9c9421471a6c4805dbf2356f7c181a29c1879239abab1ea2cc8f38b40/sniffio-1.3.1-py3-none-any.whl", hash = "sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2", size = 10235, upload-time = "2024-02-25T23:20:01.196Z" },
 ]
+
+[[package]]
+name = "sno-llmix"
+version = "2.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "anthropic" },
+    { name = "cachetools" },
+    { name = "google-genai" },
+    { name = "httpx", extra = ["http2"] },
+    { name = "json-repair" },
+    { name = "openai" },
+    { name = "openrouter" },
+    { name = "pydantic" },
+    { name = "snoai-mda-config" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+redis = [
+    { name = "redis" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anthropic", specifier = ">=0.40.0" },
+    { name = "cachetools", specifier = ">=5.5.0,<8" },
+    { name = "google-genai", specifier = ">=1.18.0,<3" },
+    { name = "httpx", extras = ["http2"], specifier = ">=0.28.1,<0.29" },
+    { name = "json-repair", specifier = ">=0.58.0,<1" },
+    { name = "openai", specifier = ">=2.0.0" },
+    { name = "openrouter", specifier = ">=0.9.1" },
+    { name = "pydantic", specifier = ">=2,<3" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
+    { name = "redis", marker = "extra == 'redis'", specifier = ">=6.4.0,<8" },
+    { name = "snoai-mda-config", specifier = ">=1.0.0,<2" },
+]
+provides-extras = ["redis", "dev"]
 
 [[package]]
 name = "snoai-mda-config"

@@ -11,7 +11,7 @@ on:
         default: true
         type: boolean
       publish_pypi:
-        description: "Publish llmix to PyPI"
+        description: "Publish sno-llmix to PyPI"
         required: false
         default: false
         type: boolean
