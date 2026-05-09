@@ -7,7 +7,8 @@ Gemini note: google-genai uses httpx internally, so HTTP/2 comes for free
 when httpx[http2] is installed (already in pyproject.toml deps). No explicit
 client injection is needed for Gemini -- the SDK handles it.
 
-Reference: repo-reference/llm-provider/src/llm_provider/providers/_registry.py
+Transport preferences are kept local to avoid provider-specific conditionals in
+the client call path.
 """
 
 from dataclasses import dataclass

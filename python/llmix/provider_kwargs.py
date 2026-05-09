@@ -5,7 +5,8 @@ parameters before the API call is made. This keeps provider-specific quirks
 (reasoning model parameter stripping, default extra_body injection, etc.)
 isolated from the main client code.
 
-Ported from repo-reference/llm-provider/src/llm_provider/providers/_registry.py
+Provider-specific behavior is isolated here so the main client dispatch path
+can stay provider-neutral.
 """
 
 import re
