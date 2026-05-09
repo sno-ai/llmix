@@ -60,12 +60,11 @@ the registry that production will read.
 
 Current runtime support is language-specific:
 
-- TypeScript can ask the MDA parser to verify integrity and signatures during
-  `loadMdaConfig(...)` and `ConfigRegistryPublisher.publish(...)`.
-- Python currently exposes MDA integrity checking for direct loads and registry
-  publishing.
-- Rust currently validates the LLMix MDA structure and registry files, but does
-  not verify MDA signatures.
+- TypeScript, Python, and Rust can ask the MDA parser to verify integrity,
+  enforce `requires.network`, and run verifier-hook based signature checks
+  during load or registry publish.
+- For signatures, pass a trust policy plus Rekor and Sigstore verifier
+  implementations; missing verifier pieces make publish/load fail.
 
 For production, the clean pattern is: verify or sign during release, publish the
 registry, ship the registry with the app, and keep deployed files read-only.
@@ -243,8 +242,7 @@ Optional object. If present, `strategy` is required.
 
 LLMix does not invent a second signing format for `metadata.snoai-llmix`.
 The `.mda` file is signed by MDA, and LLMix can ask MDA to check that signature
-when loading or publishing a registry in runtimes that expose signature
-verification.
+when loading or publishing a registry in Python, TypeScript, and Rust.
 
 Most application teams only need to know three things:
 
@@ -271,9 +269,8 @@ For production services, use a plain release flow:
 2. Sign those `.mda` files with the MDA signing workflow your team already uses.
    This is the step that says "this model config is approved."
 3. In CI or during release, publish the LLMix registry with verification checks
-   turned on. In TypeScript, the `trustPolicy` file says which signer you trust.
-   If a preset is unsigned or signed by the wrong identity, the publish step
-   fails.
+   turned on. The trust policy says which signer you trust. If a preset is
+   unsigned or signed by the wrong identity, the publish step fails.
 4. Ship the generated `snapshots/` directory and `current.json` with your app,
    package, or container image.
 5. In production, read only the published registry with
@@ -303,7 +300,8 @@ config/llm/
 ```
 
 TypeScript can require MDA integrity and signatures while publishing the
-registry files:
+registry files. For signed presets, pass a trust policy plus Rekor and Sigstore
+verifier implementations:
 
 ```typescript
 import { ConfigRegistryPublisher } from "@snoai/llmix";
@@ -313,8 +311,28 @@ const publisher = new ConfigRegistryPublisher("config/llm");
 await publisher.publish({
   verifyIntegrity: true,
   verifySignatures: true,
-  trustPolicy: "config/llm/trusted-signers.json",
+  trustPolicy,
+  rekorClient,
+  sigstoreVerifier,
 });
+```
+
+Rust exposes the same gate through `publish_with_mda_options(...)`:
+
+```rust
+use llmix_rs::{ConfigRegistryPublisher, MdaConfigLoadOptions};
+
+let publisher = ConfigRegistryPublisher::new("config/llm")?;
+let options = MdaConfigLoadOptions {
+    verify_integrity: true,
+    verify_signatures: true,
+    trust_policy: Some(trust_policy),
+    rekor_client: Some(&rekor_client),
+    sigstore_verifier: Some(&sigstore_verifier),
+    ..Default::default()
+};
+
+publisher.publish_with_mda_options(None, true, &options)?;
 ```
 
 Runtime code should then open the registry and select a module/preset pair:

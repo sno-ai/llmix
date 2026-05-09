@@ -8,7 +8,15 @@ from typing import Any, Literal, cast
 from pydantic import BaseModel, ConfigDict, Field
 from snoai_mda_config import MdaConfigError, load_mda_source
 
-from llmix.types import LLMConfig, ConfigAccessError, ConfigNotFoundError, InvalidConfigError, SecurityError, validate_module, validate_preset
+from llmix.types import (
+    LLMConfig,
+    ConfigAccessError,
+    ConfigNotFoundError,
+    InvalidConfigError,
+    SecurityError,
+    validate_module,
+    validate_preset,
+)
 
 __all__ = [
     "MdaConfigLoadOptions",
@@ -59,18 +67,20 @@ def _verify_path_containment(resolved_path: Path, base_dir: Path) -> None:
 
     try:
         real_base = normalized_base.resolve()
-    except (OSError, RuntimeError):
+    except OSError, RuntimeError:
         real_base = normalized_base
 
     try:
         real_path = normalized_path.resolve()
-    except (OSError, RuntimeError):
+    except OSError, RuntimeError:
         real_path = normalized_path
 
     try:
         real_path.relative_to(real_base)
     except ValueError:
-        raise SecurityError(f"Path traversal detected: {resolved_path} escapes base directory {base_dir}") from None
+        raise SecurityError(
+            f"Path traversal detected: {resolved_path} escapes base directory {base_dir}"
+        ) from None
 
 
 def _normalize_config_keys(value: Any) -> Any:
@@ -122,6 +132,12 @@ class MdaConfigLoadOptions:
     """Options passed through to the MDA source loader."""
 
     verify_integrity: bool = False
+    verify_signatures: bool = False
+    enforce_requires: bool = False
+    allowed_networks: list[str] | None = None
+    trust_policy: Any | None = None
+    rekor_client: Any | None = None
+    sigstore_verifier: Any | None = None
 
 
 class _StrictModel(BaseModel):
@@ -147,26 +163,46 @@ class _CommonParamsSchema(_StrictModel):
 
 
 class _LLMixMdaCommonSchema(_CommonParamsSchema):
-    provider: Literal["openai", "anthropic", "google", "deepseek", "openrouter", "deepinfra", "together", "novita", "sno-gpu"]
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "google",
+        "deepseek",
+        "openrouter",
+        "deepinfra",
+        "together",
+        "novita",
+        "sno-gpu",
+    ]
     model: str = Field(min_length=1)
 
 
 class _OpenAIProviderOptionsSchema(_StrictModel):
-    reasoning_effort: Literal["minimal", "low", "medium", "high", "xhigh"] | None = Field(default=None, alias="reasoningEffort")
+    reasoning_effort: Literal["minimal", "low", "medium", "high", "xhigh"] | None = (
+        Field(default=None, alias="reasoningEffort")
+    )
     parallel_tool_calls: bool | None = Field(default=None, alias="parallelToolCalls")
     user: str | None = None
     logprobs: bool | int | None = None
     logit_bias: dict[str, float] | None = Field(default=None, alias="logitBias")
     structured_outputs: bool | None = Field(default=None, alias="structuredOutputs")
     strict_json_schema: bool | None = Field(default=None, alias="strictJsonSchema")
-    max_completion_tokens: int | None = Field(default=None, alias="maxCompletionTokens", gt=0)
+    max_completion_tokens: int | None = Field(
+        default=None, alias="maxCompletionTokens", gt=0
+    )
     store: bool | None = None
     metadata: dict[str, str] | None = None
     prediction: dict[str, Any] | None = None
-    service_tier: Literal["auto", "flex", "priority", "default"] | None = Field(default=None, alias="serviceTier")
-    text_verbosity: Literal["low", "medium", "high"] | None = Field(default=None, alias="textVerbosity")
+    service_tier: Literal["auto", "flex", "priority", "default"] | None = Field(
+        default=None, alias="serviceTier"
+    )
+    text_verbosity: Literal["low", "medium", "high"] | None = Field(
+        default=None, alias="textVerbosity"
+    )
     prompt_cache_key: str | None = Field(default=None, alias="promptCacheKey")
-    prompt_cache_retention: Literal["in_memory", "24h"] | None = Field(default=None, alias="promptCacheRetention")
+    prompt_cache_retention: Literal["in_memory", "24h"] | None = Field(
+        default=None, alias="promptCacheRetention"
+    )
     safety_identifier: str | None = Field(default=None, alias="safetyIdentifier")
 
 
@@ -182,16 +218,24 @@ class _AnthropicCacheControlSchema(_StrictModel):
 
 class _AnthropicProviderOptionsSchema(_StrictModel):
     thinking: _AnthropicThinkingConfigSchema | None = None
-    cache_control: _AnthropicCacheControlSchema | None = Field(default=None, alias="cacheControl")
-    disable_parallel_tool_use: bool | None = Field(default=None, alias="disableParallelToolUse")
+    cache_control: _AnthropicCacheControlSchema | None = Field(
+        default=None, alias="cacheControl"
+    )
+    disable_parallel_tool_use: bool | None = Field(
+        default=None, alias="disableParallelToolUse"
+    )
     send_reasoning: bool | None = Field(default=None, alias="sendReasoning")
     effort: Literal["high", "medium", "low"] | None = None
     tool_streaming: bool | None = Field(default=None, alias="toolStreaming")
-    structured_output_mode: Literal["outputFormat", "jsonTool", "auto"] | None = Field(default=None, alias="structuredOutputMode")
+    structured_output_mode: Literal["outputFormat", "jsonTool", "auto"] | None = Field(
+        default=None, alias="structuredOutputMode"
+    )
 
 
 class _GoogleThinkingConfigSchema(_StrictModel):
-    thinking_level: Literal["low", "high"] | None = Field(default=None, alias="thinkingLevel")
+    thinking_level: Literal["low", "high"] | None = Field(
+        default=None, alias="thinkingLevel"
+    )
     thinking_budget: int | None = Field(default=None, alias="thinkingBudget", gt=0)
     include_thoughts: bool | None = Field(default=None, alias="includeThoughts")
 
@@ -202,11 +246,17 @@ class _GoogleSafetySettingSchema(_StrictModel):
 
 
 class _GoogleProviderOptionsSchema(_StrictModel):
-    thinking_config: _GoogleThinkingConfigSchema | None = Field(default=None, alias="thinkingConfig")
+    thinking_config: _GoogleThinkingConfigSchema | None = Field(
+        default=None, alias="thinkingConfig"
+    )
     cached_content: str | None = Field(default=None, alias="cachedContent")
     structured_outputs: bool | None = Field(default=None, alias="structuredOutputs")
-    safety_settings: list[_GoogleSafetySettingSchema] | None = Field(default=None, alias="safetySettings")
-    response_modalities: list[str] | None = Field(default=None, alias="responseModalities")
+    safety_settings: list[_GoogleSafetySettingSchema] | None = Field(
+        default=None, alias="safetySettings"
+    )
+    response_modalities: list[str] | None = Field(
+        default=None, alias="responseModalities"
+    )
 
 
 class _DeepSeekThinkingConfigSchema(_StrictModel):
@@ -242,11 +292,15 @@ class _ProviderOptionsSchema(_StrictModel):
 
 class _TimeoutConfigSchema(_StrictModel):
     total_time: float | None = Field(default=None, alias="totalTime", gt=0)
-    stream_first_chunk_time: float | None = Field(default=None, alias="streamFirstChunkTime", gt=0)
+    stream_first_chunk_time: float | None = Field(
+        default=None, alias="streamFirstChunkTime", gt=0
+    )
 
 
 class _CachingConfigSchema(_StrictModel):
-    strategy: Literal["native", "gateway", "disabled", "redis", "redis-or-memory", "memory"]
+    strategy: Literal[
+        "native", "gateway", "disabled", "redis", "redis-or-memory", "memory"
+    ]
     key: str | None = None
     ttl: int | None = Field(default=None, gt=0)
     max_items: int | None = Field(default=None, alias="maxItems", gt=0)
@@ -254,7 +308,9 @@ class _CachingConfigSchema(_StrictModel):
 
 class _LLMixMdaNamespaceSchema(_StrictModel):
     common: _LLMixMdaCommonSchema
-    provider_options: _ProviderOptionsSchema | None = Field(default=None, alias="providerOptions")
+    provider_options: _ProviderOptionsSchema | None = Field(
+        default=None, alias="providerOptions"
+    )
     timeout: _TimeoutConfigSchema | None = None
     description: str | None = None
     deprecated: bool | None = None
@@ -288,8 +344,25 @@ class _LLMixMdaPresetSchema(_StrictModel):
     relationships: list[dict[str, Any]] | None = None
 
 
-_VALID_PROVIDERS = {"openai", "anthropic", "google", "deepseek", "openrouter", "deepinfra", "together", "novita", "sno-gpu"}
-_VALID_CACHE_STRATEGIES = {"native", "gateway", "disabled", "redis", "redis-or-memory", "memory"}
+_VALID_PROVIDERS = {
+    "openai",
+    "anthropic",
+    "google",
+    "deepseek",
+    "openrouter",
+    "deepinfra",
+    "together",
+    "novita",
+    "sno-gpu",
+}
+_VALID_CACHE_STRATEGIES = {
+    "native",
+    "gateway",
+    "disabled",
+    "redis",
+    "redis-or-memory",
+    "memory",
+}
 _ANTHROPIC_MIN_BUDGET_TOKENS = 1024
 
 
@@ -324,13 +397,17 @@ def _dump_provider_options(value: _ProviderOptionsSchema) -> dict[str, Any]:
 def _reject_legacy_config_path(config_path: str) -> None:
     lower_path = config_path.lower()
     if lower_path.endswith(".yaml") or lower_path.endswith(".yml"):
-        raise InvalidConfigError(f"Python LLMix presets use .mda files; YAML presets are no longer supported: {config_path}")
+        raise InvalidConfigError(
+            f"Python LLMix presets use .mda files; YAML presets are no longer supported: {config_path}"
+        )
 
 
 def _ensure_mda_config_path(config_path: str) -> None:
     _reject_legacy_config_path(config_path)
     if not config_path.lower().endswith(".mda"):
-        raise InvalidConfigError(f"Python LLMix presets must use .mda files: {config_path}")
+        raise InvalidConfigError(
+            f"Python LLMix presets must use .mda files: {config_path}"
+        )
 
 
 def _map_mda_load_error(exc: Exception, file_path: Path) -> Exception:
@@ -371,12 +448,18 @@ def _require_non_negative_int(value: Any, path: str) -> None:
 
 
 def _require_finite_number(value: Any, path: str) -> float:
-    if not isinstance(value, (int, float)) or isinstance(value, bool) or not isfinite(float(value)):
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not isfinite(float(value))
+    ):
         raise InvalidConfigError(f"{path} must be a finite number")
     return float(value)
 
 
-def _require_number_range(value: Any, path: str, minimum: float, maximum: float) -> None:
+def _require_number_range(
+    value: Any, path: str, minimum: float, maximum: float
+) -> None:
     numeric_value = _require_finite_number(value, path)
     if numeric_value < minimum or numeric_value > maximum:
         raise InvalidConfigError(f"{path} must be between {minimum:g} and {maximum:g}")
@@ -407,7 +490,9 @@ def _validate_common(common: dict[str, Any], path: str) -> None:
 
 
 def _validate_caching(caching: dict[str, Any], path: str) -> None:
-    _require_literal(caching.get("strategy"), f"{path}.strategy", _VALID_CACHE_STRATEGIES)
+    _require_literal(
+        caching.get("strategy"), f"{path}.strategy", _VALID_CACHE_STRATEGIES
+    )
     if "ttl" in caching:
         _require_positive_int(caching["ttl"], f"{path}.ttl")
     if "max_items" in caching:
@@ -418,20 +503,38 @@ def _validate_timeout(timeout: dict[str, Any], path: str) -> None:
     if "total_time" in timeout:
         _require_positive_number(timeout["total_time"], f"{path}.total_time")
     if "stream_first_chunk_time" in timeout:
-        _require_positive_number(timeout["stream_first_chunk_time"], f"{path}.stream_first_chunk_time")
+        _require_positive_number(
+            timeout["stream_first_chunk_time"], f"{path}.stream_first_chunk_time"
+        )
 
 
-def _validate_provider_options(provider: str, provider_options: dict[str, Any], path: str) -> None:
+def _validate_provider_options(
+    provider: str, provider_options: dict[str, Any], path: str
+) -> None:
     if "openai" in provider_options:
         openai = _require_object(provider_options["openai"], f"{path}.openai")
         if "reasoning_effort" in openai:
-            _require_literal(openai["reasoning_effort"], f"{path}.openai.reasoning_effort", {"minimal", "low", "medium", "high", "xhigh"})
+            _require_literal(
+                openai["reasoning_effort"],
+                f"{path}.openai.reasoning_effort",
+                {"minimal", "low", "medium", "high", "xhigh"},
+            )
         if "max_completion_tokens" in openai:
-            _require_positive_int(openai["max_completion_tokens"], f"{path}.openai.max_completion_tokens")
+            _require_positive_int(
+                openai["max_completion_tokens"], f"{path}.openai.max_completion_tokens"
+            )
         if "service_tier" in openai:
-            _require_literal(openai["service_tier"], f"{path}.openai.service_tier", {"auto", "flex", "priority", "default"})
+            _require_literal(
+                openai["service_tier"],
+                f"{path}.openai.service_tier",
+                {"auto", "flex", "priority", "default"},
+            )
         if "text_verbosity" in openai:
-            _require_literal(openai["text_verbosity"], f"{path}.openai.text_verbosity", {"low", "medium", "high"})
+            _require_literal(
+                openai["text_verbosity"],
+                f"{path}.openai.text_verbosity",
+                {"low", "medium", "high"},
+            )
 
     if "anthropic" in provider_options:
         anthropic = _require_object(provider_options["anthropic"], f"{path}.anthropic")
@@ -439,10 +542,21 @@ def _validate_provider_options(provider: str, provider_options: dict[str, Any], 
         if thinking is not None:
             thinking_obj = _require_object(thinking, f"{path}.anthropic.thinking")
             if "type" in thinking_obj:
-                _require_literal(thinking_obj["type"], f"{path}.anthropic.thinking.type", {"enabled", "disabled"})
+                _require_literal(
+                    thinking_obj["type"],
+                    f"{path}.anthropic.thinking.type",
+                    {"enabled", "disabled"},
+                )
             if "budget_tokens" in thinking_obj:
-                _require_positive_int(thinking_obj["budget_tokens"], f"{path}.anthropic.thinking.budget_tokens")
-                if provider == "anthropic" and thinking_obj.get("type") == "enabled" and thinking_obj["budget_tokens"] < _ANTHROPIC_MIN_BUDGET_TOKENS:
+                _require_positive_int(
+                    thinking_obj["budget_tokens"],
+                    f"{path}.anthropic.thinking.budget_tokens",
+                )
+                if (
+                    provider == "anthropic"
+                    and thinking_obj.get("type") == "enabled"
+                    and thinking_obj["budget_tokens"] < _ANTHROPIC_MIN_BUDGET_TOKENS
+                ):
                     raise InvalidConfigError(
                         f"{path}.anthropic.thinking.budget_tokens must be >= {_ANTHROPIC_MIN_BUDGET_TOKENS} when Anthropic thinking is enabled"
                     )
@@ -453,9 +567,16 @@ def _validate_provider_options(provider: str, provider_options: dict[str, Any], 
         if thinking is not None:
             thinking_obj = _require_object(thinking, f"{path}.google.thinking_config")
             if "thinking_level" in thinking_obj:
-                _require_literal(thinking_obj["thinking_level"], f"{path}.google.thinking_config.thinking_level", {"low", "high"})
+                _require_literal(
+                    thinking_obj["thinking_level"],
+                    f"{path}.google.thinking_config.thinking_level",
+                    {"low", "high"},
+                )
             if "thinking_budget" in thinking_obj:
-                _require_positive_int(thinking_obj["thinking_budget"], f"{path}.google.thinking_config.thinking_budget")
+                _require_positive_int(
+                    thinking_obj["thinking_budget"],
+                    f"{path}.google.thinking_config.thinking_budget",
+                )
 
     if "deepseek" in provider_options:
         deepseek = _require_object(provider_options["deepseek"], f"{path}.deepseek")
@@ -463,16 +584,28 @@ def _validate_provider_options(provider: str, provider_options: dict[str, Any], 
         if thinking is not None:
             thinking_obj = _require_object(thinking, f"{path}.deepseek.thinking")
             if "type" in thinking_obj:
-                _require_literal(thinking_obj["type"], f"{path}.deepseek.thinking.type", {"enabled", "disabled"})
+                _require_literal(
+                    thinking_obj["type"],
+                    f"{path}.deepseek.thinking.type",
+                    {"enabled", "disabled"},
+                )
 
     for provider_name in ("deepinfra", "novita", "sno-gpu"):
         if provider_name not in provider_options:
             continue
-        provider_value = _require_object(provider_options[provider_name], f"{path}.{provider_name}")
+        provider_value = _require_object(
+            provider_options[provider_name], f"{path}.{provider_name}"
+        )
         if "enable_thinking" in provider_value:
-            _require_bool(provider_value["enable_thinking"], f"{path}.{provider_name}.enable_thinking")
+            _require_bool(
+                provider_value["enable_thinking"],
+                f"{path}.{provider_name}.enable_thinking",
+            )
         if "thinking_budget" in provider_value:
-            _require_positive_int(provider_value["thinking_budget"], f"{path}.{provider_name}.thinking_budget")
+            _require_positive_int(
+                provider_value["thinking_budget"],
+                f"{path}.{provider_name}.thinking_budget",
+            )
 
 
 def _validate_runtime_config(value: dict[str, Any], source: str | Path) -> None:
@@ -494,10 +627,16 @@ def _validate_runtime_config(value: dict[str, Any], source: str | Path) -> None:
         _validate_timeout(_require_object(timeout, "timeout"), "timeout")
     provider_options = value.get("provider_options")
     if provider_options is not None:
-        _validate_provider_options(provider, _require_object(provider_options, "provider_options"), "provider_options")
+        _validate_provider_options(
+            provider,
+            _require_object(provider_options, "provider_options"),
+            "provider_options",
+        )
 
 
-def _project_mda_preset_to_config(preset: _LLMixMdaPresetSchema, source: Path) -> LLMConfig:
+def _project_mda_preset_to_config(
+    preset: _LLMixMdaPresetSchema, source: Path
+) -> LLMConfig:
     namespace = preset.metadata.snoai_llmix
     config = _normalize_config_shape({"common": _dump_model(namespace.common)})
 
@@ -526,24 +665,35 @@ def _project_mda_preset_to_config(preset: _LLMixMdaPresetSchema, source: Path) -
     return cast(LLMConfig, config)
 
 
-def build_mda_config_file_path(config_dir: str | Path, module: str, preset: str) -> Path:
+def build_mda_config_file_path(
+    config_dir: str | Path, module: str, preset: str
+) -> Path:
     """Build the standard MDA config path for a module preset."""
     validate_module(module)
     validate_preset(preset)
     return Path(config_dir).expanduser().resolve() / module / f"{preset}.mda"
 
 
-def load_mda_config(path: str | Path, options: MdaConfigLoadOptions | None = None) -> LLMConfig:
+def load_mda_config(
+    path: str | Path, options: MdaConfigLoadOptions | None = None
+) -> LLMConfig:
     """Load an explicit LLMix MDA source file."""
     _ensure_mda_config_path(str(path))
     requested_path = Path(path).expanduser()
     _verify_path_containment(requested_path, requested_path.parent)
     file_path = requested_path.resolve()
     try:
+        load_options = options or MdaConfigLoadOptions()
         preset = load_mda_source(
             file_path,
             schema=_LLMixMdaPresetSchema,
-            verify_integrity=bool(options.verify_integrity) if options else False,
+            verify_integrity=bool(load_options.verify_integrity),
+            verify_signatures=bool(load_options.verify_signatures),
+            enforce_requires=bool(load_options.enforce_requires),
+            allowed_networks=load_options.allowed_networks,
+            trust_policy=load_options.trust_policy,
+            rekor_client=load_options.rekor_client,
+            sigstore_verifier=load_options.sigstore_verifier,
         )
     except Exception as exc:
         mapped = _map_mda_load_error(exc, file_path)
@@ -553,7 +703,9 @@ def load_mda_config(path: str | Path, options: MdaConfigLoadOptions | None = Non
     return _project_mda_preset_to_config(cast(_LLMixMdaPresetSchema, preset), file_path)
 
 
-def load_mda_config_preset(name: str, base_dir: str | Path, options: MdaConfigLoadOptions | None = None) -> LLMConfig:
+def load_mda_config_preset(
+    name: str, base_dir: str | Path, options: MdaConfigLoadOptions | None = None
+) -> LLMConfig:
     """
     Load a preset file from ``{base_dir}/{name}.mda``.
 

@@ -333,7 +333,10 @@ application/vnd.snoai-llmix.preset+json
 
 LLMix does not invent a separate signature envelope. Sigstore signature
 verification, integrity fields, and trust policy are delegated to the MDA
-mechanism layer.
+mechanism layer. Python, TypeScript, and Rust can require integrity,
+`requires.network`, and verifier-hook based signature verification during load
+or registry publish. Real Rekor transport and Sigstore cryptography are supplied
+by caller-provided clients/verifiers.
 
 Direct MDA loading helpers still exist for authoring tools and tests:
 
@@ -341,7 +344,7 @@ Direct MDA loading helpers still exist for authoring tools and tests:
 | --- | --- |
 | Python | `load_mda_config(path)`, `load_mda_config_preset(name, base_dir)` |
 | TypeScript | `loadMdaConfig(path)`, `loadMdaConfigPreset(name, baseDir)` |
-| Rust | `load_config(path)`, `load_config_preset(name, base_dir)` |
+| Rust | `load_config(path)`, `load_config_with_options(path, options)`, `load_config_preset(name, base_dir)` |
 
 For server runtime code, use `ConfigRegistryManager`.
 

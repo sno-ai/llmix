@@ -239,6 +239,27 @@ let config = load_config("./config/llm/search/summary.mda")?;
 let preset = load_config_preset("summary", "./config/llm/search")?;
 ```
 
+Enable MDA safety checks when you load or publish `.mda` files:
+
+```rust
+use llmix_rs::{load_config_with_options, MdaConfigLoadOptions};
+
+let config = load_config_with_options(
+    "./config/llm/search/summary.mda",
+    &MdaConfigLoadOptions {
+        verify_integrity: true,
+        enforce_requires: true,
+        allowed_networks: vec!["api.openai.com".to_owned()],
+        ..Default::default()
+    },
+)?;
+```
+
+For signed presets, also set `verify_signatures: true` and pass a
+`TrustPolicy`, `RekorClient`, and `SigstoreVerifier`. LLMix fails the load or
+publish step if the file is invalid, unsigned when signatures are required, or
+missing verifier pieces.
+
 For production runtime code, prefer `ConfigRegistryManager`.
 
 ## Public Runtime Knobs

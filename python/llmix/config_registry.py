@@ -21,8 +21,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 
-from llmix.mda_loader import MdaConfigLoadOptions, _validate_runtime_config, _verify_path_containment, load_mda_config
-from llmix.types import ConfigAccessError, ConfigNotFoundError, InvalidConfigError, SecurityError, validate_module, validate_preset
+from llmix.mda_loader import (
+    MdaConfigLoadOptions,
+    _validate_runtime_config,
+    _verify_path_containment,
+    load_mda_config,
+)
+from llmix.types import (
+    ConfigAccessError,
+    ConfigNotFoundError,
+    InvalidConfigError,
+    SecurityError,
+    validate_module,
+    validate_preset,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +59,12 @@ class ConfigRegistryPublishOptions:
     """Options for publishing authoring MDA into an immutable registry snapshot."""
 
     verify_integrity: bool = False
+    verify_signatures: bool = False
+    enforce_requires: bool = False
+    allowed_networks: list[str] | None = None
+    trust_policy: Any | None = None
+    rekor_client: Any | None = None
+    sigstore_verifier: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -79,9 +97,13 @@ def _sha256_file(path: Path) -> str:
                     break
                 digest.update(chunk)
     except FileNotFoundError:
-        raise ConfigNotFoundError(f"Required registry artifact not found: {path}") from None
+        raise ConfigNotFoundError(
+            f"Required registry artifact not found: {path}"
+        ) from None
     except PermissionError:
-        raise ConfigAccessError(f"Permission denied reading registry artifact: {path}") from None
+        raise ConfigAccessError(
+            f"Permission denied reading registry artifact: {path}"
+        ) from None
     return digest.hexdigest()
 
 
@@ -91,12 +113,16 @@ def _read_json_file(path: Path) -> dict[str, Any]:
     except FileNotFoundError:
         raise ConfigNotFoundError(f"Required registry file not found: {path}") from None
     except PermissionError:
-        raise ConfigAccessError(f"Permission denied reading registry file: {path}") from None
+        raise ConfigAccessError(
+            f"Permission denied reading registry file: {path}"
+        ) from None
 
     try:
         value = json.loads(content)
     except json.JSONDecodeError as exc:
-        raise InvalidConfigError(f"Invalid JSON in registry file {path}: {exc}") from exc
+        raise InvalidConfigError(
+            f"Invalid JSON in registry file {path}: {exc}"
+        ) from exc
 
     if not isinstance(value, dict):
         raise InvalidConfigError(f"Registry file must contain a JSON object: {path}")
@@ -132,14 +158,14 @@ def _fsync_file(path: Path) -> None:
     try:
         with path.open("rb") as handle:
             os.fsync(handle.fileno())
-    except (AttributeError, OSError):
+    except AttributeError, OSError:
         return
 
 
 def _fsync_dir(path: Path) -> None:
     try:
         fd = os.open(path, os.O_RDONLY)
-    except (AttributeError, OSError):
+    except AttributeError, OSError:
         return
     try:
         os.fsync(fd)
@@ -175,7 +201,9 @@ def _parse_mda_preset_name(path: Path) -> str | None:
 def _require_manifest_string(entry: dict[str, Any], key: str, preset_id: str) -> str:
     value = entry.get(key)
     if not isinstance(value, str):
-        raise InvalidConfigError(f"Config Registry manifest entry is missing {key}: {preset_id}")
+        raise InvalidConfigError(
+            f"Config Registry manifest entry is missing {key}: {preset_id}"
+        )
     return value
 
 
@@ -197,7 +225,9 @@ class ConfigRegistryPublisher:
         options: ConfigRegistryPublishOptions | None = None,
     ) -> PublishedRevision:
         with _PUBLISH_LOCK:
-            return self._publish_locked(revision=revision, activate=activate, options=options)
+            return self._publish_locked(
+                revision=revision, activate=activate, options=options
+            )
 
     def _publish_locked(
         self,
@@ -208,7 +238,9 @@ class ConfigRegistryPublisher:
     ) -> PublishedRevision:
         presets = self._discover_presets()
         if not presets:
-            raise ConfigNotFoundError(f"No authoring presets found under {self.authoring_dir}")
+            raise ConfigNotFoundError(
+                f"No authoring presets found under {self.authoring_dir}"
+            )
 
         published_at = _utcnow()
         revision_id = revision or self._build_revision_id(presets, published_at)
@@ -225,8 +257,22 @@ class ConfigRegistryPublisher:
             shutil.rmtree(stage_dir)
 
         try:
-            load_options = MdaConfigLoadOptions(verify_integrity=bool(options.verify_integrity)) if options else None
-            manifest = self._build_staged_snapshot(stage_dir, presets, revision_id, published_at, load_options)
+            load_options = (
+                MdaConfigLoadOptions(
+                    verify_integrity=bool(options.verify_integrity),
+                    verify_signatures=bool(options.verify_signatures),
+                    enforce_requires=bool(options.enforce_requires),
+                    allowed_networks=options.allowed_networks,
+                    trust_policy=options.trust_policy,
+                    rekor_client=options.rekor_client,
+                    sigstore_verifier=options.sigstore_verifier,
+                )
+                if options
+                else None
+            )
+            manifest = self._build_staged_snapshot(
+                stage_dir, presets, revision_id, published_at, load_options
+            )
             self._verify_staged_snapshot(stage_dir, manifest)
             snapshot_dir.parent.mkdir(parents=True, exist_ok=True)
             self.staging_dir.mkdir(parents=True, exist_ok=True)
@@ -252,7 +298,9 @@ class ConfigRegistryPublisher:
 
     def _discover_presets(self) -> list[_PresetSource]:
         if not self.authoring_dir.exists():
-            raise ConfigNotFoundError(f"Authoring directory not found: {self.authoring_dir}")
+            raise ConfigNotFoundError(
+                f"Authoring directory not found: {self.authoring_dir}"
+            )
 
         presets: list[_PresetSource] = []
         for module_dir in sorted(self.authoring_dir.iterdir()):
@@ -269,7 +317,9 @@ class ConfigRegistryPublisher:
                 _verify_path_containment(path, self.authoring_dir)
 
                 if _is_legacy_yaml_authoring_path(path):
-                    raise InvalidConfigError(f"Legacy YAML authoring presets are no longer supported; use .mda: {path}")
+                    raise InvalidConfigError(
+                        f"Legacy YAML authoring presets are no longer supported; use .mda: {path}"
+                    )
 
                 preset_name = _parse_mda_preset_name(path)
                 if preset_name is None:
@@ -288,10 +338,16 @@ class ConfigRegistryPublisher:
 
         return presets
 
-    def _build_revision_id(self, presets: list[_PresetSource], published_at: datetime) -> str:
+    def _build_revision_id(
+        self, presets: list[_PresetSource], published_at: datetime
+    ) -> str:
         digest = hashlib.sha256()
         for preset in presets:
-            digest.update(str(preset.authoring_path.relative_to(self.authoring_dir)).encode("utf-8"))
+            digest.update(
+                str(preset.authoring_path.relative_to(self.authoring_dir)).encode(
+                    "utf-8"
+                )
+            )
             digest.update(b"\0")
             digest.update(preset.authoring_path.read_bytes())
             digest.update(b"\0")
@@ -337,18 +393,26 @@ class ConfigRegistryPublisher:
         _write_json(stage_dir / "manifest.json", manifest)
         return manifest
 
-    def _verify_staged_snapshot(self, stage_dir: Path, manifest: dict[str, Any]) -> None:
+    def _verify_staged_snapshot(
+        self, stage_dir: Path, manifest: dict[str, Any]
+    ) -> None:
         stored_manifest = _read_json_file(stage_dir / "manifest.json")
         if stored_manifest != manifest:
-            raise InvalidConfigError("Staged registry manifest changed during verification")
+            raise InvalidConfigError(
+                "Staged registry manifest changed during verification"
+            )
 
         presets = manifest.get("presets")
         if not isinstance(presets, dict):
-            raise InvalidConfigError("Registry manifest presets index must be an object")
+            raise InvalidConfigError(
+                "Registry manifest presets index must be an object"
+            )
 
         for preset_id, entry in presets.items():
             if not isinstance(entry, dict):
-                raise InvalidConfigError(f"Registry manifest entry must be an object: {preset_id}")
+                raise InvalidConfigError(
+                    f"Registry manifest entry must be an object: {preset_id}"
+                )
 
             for sha_key, path_key in (
                 ("authoring_sha256", "authoring_path"),
@@ -356,14 +420,20 @@ class ConfigRegistryPublisher:
             ):
                 relative_path = entry.get(path_key)
                 expected_sha = entry.get(sha_key)
-                if not isinstance(relative_path, str) or not isinstance(expected_sha, str):
-                    raise InvalidConfigError(f"Registry manifest entry is missing {path_key} or {sha_key}: {preset_id}")
+                if not isinstance(relative_path, str) or not isinstance(
+                    expected_sha, str
+                ):
+                    raise InvalidConfigError(
+                        f"Registry manifest entry is missing {path_key} or {sha_key}: {preset_id}"
+                    )
 
                 artifact_path = stage_dir / relative_path
                 _verify_path_containment(artifact_path, stage_dir)
                 actual_sha = _sha256_file(artifact_path)
                 if actual_sha != expected_sha:
-                    raise InvalidConfigError(f"Checksum mismatch for staged registry artifact {artifact_path}")
+                    raise InvalidConfigError(
+                        f"Checksum mismatch for staged registry artifact {artifact_path}"
+                    )
 
 
 class ConfigRegistryManager:
@@ -420,7 +490,9 @@ class ConfigRegistryManager:
         with self._lock:
             config = self._configs.get(preset_id)
             if config is None:
-                raise ConfigNotFoundError(f"Preset not found in active Config Registry revision {self.active_revision}: {preset_id}")
+                raise ConfigNotFoundError(
+                    f"Preset not found in active Config Registry revision {self.active_revision}: {preset_id}"
+                )
             return copy.deepcopy(config)
 
     def _load_initial_revision(self) -> None:
@@ -465,38 +537,56 @@ class ConfigRegistryManager:
         pointer = _read_json_file(self.current_path)
         revision = pointer.get("revision")
         if not isinstance(revision, str):
-            raise InvalidConfigError(f"Config Registry pointer is missing string field 'revision': {self.current_path}")
+            raise InvalidConfigError(
+                f"Config Registry pointer is missing string field 'revision': {self.current_path}"
+            )
         _validate_revision(revision)
         return revision
 
-    def _load_revision(self, revision: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    def _load_revision(
+        self, revision: str
+    ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
         _validate_revision(revision)
         snapshot_dir = self.snapshots_dir / revision
         if not snapshot_dir.exists():
-            raise ConfigNotFoundError(f"Config Registry snapshot not found: {snapshot_dir}")
+            raise ConfigNotFoundError(
+                f"Config Registry snapshot not found: {snapshot_dir}"
+            )
 
         manifest_path = snapshot_dir / "manifest.json"
         manifest = _read_json_file(manifest_path)
 
         manifest_revision = manifest.get("revision")
         if manifest_revision != revision:
-            raise InvalidConfigError(f"Config Registry manifest revision mismatch in {manifest_path}")
+            raise InvalidConfigError(
+                f"Config Registry manifest revision mismatch in {manifest_path}"
+            )
         if manifest.get("schema_version") != _MANIFEST_SCHEMA_VERSION:
-            raise InvalidConfigError(f"Unsupported Config Registry manifest schema version in {manifest_path}")
+            raise InvalidConfigError(
+                f"Unsupported Config Registry manifest schema version in {manifest_path}"
+            )
 
         presets = manifest.get("presets")
         if not isinstance(presets, dict):
-            raise InvalidConfigError(f"Config Registry manifest presets index must be an object: {manifest_path}")
+            raise InvalidConfigError(
+                f"Config Registry manifest presets index must be an object: {manifest_path}"
+            )
 
         configs: dict[str, dict[str, Any]] = {}
         for preset_id, entry in presets.items():
             if not isinstance(preset_id, str) or not isinstance(entry, dict):
-                raise InvalidConfigError(f"Invalid Config Registry manifest entry in {manifest_path}")
+                raise InvalidConfigError(
+                    f"Invalid Config Registry manifest entry in {manifest_path}"
+                )
 
             _require_manifest_string(entry, "authoring_path", preset_id)
             _require_manifest_string(entry, "authoring_sha256", preset_id)
-            resolved_path = self._resolve_snapshot_artifact(snapshot_dir, entry, "resolved_path", preset_id)
-            self._verify_snapshot_checksum(resolved_path, entry, "resolved_sha256", preset_id)
+            resolved_path = self._resolve_snapshot_artifact(
+                snapshot_dir, entry, "resolved_path", preset_id
+            )
+            self._verify_snapshot_checksum(
+                resolved_path, entry, "resolved_sha256", preset_id
+            )
 
             resolved = _read_json_file(resolved_path)
             _validate_resolved_config(resolved_path, resolved)
@@ -504,21 +594,31 @@ class ConfigRegistryManager:
 
         return manifest, configs
 
-    def _resolve_snapshot_artifact(self, snapshot_dir: Path, entry: dict[str, Any], key: str, preset_id: str) -> Path:
+    def _resolve_snapshot_artifact(
+        self, snapshot_dir: Path, entry: dict[str, Any], key: str, preset_id: str
+    ) -> Path:
         relative_path = entry.get(key)
         if not isinstance(relative_path, str):
-            raise InvalidConfigError(f"Config Registry manifest entry is missing {key}: {preset_id}")
+            raise InvalidConfigError(
+                f"Config Registry manifest entry is missing {key}: {preset_id}"
+            )
         artifact_path = snapshot_dir / relative_path
         _verify_path_containment(artifact_path, snapshot_dir)
         return artifact_path
 
-    def _verify_snapshot_checksum(self, path: Path, entry: dict[str, Any], key: str, preset_id: str) -> None:
+    def _verify_snapshot_checksum(
+        self, path: Path, entry: dict[str, Any], key: str, preset_id: str
+    ) -> None:
         expected = entry.get(key)
         if not isinstance(expected, str):
-            raise InvalidConfigError(f"Config Registry manifest entry is missing {key}: {preset_id}")
+            raise InvalidConfigError(
+                f"Config Registry manifest entry is missing {key}: {preset_id}"
+            )
         actual = _sha256_file(path)
         if actual != expected:
-            raise InvalidConfigError(f"Checksum mismatch for Config Registry artifact {path}")
+            raise InvalidConfigError(
+                f"Checksum mismatch for Config Registry artifact {path}"
+            )
 
     def _record_reload_error(self, exc: Exception) -> None:
         self._last_reload_error = exc
