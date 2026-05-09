@@ -8,20 +8,55 @@
 [![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-b7410e.svg?labelColor=3b3b3b)](https://www.rust-lang.org/)
 [![License: Apache--2.0](https://img.shields.io/badge/License-Apache--2.0-97ca00.svg?labelColor=3b3b3b)](LICENSE)
 
-> **Config-driven harness around your LLM SDK.**
-> Swap models by editing MDA presets. Keep the SDK you already use.
+Read in other languages: **English** · [中文](docs/readme/README.zh-CN.md) · [Deutsch](docs/readme/README.de.md) · [Español](docs/readme/README.es.md) · [Français](docs/readme/README.fr.md) · [Русский](docs/readme/README.ru.md) · [한국어](docs/readme/README.ko.md) · [日本語](docs/readme/README.ja.md) · [हिन्दी](docs/readme/README.hi.md)
 
-LLMix sits **above** your existing LLM client — `openai`, `anthropic`, AI SDK, LiteLLM, anything with a callable signature — and wraps it with the production primitives you'd otherwise rebuild from scratch: an MDA-driven config layer, a two-tier response cache, a circuit breaker, key-pool rotation, and singleflight deduplication.
+> Config-driven LLM calls for Python, TypeScript, and Rust.
+> Keep your SDK. Move model behavior into MDA presets. Put cache, retries, key rotation, and rollout control around the call.
 
-Provider, model, and parameters can live in a `.mda` preset. Edit the preset, publish or reload config, and get a different model at runtime. **No redeploy.**
+LLMix is the layer between your product and the provider SDK.
+
+It does not ask you to rewrite your OpenAI, Anthropic, Gemini, LiteLLM, AI SDK, or custom client code. It wraps the call. The boring parts go around it: response cache, circuit breaker, key pools, singleflight, retry policy, adaptive concurrency, provider kwargs, and MDA config loading.
+
+The model stops being a hard-coded string buried in application code. It becomes data. Change a preset, publish a registry snapshot, reload the service, and the next request can run a different provider or model. No redeploy for the usual model swap dance.
+
+That is the whole thing. Small layer. Sharp edges filed down.
 
 ---
 
-## At a Glance
+## Why It Exists
 
-![LLMix wraps your existing LLM SDK stack with MDA config, cache, resilience, and key-pool primitives.](docs/images/llmix-wraps-sdk.png)
+AI products in 2026 do not usually fail because one SDK call is hard.
 
-**Works with:** AI SDK v6 · `openai` (Py/JS) · `anthropic` · `google-genai` · LiteLLM · any async callable that returns your model's response.
+They fail in the spaces around the call. A key gets rate limited. A provider gets slow. Two hundred users ask the same thing at once. A model swap needs a deploy. A cache key differs by one invisible parameter. One service is in Python, another is in TypeScript, and the Rust worker has to follow the same contract.
+
+LLMix is for that part of the system. The signal chain between your app and the model.
+
+You still own the prompt. You still own the SDK. LLMix owns the harness.
+
+---
+
+## Install
+
+| Runtime | Package | Import path |
+|---------|---------|-------------|
+| TypeScript | `npm install @snoai/llmix` | `@snoai/llmix` |
+| Python | `pip install sno-llmix` | `llmix` |
+| Rust | `cargo add llmix-rs` | `llmix_rs` |
+
+Python uses `sno-llmix` on PyPI because `llmix` was already taken. The import path is still `llmix`.
+
+Provider helpers use optional SDKs. Install only the provider clients you call.
+
+```bash
+# TypeScript OpenAI-compatible helpers
+npm install ai @ai-sdk/openai
+
+# Python Redis cache support
+pip install "sno-llmix[redis]"
+
+# Rust OpenAI helper and Redis cache
+cargo add llmix-rs --features providers-openai,redis
+```
 
 ---
 
@@ -31,113 +66,169 @@ Provider, model, and parameters can live in a `.mda` preset. Edit the preset, pu
 - [TypeScript guide](docs/llmix-typescript.md)
 - [Python guide](docs/llmix-python.md)
 - [Rust guide](docs/llmix-rust.md)
+- [MDA vendor namespace](docs/mda-vendor-namespace.md)
+- [Key pool operations](docs/key-pool-operations.md)
 
 ---
 
-## Three Things It Does
+## At a Glance
 
-**Config-driven model swap.** Provider, model, and params are *data*, not code. Drop in a new MDA preset, the next call can route to a different provider. Built for agent harnesses that reshape behavior via config, not redeploys.
+![LLMix wraps your existing LLM SDK stack with MDA config, cache, resilience, and key-pool primitives.](docs/images/llmix-wraps-sdk.png)
 
-**Production resilience, no extra code.** Two-tier cache (L1 memory + L2 Redis), circuit breaker, key-pool rotation with auto-eviction of dead keys, single flight dedup, adaptive concurrency, retries that honor `Retry-After`. Composable with whatever SDK you already ship.
+LLMix wraps one provider call at a time.
 
-**Runtime parity.** Python, TypeScript, and Rust share byte-identical cache keys and retry semantics. Config authoring now uses MDA Source Mode across all three runtimes. (`llmix-rs` is currently beta — see [`rust/llmix-rs/README.md`](rust/llmix-rs/README.md).)
+It is not a router in the LiteLLM sense. It is closer to the harness you keep rebuilding around every agent, coder tool, extraction service, and internal AI workflow once traffic becomes real.
 
 ---
 
 ## Quick Start
 
-### Python
-
-```bash
-pip install sno-llmix
-```
-
-```python
-from llmix import (
-    CallInput, CallPipeline, KeyPool, PipelineConfig,
-    TwoTierCache, openai_dispatch,
-)
-
-pipeline = CallPipeline(PipelineConfig(
-    dispatch=openai_dispatch(),
-    response_cache=TwoTierCache("memory"),
-))
-pipeline.set_key_pool("openai", KeyPool(["sk-..."]))
-
-response = await pipeline.call(CallInput(
-    config={
-        "provider": "openai",
-        "model": "gpt-4.1-mini",
-        "common": {"temperature": 0.7, "max_output_tokens": 1024},
-        "caching": {"strategy": "memory"},
-    },
-    messages=[{"role": "user", "content": "Summarize this article..."}],
-))
-
-print(response.content, response.cache_hit)
-```
-
 ### TypeScript
 
 ```typescript
-import { CallPipeline, KeyPool, TwoTierCache, openaiDispatch } from "@snoai/llmix";
+import {
+  CallPipeline,
+  KeyPool,
+  TwoTierCache,
+  openaiDispatch,
+} from "@snoai/llmix";
 
 const pipeline = new CallPipeline({
   dispatch: openaiDispatch(),
   responseCache: new TwoTierCache("memory"),
 });
-pipeline.setKeyPool("openai", new KeyPool(["sk-..."]));
+
+pipeline.setKeyPool("openai", new KeyPool([process.env.OPENAI_API_KEY!]));
 
 const response = await pipeline.call({
   config: {
     provider: "openai",
-    model: "gpt-4.1-mini",
-    common: { temperature: 0.2, maxOutputTokens: 2048 },
+    model: "gpt-4o-mini",
+    common: { temperature: 0.2, maxOutputTokens: 512 },
     caching: { strategy: "memory" },
   },
-  messages: [{ role: "user", content: "Extract entities from this text." }],
+  messages: [
+    { role: "user", content: "Explain LLMix in one sentence." },
+  ],
 });
 
-console.log(response.content, response.usage);
+console.log(response.content);
+await pipeline.close();
+```
+
+### Python
+
+```python
+import asyncio
+import os
+
+from llmix import (
+    CallInput,
+    CallPipeline,
+    KeyPool,
+    PipelineConfig,
+    TwoTierCache,
+    openai_dispatch,
+)
+
+
+async def main() -> None:
+    pipeline = CallPipeline(
+        PipelineConfig(
+            dispatch=openai_dispatch(),
+            response_cache=TwoTierCache("memory"),
+        )
+    )
+
+    pipeline.set_key_pool("openai", KeyPool([os.environ["OPENAI_API_KEY"]]))
+
+    response = await pipeline.call(
+        CallInput(
+            config={
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "common": {"temperature": 0.2, "max_output_tokens": 512},
+                "caching": {"strategy": "memory"},
+            },
+            messages=[
+                {"role": "user", "content": "Explain LLMix in one sentence."}
+            ],
+        )
+    )
+
+    print(response.content)
+    await pipeline.close()
+
+
+asyncio.run(main())
 ```
 
 ### Rust
 
+Rust exposes the same pipeline contract. The OpenAI helper is feature-gated.
+
+```toml
+[dependencies]
+llmix-rs = { version = "2.0.0", features = ["providers-openai"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt"] }
+```
+
 ```rust
 use llmix_rs::{
-    CallInput, CallPipeline, DispatchContext, KeyPool, LlmUsage,
-    PipelineConfig, ProviderResult,
+    load_keys_from_env, CallInput, CallPipeline, OpenAiChatHelper, PipelineConfig,
 };
 use serde_json::json;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let pipeline = CallPipeline::new(PipelineConfig::new(|ctx: DispatchContext| async move {
-        Ok(ProviderResult {
-            content: format!("echo: {}", ctx.messages.last().and_then(|m| m.get("content")).and_then(|v| v.as_str()).unwrap_or("")),
-            model: ctx.model,
-            usage: LlmUsage { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
-            headers: None,
-            tool_calls: None,
-        })
-    }))?;
-    pipeline.set_key_pool("openai", KeyPool::new(vec!["sk-...".into()])?);
+let pipeline = CallPipeline::new(PipelineConfig::new(OpenAiChatHelper::new()))?;
+pipeline.set_key_pool("openai", load_keys_from_env("openai")?);
 
-    let response = pipeline.call(CallInput {
-        config: json!({"provider": "openai", "model": "gpt-4o-mini"}),
-        messages: vec![json!({"role": "user", "content": "Extract entities."})],
+let response = pipeline
+    .call(CallInput {
+        config: json!({
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "common": { "temperature": 0.2, "max_output_tokens": 512 },
+            "caching": { "strategy": "memory" }
+        }),
+        messages: vec![json!({
+            "role": "user",
+            "content": "Explain LLMix in one sentence."
+        })],
         singleflight_key: None,
-    }).await;
-
-    println!("{}", response.content);
-    pipeline.close().await;
-    Ok(())
-}
+    })
+    .await;
 ```
 
-### MDA Presets
+See the [Rust guide](docs/llmix-rust.md) for full `main` examples and feature flags.
+
+---
+
+## What You Get Around Every Call
+
+![LLMix request pipeline from config and cache lookup through circuit breaker, singleflight, key-pool rotation, retry loop, dispatch, and telemetry.](docs/images/llmix-call-pipeline.png)
+
+| Concern | What LLMix does |
+|---------|-----------------|
+| Response cache | L1 memory plus optional Redis L2, with cross-runtime canonical cache keys |
+| Key pools | Round-robin key selection, 429 rotation, and 401/403 dead-key eviction |
+| Retries | Jittered exponential backoff, with `Retry-After` honored |
+| Circuit breaker | Scoped by provider and effective base URL |
+| Singleflight | Collapses identical concurrent work into one upstream request |
+| Concurrency | AIMD adaptive semaphore, driven by rate-limit feedback |
+| Provider kwargs | Common config becomes provider-specific request fields |
+| Thinking tokens | Optional `<think>` extraction into normalized response objects |
+| Registry | Immutable config snapshots with one live `current.json` pointer |
+
+The defaults are meant to be boring. Tune them when real traffic gives you a reason.
+
+---
+
+## MDA Presets
 
 ![LLMix turns editable MDA presets into immutable registry snapshots that Python, TypeScript, and Rust runtimes can read consistently.](docs/images/llmix-mda-config.png)
+
+LLMix uses MDA Source Mode for config authoring. The human notes and runtime settings live in one file. The runtime only sees the resolved JSON.
 
 ```mda
 ---
@@ -147,9 +238,9 @@ metadata:
   snoai-llmix:
     common:
       provider: openai
-      model: gpt-4.1-mini
-      maxOutputTokens: 2048
+      model: gpt-4o-mini
       temperature: 0.2
+      maxOutputTokens: 512
     caching:
       strategy: redis-or-memory
     providerOptions:
@@ -158,61 +249,48 @@ metadata:
 ---
 # extraction
 
-Runtime settings plus human-readable operating notes live together.
+Extract named entities. Return compact JSON.
 ```
 
----
+Load it directly when you are authoring or testing:
 
-## Inside Every Call
+```typescript
+import { loadMdaConfig } from "@snoai/llmix";
 
-![LLMix request pipeline from config and cache lookup through circuit breaker, singleflight, key-pool rotation, retry loop, dispatch, and telemetry.](docs/images/llmix-call-pipeline.png)
+const config = await loadMdaConfig("./config/llm/search/extraction.mda");
+```
 
-| Concern             | What LLMix does                                                                    |
-|---------------------|------------------------------------------------------------------------------------|
-| **Cache**           | L1 memory + optional Redis L2; cross-language byte-identical keys                  |
-| **Concurrency**     | AIMD adaptive semaphore with rate-limit feedback                                   |
-| **Dedup**           | Singleflight collapses identical concurrent calls into one upstream request        |
-| **Failures**        | Retry with jittered exponential backoff; `Retry-After` honored                     |
-| **Provider health** | Circuit breaker scoped to `(provider, endpoint)`                                   |
-| **API keys**        | Round-robin pools; dead-key eviction on `401/403`; fast rotation on `429`          |
-| **Request shaping** | Provider-specific kwargs transforms and capability filtering                       |
-| **Output**          | Optional `<think>` token extraction; normalized response objects                   |
+```python
+from llmix import load_mda_config
 
----
+config = load_mda_config("./config/llm/search/extraction.mda")
+```
 
-## Tested Against Real Providers
+```rust
+use llmix_rs::load_config;
 
-Every dispatcher below has a real-HTTP integration suite under `tests/integration/` — no mocks, no recorded fixtures.
+let config = load_config("./config/llm/search/extraction.mda")?;
+```
 
-| Provider    | Dispatcher                                  | Primary model under test         |
-|-------------|---------------------------------------------|----------------------------------|
-| OpenAI      | `openai_dispatch` / `openaiDispatch`        | `gpt-4o-mini`, `o4-mini`         |
-| Anthropic   | `anthropic_dispatch` / `anthropicDispatch`  | `claude-haiku-4-5-20251001`      |
-| Gemini      | `gemini_dispatch` / `geminiDispatch`        | `gemini-2.5-flash`               |
-| OpenRouter  | `openrouter_dispatch` / `openrouterDispatch`| `deepseek/deepseek-v4-flash`     |
-| DeepInfra   | `deepinfra_dispatch` / `deepinfraDispatch`  | `Qwen/Qwen3-32B`                 |
-| Novita      | `novita_dispatch` / `novitaDispatch`        | `qwen/qwen3.5-27b`               |
-| Together    | `together_dispatch` / `togetherDispatch`    | `Qwen/Qwen2.5-7B-Instruct-Turbo` |
-| Sno GPU     | `sno_gpu_dispatch` / `snoGpuDispatch`       | `qwen3.6-27b-extract`            |
-
-OpenRouter, DeepInfra, Novita, and Together are OpenAI-compatible — their dispatchers reuse the OpenAI client / `@ai-sdk/openai` with a provider-specific `base_url`. TypeScript dispatchers use AI SDK v6 where the provider supports it.
-
-Cross-cutting suites (`test_e2e_cache.py`, `_concurrency`, `_parity`, `_redis`, `_resilience`, `_security`, `_thinking`) exercise the pipeline itself across every provider.
+For production services, use the registry.
 
 ---
 
-## Production Config: the Registry
+## Config Registry
 
-Services that need atomic config updates use the **LLMix Config Registry** — a publishing layer that turns editable `.mda` presets into immutable, content-addressed snapshots.
+Editable MDA files are good for humans. Running services need something quieter.
+
+The LLMix Config Registry publishes authoring files into immutable, content-addressed snapshots. Runtime code reads the active snapshot, not the mutable source tree.
 
 ```text
 config/llm/
-  authoring/         ← editable .mda presets
-  snapshots/<rev>/   ← immutable, content-addressed
-  current.json       ← the only live switch
+  authoring/
+    search/
+      extraction.mda
+  snapshots/
+    2026-05-09T000000Z-...
+  current.json
 ```
-
-Runtime services open the manager once at startup; reads come from resolved JSON snapshot files, not mutable authoring MDA.
 
 ```python
 from llmix import ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir
@@ -221,45 +299,77 @@ root = resolve_config_dir().config_dir
 ConfigRegistryPublisher(root).publish()
 
 manager = ConfigRegistryManager.open(root)
-config = manager.get_preset("search", "summary")
+config = manager.get_preset("search", "extraction")
 ```
 
 ```typescript
-import { ConfigRegistryManager, ConfigRegistryPublisher, resolveConfigDir } from "@snoai/llmix";
+import {
+  ConfigRegistryManager,
+  ConfigRegistryPublisher,
+  resolveConfigDir,
+} from "@snoai/llmix";
 
 const { configDir } = resolveConfigDir();
 await new ConfigRegistryPublisher(configDir).publish();
 
 const manager = await ConfigRegistryManager.open(configDir);
-const config = await manager.getPreset("search", "summary");
+const config = await manager.getPreset("search", "extraction");
 ```
 
-Managers expose the active revision and reload-health metadata so service code can surface which revision is live.
-
-TypeScript authoring tools can use `loadMdaConfig` / `loadMdaConfigPreset`; Python authoring tools can use `load_mda_config` / `load_mda_config_preset`; Rust authoring tools can use `load_config` / `load_config_preset`, which now hard-require `.mda` files. None of these direct loaders are the production hot path.
+Managers expose the active revision and reload health metadata. That makes it easy to say exactly which config a service is running.
 
 ---
 
-## What This Is *Not*
+## Provider Coverage
 
-- **Not a streaming library.** Streaming is your SDK's job. LLMix handles calls, not chunks.
-- **Not a provider replacement.** It wraps your client, it doesn't replace it.
-- **Not a cross-provider router** in the LiteLLM sense. One call, one provider — the one your config names.
+The public dispatch helpers cover the providers we actually test.
+
+| Provider | Python | TypeScript | Notes |
+|----------|--------|------------|-------|
+| OpenAI | `openai_dispatch` | `openaiDispatch` | OpenAI Responses and chat-style flows |
+| Anthropic | `anthropic_dispatch` | `anthropicDispatch` | Messages API, thinking budget validation |
+| Gemini | `gemini_dispatch` | `geminiDispatch` | Google GenAI-compatible params |
+| OpenRouter | `openrouter_dispatch` | `openrouterDispatch` | OpenAI-compatible |
+| DeepInfra | `deepinfra_dispatch` | `deepinfraDispatch` | OpenAI-compatible |
+| Novita | `novita_dispatch` | `novitaDispatch` | OpenAI-compatible |
+| Together | `together_dispatch` | `togetherDispatch` | OpenAI-compatible |
+| Sno GPU | `sno_gpu_dispatch` | `snoGpuDispatch` | On-prem OpenAI-compatible GPU endpoints |
+
+Rust currently ships the neutral pipeline plus feature-gated helpers for OpenAI, Anthropic, Gemini, and Sno GPU. Treat Rust provider helpers as beta. The cache, key-pool, registry, retry, and pipeline contract are aligned with Python and TypeScript.
+
+OpenAI-compatible providers reuse the OpenAI request shape with provider-specific `base_url` handling. That keeps the contract plain. Plain is useful.
 
 ---
 
 ## Environment Variables
 
-| Variable                          | Purpose                                              |
-|-----------------------------------|------------------------------------------------------|
-| `OPENAI_API_KEY` / `OPENAI_KEYS`  | Single key or comma-separated OpenAI key pool        |
-| `ANTHROPIC_API_KEY`               | Anthropic auth                                       |
-| `GEMINI_API_KEY`                  | Google / Gemini auth                                 |
-| `OPENROUTER_API_KEY`              | OpenRouter auth                                      |
-| `SNO_LLM_API_KEY`                 | Sno GPU auth                                         |
-| `GPU_BASE_URL`                    | Sno GPU base URL                                     |
-| `REDIS_URL`                       | Redis L2 cache                                       |
-| `LLMIX_STATE_DIR`                 | Lock files, batch metadata, kill switch state        |
+| Variable | Purpose |
+|----------|---------|
+| `OPENAI_API_KEY` / `OPENAI_KEYS` | OpenAI key or comma-separated key pool |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_KEYS` | Anthropic key or comma-separated key pool |
+| `GEMINI_API_KEY` / `GEMINI_KEYS` | Gemini key or comma-separated key pool |
+| `OPENROUTER_API_KEY` / `OPENROUTER_KEYS` | OpenRouter key or comma-separated key pool |
+| `DEEPINFRA_API_KEY` / `DEEPINFRA_KEYS` | DeepInfra key or comma-separated key pool |
+| `TOGETHER_API_KEY` / `TOGETHER_KEYS` | Together key or comma-separated key pool |
+| `NOVITA_API_KEY` / `NOVITA_KEYS` | Novita key or comma-separated key pool |
+| `SNO_LLM_API_KEY` | Sno GPU direct dispatcher fallback |
+| `SNO_GPU_API_KEY` / `SNO_GPU_KEYS` | Sno GPU key-pool variables for provider id `sno-gpu` |
+| `GPU_BASE_URL` | Sno GPU base URL |
+| `REDIS_URL` | Redis response-cache URL |
+| `LLMIX_STATE_DIR` | Lock files, batch metadata, and kill-switch state |
+
+`load_keys_from_env("provider-name")` checks `PROVIDER_NAME_KEYS` first, then `PROVIDER_NAME_API_KEY`. Dashes become underscores.
+
+---
+
+## What This Is Not
+
+- Not a streaming framework. Streaming stays with your SDK.
+- Not a prompt framework. Bring your own prompt layer.
+- Not a provider marketplace. One call uses the provider named by its config.
+- Not a reason to hide every model decision behind indirection. Some things should stay in code.
+
+LLMix is useful when the same model-call shape keeps showing up across services. If you have one script and one key, you probably do not need it yet.
 
 ---
 
@@ -267,11 +377,13 @@ TypeScript authoring tools can use `loadMdaConfig` / `loadMdaConfigPreset`; Pyth
 
 ```bash
 # TypeScript
-bun install && bun test
+bun install
+bun test
 bunx tsc -p tsconfig.check.json
 
 # Python
-uv sync && uv run pytest tests/python/
+uv sync
+uv run pytest tests/python/
 uv run pyright
 
 # Rust
