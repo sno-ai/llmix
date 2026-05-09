@@ -13,7 +13,7 @@ This page is the map. Start with the language guide for the runtime you ship:
 - [Python guide](llmix-python.md)
 - [Rust guide](llmix-rust.md)
 - [Key pool operations](key-pool-operations.md)
-- [MDA vendor namespace](mda-vendor-namespace.md)
+- [Secure LLMix configuration](secure-llmix-configuration.md)
 
 ## Packages
 
@@ -217,7 +217,7 @@ Summarize search results for a research workflow.
 Use camelCase in `.mda` files. TypeScript keeps that shape. Python and Rust
 normalize known fields into their snake_case runtime config shape after loading.
 
-## MDA Vendor Namespace
+## Secure Configuration Namespace
 
 `metadata.snoai-llmix` is strict. Unknown keys are rejected unless a field is
 documented as a provider-specific pass-through record. That is intentional:
