@@ -89,7 +89,7 @@
     "@types/proper-lockfile": "^4.1.4",
     "ai": "^6.0.0",
     "ioredis": "^5.4.1",
-    "typescript": "^5.7.0"
+    "typescript": "^6.0.3"
   },
   "keywords": [
     "llm",
