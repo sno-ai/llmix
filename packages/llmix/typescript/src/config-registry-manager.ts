@@ -118,7 +118,10 @@ export class ConfigRegistryManager {
 				currentPointer = await this.readCurrentPointer()
 			} catch (error) {
 				this.recordReloadError(error)
-				throw error
+				if (this.shouldFailClosedOnRefreshError()) {
+					throw error
+				}
+				return
 			}
 
 			if (
@@ -226,9 +229,10 @@ export class ConfigRegistryManager {
 			return
 		}
 		const rootPath = path.join(snapshotPath, REGISTRY_ROOT_FILENAME)
+		const rootDigest = await sha256File(rootPath)
 		const envelope = parseRegistryRootEnvelope(await readJsonObject(rootPath), rootPath)
 		await verifyRegistryRootSignatures(envelope, this.signedRootOptions)
-		await enforceRegistryRootFreshness(envelope, this.signedRootOptions)
+		await enforceRegistryRootFreshness(envelope, this.signedRootOptions, rootDigest)
 		await this.verifyRegistryRootPayload(envelope.payload, pointer, manifest, snapshotPath)
 	}
 

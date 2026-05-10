@@ -380,7 +380,7 @@ await run("manager keeps last known good config when pointer changes to missing 
 	})
 })
 
-await run("manager surfaces malformed current pointer after startup", async () => {
+await run("manager keeps last known good config when current pointer becomes malformed", async () => {
 	await withTempRoot("malformed-current-after-open", async (root) => {
 		await writeAuthoringPreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
@@ -391,9 +391,10 @@ await run("manager surfaces malformed current pointer after startup", async () =
 		const manager = await ConfigRegistryManager.open(root)
 
 		await writeFile(path.join(root, "current.json"), '{"revision":42}\n', "utf-8")
-		await assert.rejects(manager.getPreset("search", "summary"), InvalidConfigError)
+		const config = await manager.getPreset("search", "summary")
 
 		assert.equal(manager.activeRevision, published.revision)
+		assert.equal(config.model, "gpt-4.1-mini")
 		assert.ok(manager.lastReloadError instanceof InvalidConfigError)
 		assert.ok(manager.lastSuccessfulReloadAt instanceof Date)
 		assert.ok(manager.lastReloadFailureAt instanceof Date)

@@ -642,12 +642,14 @@ await run("runtime opens signed registry root with external verifier and rejects
 			registryRoot: { signer: registryRootSigner() },
 		})
 		const envelope = await readRegistryRoot(root, published.revision)
-		const rootPayloadDigest = envelope.payload_sha256
+		assert.equal(envelope.payload_sha256, envelope.integrity.digest.replace(/^sha256:/, ""))
+		const rootDigest = published.registryRootSha256
+		assert.ok(rootDigest)
 		const manager = await ConfigRegistryManager.open(root, {
 			signedRoot: {
 				trustPolicy: REGISTRY_ROOT_POLICY,
 				didWebVerifier: registryRootVerifier(true),
-				expectedRootDigest: rootPayloadDigest,
+				expectedRootDigest: rootDigest,
 			},
 		})
 
@@ -672,12 +674,13 @@ await run("runtime rejects coherent registry replacement when external root dige
 			revision: "package_original",
 			registryRoot: { signer: registryRootSigner() },
 		})
-		const originalEnvelope = await readRegistryRoot(root, original.revision)
+		const originalRootDigest = original.registryRootSha256
+		assert.ok(originalRootDigest)
 		const pinnedOptions = {
 			signedRoot: {
 				trustPolicy: REGISTRY_ROOT_POLICY,
 				didWebVerifier: registryRootVerifier(true),
-				expectedRootDigest: originalEnvelope.payload_sha256,
+				expectedRootDigest: originalRootDigest,
 			},
 		} as const
 

@@ -315,16 +315,22 @@ def test_manager_fails_fast_with_malformed_current_pointer(tmp_path: Path) -> No
         ConfigRegistryManager.open(root)
 
 
-def test_manager_requires_manifest_digest_in_current_pointer(tmp_path: Path) -> None:
+def test_manager_opens_legacy_current_pointer_without_manifest_hash(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary")
+    _write_authoring_preset(root, "search", "summary", model="gpt-4.1-mini")
     published = ConfigRegistryPublisher(root).publish()
     (root / "current.json").write_text(
         json.dumps({"revision": published.revision}) + "\n", encoding="utf-8"
     )
 
-    with pytest.raises(InvalidConfigError, match="manifest_sha256"):
-        ConfigRegistryManager.open(root)
+    manager = ConfigRegistryManager.open(root)
+    config = manager.get_preset("search", "summary")
+
+    assert manager.active_revision == published.revision
+    assert config["model"] == "gpt-4.1-mini"
+    assert manager.last_reload_error is None
 
 
 def test_manager_keeps_last_known_good_config_when_pointer_changes_to_missing_revision(

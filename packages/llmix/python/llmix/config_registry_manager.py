@@ -171,7 +171,11 @@ class ConfigRegistryManager:
             )
         _validate_revision(revision)
         manifest_sha256 = pointer.get("manifest_sha256")
-        if not isinstance(manifest_sha256, str):
+        if manifest_sha256 is None:
+            manifest_sha256 = _sha256_file(
+                self.snapshots_dir / revision / "manifest.json"
+            )
+        elif not isinstance(manifest_sha256, str):
             raise InvalidConfigError(
                 f"Config Registry pointer is missing string field 'manifest_sha256': {self.current_path}"
             )

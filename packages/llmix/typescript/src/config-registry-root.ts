@@ -356,6 +356,7 @@ export async function verifyRegistryRootSignatures(
 export async function enforceRegistryRootFreshness(
 	envelope: RegistryRootEnvelope,
 	options: RegistryRootVerificationOptions,
+	rootDigest?: string,
 ): Promise<void> {
 	const payload = envelope.payload
 	if (options.expectedRevision !== undefined && payload.revision !== options.expectedRevision) {
@@ -367,18 +368,15 @@ export async function enforceRegistryRootFreshness(
 	if (options.minimumPublishedAt !== undefined) {
 		enforceMinimumPublishedAt(payload.published_at, options.minimumPublishedAt)
 	}
-	if (options.expectedRootDigest !== undefined && payloadDigest(envelope) !== options.expectedRootDigest) {
-		throw new SecurityError("Registry root digest does not match expectedRootDigest")
+	if (options.expectedRootDigest !== undefined) {
+		validateSha256(options.expectedRootDigest, "expected registry root digest")
+		if (rootDigest !== options.expectedRootDigest) {
+			throw new SecurityError("Registry root digest does not match expectedRootDigest")
+		}
 	}
 	if (options.highWatermark !== undefined) {
 		await enforceHighWatermark(envelope, options.highWatermark)
 	}
-}
-
-function payloadDigest(envelope: RegistryRootEnvelope): string {
-	const digest = sha256Bytes(canonicalRegistryRootPayload(envelope.payload))
-	validateSha256(digest, "registry root payload")
-	return digest
 }
 
 function enforceMinimumPublishedAt(publishedAt: string, minimumPublishedAt: string | Date): void {
