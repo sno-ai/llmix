@@ -131,7 +131,7 @@ export function paePayloadBytes(integrity: IntegrityField): Uint8Array {
   return new TextEncoder().encode(canonify(integrity));
 }
 
-/** §13 — evaluate signatures against an RC2 trust policy threshold. */
+/** §13 — evaluate signatures against an  trust policy threshold. */
 export async function verifySignatures(
   signatures: SignatureEntry[],
   integrity: IntegrityField,

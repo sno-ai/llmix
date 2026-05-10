@@ -20,7 +20,7 @@ export interface TrustPolicy {
   rekor?: { url: string };
 }
 
-/** MDA §13 — validate the RC2 trust-policy shape before trusted-runtime use. */
+/** MDA §13 — validate the trust-policy shape before trusted-runtime use. */
 export function validateTrustPolicy(input: unknown): TrustPolicy {
   const policy = requireObject(input, "trustPolicy");
   const allowedTop = new Set(["version", "trustedSigners", "minSignatures", "rekor"]);

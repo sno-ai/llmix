@@ -4,7 +4,7 @@ Source-mode `.mda` loader implementing the MDA Open Spec v1.0 mechanism layer:
 
 - §02-1.1 frontmatter extraction (BOM strip, CRLF normalization, fence rules, YAML 1.2 core schema)
 - §08 integrity (JCS canonicalization + sha256/384/512)
-- §09 / §13 RC2 trusted-runtime signature verification (DSSE PAE; injectable
+- §09 / §13  trusted-runtime signature verification (DSSE PAE; injectable
   Rekor, Sigstore, and did:web verifier hooks; enforces `dsse-v0.0.1` Rekor
   entry kind for Sigstore)
 - §10-3.3 `requires.network` enforcement
@@ -45,7 +45,7 @@ method. This keeps the loader usable with both Zod v3 and v4, and with small
 schema adapters that return `{ success, data }` or `{ success, error }`.
 
 // For production signed release presets, pass trustedRuntime: true with an
-// RC2 trust policy, Rekor client, and verifier hooks.
+//  trust policy, Rekor client, and verifier hooks.
 ```
 
 See [`../../../docs/mda-config/design-project-config-frontmatter.md`](../../../docs/mda-config/design-project-config-frontmatter.md), [`../../../docs/mda-config/trusted-runtime-policy.md`](../../../docs/mda-config/trusted-runtime-policy.md), and [`../../../docs/mda-config/migrate-llmix-presets-to-mda.md`](../../../docs/mda-config/migrate-llmix-presets-to-mda.md).
@@ -53,7 +53,7 @@ See [`../../../docs/mda-config/design-project-config-frontmatter.md`](../../../d
 ## Trusted Runtime
 
 `trustedRuntime: true` requires integrity, a non-empty `signatures[]`, and a
-valid RC2 trust policy before a config is treated as trusted:
+valid trust policy before a config is treated as trusted:
 
 ```ts
 await loadMdaSource(path, schema, {
