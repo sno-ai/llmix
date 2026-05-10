@@ -82,7 +82,9 @@ pub use response_cache::{
     should_skip_cache, CacheKeyParams, CacheResult, TwoTierCache, TwoTierCacheConfig,
     CACHE_KEY_PREFIX,
 };
-pub use snoai_mda_config::{AllowedSigner, RekorClient, SigstoreVerifier, TrustPolicy};
+pub use snoai_mda_config::{
+    DidWebVerifier, RekorClient, RekorPolicy, SigstoreVerifier, TrustPolicy, TrustedSigner,
+};
 pub use thinking::{strip_thinking, StripThinkingResult};
 pub use types::{
     CacheHitTier, CachingStrategy, CallInput, CallResponse, DispatchContext, LlmUsage,

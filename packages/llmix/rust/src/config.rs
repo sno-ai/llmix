@@ -4,7 +4,7 @@ use crate::error::{
 };
 use serde_json::{Map, Value};
 use snoai_mda_config::{
-    load_mda_source_from_bytes, LoadMdaSourceOptions, MdaConfigError, RekorClient,
+    load_mda_source_from_bytes, DidWebVerifier, LoadMdaSourceOptions, MdaConfigError, RekorClient,
     SigstoreVerifier, TrustPolicy,
 };
 use std::env;
@@ -71,11 +71,13 @@ pub struct ResolvedConfigDir {
 pub struct MdaConfigLoadOptions<'a> {
     pub verify_integrity: bool,
     pub verify_signatures: bool,
+    pub trusted_runtime: bool,
     pub enforce_requires: bool,
     pub allowed_networks: Vec<String>,
     pub trust_policy: Option<TrustPolicy>,
     pub rekor_client: Option<&'a dyn RekorClient>,
     pub sigstore_verifier: Option<&'a dyn SigstoreVerifier>,
+    pub did_web_verifier: Option<&'a dyn DidWebVerifier>,
 }
 
 pub fn resolve_config_dir(options: Option<&LlmixPathConfig>) -> LlmixResult<ResolvedConfigDir> {
@@ -236,11 +238,13 @@ fn to_mda_source_options<'a>(options: &MdaConfigLoadOptions<'a>) -> LoadMdaSourc
     LoadMdaSourceOptions {
         verify_integrity: options.verify_integrity,
         verify_signatures: options.verify_signatures,
+        trusted_runtime: options.trusted_runtime,
         enforce_requires: options.enforce_requires,
         allowed_networks: options.allowed_networks.clone(),
         trust_policy: options.trust_policy.clone(),
         rekor_client: options.rekor_client,
         sigstore_verifier: options.sigstore_verifier,
+        did_web_verifier: options.did_web_verifier,
     }
 }
 
