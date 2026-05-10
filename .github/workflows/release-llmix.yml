@@ -94,7 +94,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Build package
-        run: uv build --project packages/llmix/python
+        run: uv build --project packages/llmix/python --out-dir packages/llmix/python/dist
 
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1
