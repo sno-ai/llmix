@@ -20,6 +20,7 @@ __pycache__/
 VERSION.YAML
 VERSION.yaml
 internal/dev-scripts/
+internal/ai-doc
 
 # Pytest
 .pytest_cache/
@@ -34,3 +35,5 @@ packages/mda-config/rust/target/
 .claude/*
 .codex/*
 openspec/*
+AGENTS.md
+CLAUDE.md
