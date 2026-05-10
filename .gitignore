@@ -16,6 +16,11 @@ __pycache__/
 # Session
 .remember/*
 
+# Local release/dev workflow
+VERSION.YAML
+VERSION.yaml
+internal/dev-scripts/
+
 # Pytest
 .pytest_cache/
 .ruff_cache/
