@@ -26,4 +26,6 @@ __pycache__/
 # Rust
 packages/llmix/rust/target/
 packages/mda-config/rust/target/
-.claude/scheduled_tasks.lock
+.claude/*
+.codex/*
+openspec/*
