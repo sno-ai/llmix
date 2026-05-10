@@ -332,14 +332,15 @@ application/vnd.snoai-llmix.preset+json
 ```
 
 LLMix delegates signed `.mda` verification to the MDA mechanism layer. For
-production TypeScript publishes, prefer `trustedRuntime: true` with a trust
-policy and caller-provided Rekor, Sigstore, and/or did:web verifier hooks.
+production publishes, prefer `trustedRuntime: true` in TypeScript or
+`trusted_runtime=True` in Python with a trust policy and caller-provided Rekor,
+Sigstore, and/or did:web verifier hooks.
 
-The TypeScript registry can also write and verify a signed `registry-root.json`
-that covers `current.json`, the snapshot manifest, copied `.mda` authoring
-files, and resolved JSON files as one bundle. Runtime trust anchors for that
-root must come from application or deployment configuration outside the registry
-directory being verified.
+The TypeScript and Python registries can also write and verify a signed
+`registry-root.json` that covers `current.json`, the snapshot manifest, copied
+`.mda` authoring files, and resolved JSON files as one bundle. Runtime trust
+anchors for that root must come from application or deployment configuration
+outside the registry directory being verified.
 
 Direct MDA loading helpers still exist for authoring tools and tests:
 

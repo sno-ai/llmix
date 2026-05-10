@@ -60,11 +60,13 @@ the registry that production will read.
 
 Current runtime support is language-specific:
 
-- TypeScript can publish only from RC3 trusted `.mda` sources by passing
+- TypeScript can publish only from trusted `.mda` sources by passing
   `trustedRuntime: true`, a trust policy, and the required Rekor, Sigstore, or
   did:web verifier hooks.
-- Python and Rust expose the same MDA trust concepts through their MDA config
-  packages; registry-level signed-root parity remains follow-up work.
+- Python can do the same with `trusted_runtime=True`; it can also publish and
+  open a signed `registry-root.json`.
+- Rust exposes the same MDA trust concepts through its MDA config package;
+  registry-level signed-root parity remains follow-up work.
 
 For production, the clean pattern is: verify signed `.mda` during release,
 publish a signed registry root, ship the registry with the app, keep deployed
@@ -325,6 +327,44 @@ await publisher.publish({
 `verifySignatures` is a lower-level helper for focused diagnostics. It is not
 the recommended production anti-tamper boundary by itself.
 
+Python uses the same shape with snake_case names:
+
+```python
+from llmix import (
+    ConfigRegistryManager,
+    ConfigRegistryOpenOptions,
+    ConfigRegistryPublisher,
+    ConfigRegistryPublishOptions,
+    RegistryRootSigningOptions,
+    RegistryRootVerificationOptions,
+)
+
+publisher = ConfigRegistryPublisher("config/llm")
+publisher.publish(
+    options=ConfigRegistryPublishOptions(
+        trusted_runtime=True,
+        trust_policy=trust_policy,
+        rekor_client=rekor_client,
+        sigstore_verifier=sigstore_verifier,
+        did_web_verifier=did_web_verifier,
+        registry_root=RegistryRootSigningOptions(signer=registry_root_signer),
+    )
+)
+
+manager = ConfigRegistryManager.open(
+    "config/llm",
+    ConfigRegistryOpenOptions(
+        signed_root=RegistryRootVerificationOptions(
+            trust_policy=registry_root_trust_policy,
+            rekor_client=rekor_client,
+            sigstore_verifier=sigstore_verifier,
+            did_web_verifier=did_web_verifier,
+            expected_root_digest=expected_root_digest,
+        )
+    ),
+)
+```
+
 The default signing profile should be GitHub Actions keyless Sigstore with
 Rekor transparency logging, pinned to the exact repository, ref or environment,
 and workflow identity you release from. For higher-assurance releases, require
@@ -401,10 +441,11 @@ deploys, stale files, and someone editing one of the published config files by
 hand.
 
 There is one extra case to understand. If someone has enough access to rewrite
-the entire deployed registry directory after release, the current runtime checks
+the entire deployed registry directory after release, unsigned runtime checks
 alone are not meant to prove that the whole directory is still the exact release
-you approved. If that matters for your product, use one of these simple
-controls:
+you approved. Use a signed registry root where the runtime supports it, and keep
+the root trust policy, public keys, expected digest, or high-watermark state
+outside the registry bundle. These additional controls still help:
 
 - ship the registry inside a signed package or container image;
 - make the deployed registry directory read-only for the service user;

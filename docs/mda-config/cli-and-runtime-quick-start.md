@@ -233,7 +233,7 @@ Trusted runtime requires:
 
 - `integrity`
 - a non-empty `signatures[]`
-- an RC3 trust policy
+- a trust policy
 - a Rekor client for Sigstore signatures
 - a Sigstore verifier hook, did:web verifier hook, or both depending on policy
 
