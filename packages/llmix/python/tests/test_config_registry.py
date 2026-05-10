@@ -245,7 +245,14 @@ def test_manager_rolls_back_when_current_revision_points_to_older_snapshot(
     assert manager.get_preset("search", "summary")["model"] == "gpt-5-mini"
 
     (root / "current.json").write_text(
-        json.dumps({"revision": first.revision}) + "\n", encoding="utf-8"
+        json.dumps(
+            {
+                "revision": first.revision,
+                "manifest_sha256": first.manifest_sha256,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
     )
     config = manager.get_preset("search", "summary")
 
@@ -308,6 +315,18 @@ def test_manager_fails_fast_with_malformed_current_pointer(tmp_path: Path) -> No
         ConfigRegistryManager.open(root)
 
 
+def test_manager_requires_manifest_digest_in_current_pointer(tmp_path: Path) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_authoring_preset(root, "search", "summary")
+    published = ConfigRegistryPublisher(root).publish()
+    (root / "current.json").write_text(
+        json.dumps({"revision": published.revision}) + "\n", encoding="utf-8"
+    )
+
+    with pytest.raises(InvalidConfigError, match="manifest_sha256"):
+        ConfigRegistryManager.open(root)
+
+
 def test_manager_keeps_last_known_good_config_when_pointer_changes_to_missing_revision(
     tmp_path: Path,
 ) -> None:
@@ -320,7 +339,11 @@ def test_manager_keeps_last_known_good_config_when_pointer_changes_to_missing_re
     manager = ConfigRegistryManager.open(root)
 
     (root / "current.json").write_text(
-        '{"revision":"missing-revision"}\n', encoding="utf-8"
+        json.dumps(
+            {"revision": "missing-revision", "manifest_sha256": published.manifest_sha256}
+        )
+        + "\n",
+        encoding="utf-8",
     )
     config = manager.get_preset("search", "summary")
 
@@ -535,7 +558,12 @@ def test_manager_revalidates_resolved_json_shape_on_startup(tmp_path: Path) -> N
     manifest["presets"]["search/summary"]["resolved_sha256"] = hashlib.sha256(
         resolved_bytes
     ).hexdigest()
-    manifest_path.write_bytes(_canonical_json_bytes(manifest))
+    manifest_bytes = _canonical_json_bytes(manifest)
+    manifest_path.write_bytes(manifest_bytes)
+    current_path = root / "current.json"
+    current = json.loads(current_path.read_text(encoding="utf-8"))
+    current["manifest_sha256"] = hashlib.sha256(manifest_bytes).hexdigest()
+    current_path.write_bytes(_canonical_json_bytes(current))
 
     with pytest.raises(InvalidConfigError, match="temperature"):
         ConfigRegistryManager.open(root)

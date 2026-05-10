@@ -72,6 +72,7 @@ def _open_options(
     *,
     verifier: RootDidWebVerifier | None = None,
     expected_revision: str | None = None,
+    expected_root_digest: str | None = None,
     minimum_published_at: str | None = None,
     high_watermark: Any | None = None,
 ) -> ConfigRegistryOpenOptions:
@@ -80,6 +81,7 @@ def _open_options(
             trust_policy=_trust_policy(),
             did_web_verifier=verifier or RootDidWebVerifier(),
             expected_revision=expected_revision,
+            expected_root_digest=expected_root_digest,
             minimum_published_at=minimum_published_at,
             high_watermark=high_watermark,
         )
@@ -250,6 +252,18 @@ def test_signed_registry_root_rejects_current_manifest_digest_tampering(
         ConfigRegistryManager.open(root, _open_options())
 
 
+def test_unsigned_registry_rejects_manifest_digest_mismatch(tmp_path: Path) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_authoring_preset(root)
+    published = ConfigRegistryPublisher(root).publish(revision="rev-1")
+    manifest = _read_json(published.manifest_path)
+    manifest["published_at"] = "2999-01-01T00:00:00Z"
+    _write_json(published.manifest_path, manifest)
+
+    with pytest.raises(InvalidConfigError, match="Checksum mismatch"):
+        ConfigRegistryManager.open(root)
+
+
 def test_signed_registry_root_rejects_malformed_root_payload(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
     _publish_signed_registry(root)
@@ -286,6 +300,25 @@ def test_signed_registry_root_enforces_expected_revision_and_freshness(
 
     with pytest.raises(SecurityError, match="high-watermark"):
         ConfigRegistryManager.open(root, _open_options(high_watermark=lambda _: False))
+
+
+def test_signed_registry_root_expected_digest_pins_published_artifact(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_authoring_preset(root)
+    published = ConfigRegistryPublisher(root).publish(
+        revision="rev-1", options=_publish_options()
+    )
+
+    assert published.registry_root_sha256 is not None
+    manager = ConfigRegistryManager.open(
+        root, _open_options(expected_root_digest=published.registry_root_sha256)
+    )
+    assert manager.get_preset("search", "summary")["model"] == "gpt-4.1-mini"
+
+    with pytest.raises(SecurityError, match="expected_root_digest"):
+        ConfigRegistryManager.open(root, _open_options(expected_root_digest="0" * 64))
 
 
 def test_failed_registry_root_signing_does_not_activate_new_revision(
