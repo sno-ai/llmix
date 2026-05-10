@@ -9,3 +9,7 @@ scripts/            export-ignore
 .codex/             export-ignore
 .env.test           export-ignore
 CLAUDE.md           export-ignore
+
+# This fixture intentionally checks CRLF handling. Store it normalized in Git,
+# but check it out with CRLF line endings for runtime tests.
+fixtures/mda/valid/06-crlf-line-endings.mda text eol=crlf
