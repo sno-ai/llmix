@@ -2,14 +2,112 @@ name: Release mda-config
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_npm:
+        description: "Publish @snoai/mda-config to npm"
+        type: boolean
+        default: true
+      publish_pypi:
+        description: "Publish snoai-mda-config to PyPI"
+        type: boolean
+        default: false
+      publish_rust:
+        description: "Publish snoai-mda-config to crates.io"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
-  placeholder:
-    name: Placeholder
+  npm:
+    name: npm
+    if: ${{ inputs.publish_npm }}
     runs-on: ubuntu-latest
     steps:
-      - name: No mda-config packages yet
-        run: echo "mda-config code has not been migrated yet; nothing is published by this workflow."
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build:mda-config
+
+      - name: Test
+        run: bun run test:mda-config
+
+      - name: Publish
+        working-directory: packages/mda-config/typescript
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+  pypi:
+    name: PyPI
+    needs: npm
+    if: ${{ always() && inputs.publish_pypi && (needs.npm.result == 'success' || !inputs.publish_npm) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --project packages/mda-config/python --all-groups
+
+      - name: Lint
+        run: uv run --project packages/mda-config/python ruff check packages/mda-config/python
+
+      - name: Type check
+        run: uv run --project packages/mda-config/python pyright -p packages/mda-config/python
+
+      - name: Test
+        run: uv run --project packages/mda-config/python pytest -c packages/mda-config/python/pyproject.toml packages/mda-config/python/tests
+
+      - name: Build
+        run: uv build --project packages/mda-config/python --out-dir packages/mda-config/python/dist
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/mda-config/python/dist
+
+  crates:
+    name: crates.io
+    needs: [npm, pypi]
+    if: ${{ always() && inputs.publish_rust && (needs.npm.result == 'success' || !inputs.publish_npm) && (needs.pypi.result == 'success' || !inputs.publish_pypi) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.100
+
+      - name: Test
+        run: cargo test
+        working-directory: packages/mda-config/rust
+
+      - name: Publish
+        working-directory: packages/mda-config/rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
