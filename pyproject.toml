@@ -1,2 +1,5 @@
 [tool.uv.workspace]
-members = ["packages/llmix/python"]
+members = ["packages/llmix/python", "packages/mda-config/python"]
+
+[tool.uv.sources]
+snoai-mda-config = { workspace = true }
