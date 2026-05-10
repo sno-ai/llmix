@@ -5,17 +5,14 @@ from __future__ import annotations
 
 import base64
 import json
-import re
 from pathlib import Path
 from typing import Any
 
 import pytest
 from snoai_mda_config import (
-    AllowedSigner,
     RekorEntry,
     SignatureEntry,
     SigstoreVerificationResult,
-    TrustPolicy,
 )
 from snoai_mda_config.integrity import canonicalize_artifact, hash_canonical
 
@@ -63,16 +60,22 @@ def _write_mda(
     return path
 
 
-SIGNER = "sigstore-oidc:https://accounts.google.com#releases@snoai.com"
+SIGNER = "sigstore-oidc:https://accounts.google.com"
 KEY_ID = "fulcio:test-key"
 SIGNATURE = "MEUCIQDkXFIXTUREONLYBASE64=="
+REKOR_URL = "https://rekor.sigstore.dev"
 
 
 class FakeRekorClient:
+    rekor_url = REKOR_URL
+
     def __init__(self, entry: RekorEntry | None) -> None:
         self.entry = entry
 
-    def fetch_entry(self, log_id: str, log_index: int) -> RekorEntry | None:
+    def fetch_entry(
+        self, rekor_url: str, log_id: str, log_index: int
+    ) -> RekorEntry | None:
+        assert rekor_url == self.rekor_url
         assert log_id == "test-log"
         assert log_index == 42
         return self.entry
@@ -94,14 +97,18 @@ class FakeSigstoreVerifier:
         )
 
 
-def _trust_policy() -> TrustPolicy:
-    return TrustPolicy(
-        allowed_signers=(
-            AllowedSigner(
-                "https://accounts.google.com", re.compile(r"^releases@snoai\.com$")
-            ),
-        )
-    )
+def _trust_policy(subject: str = "releases@snoai.com") -> dict[str, Any]:
+    return {
+        "version": 1,
+        "trustedSigners": [
+            {
+                "type": "sigstore-oidc",
+                "issuer": "https://accounts.google.com",
+                "subject": subject,
+            }
+        ],
+        "rekor": {"url": REKOR_URL},
+    }
 
 
 def _write_signed_mda(path: Path) -> tuple[Path, dict[str, str]]:
@@ -129,6 +136,9 @@ def _rekor_entry(integrity: dict[str, str]) -> RekorEntry:
     payload = json.dumps(integrity, separators=(",", ":"), sort_keys=True).encode()
     return {
         "kind": "dsse-v0.0.1",
+        "log_id": "test-log",
+        "log_index": 42,
+        "inclusion_verified": True,
         "certificate_pem": "",
         "dsse_envelope": {
             "payload_type": "application/vnd.mda.integrity+json",
@@ -149,8 +159,8 @@ def test_load_mda_config_projects_fixture_to_python_runtime_shape() -> None:
     assert "model" not in config["common"]
     assert config["provider_options"]["openai"]["reasoning_effort"] == "medium"
     assert config["caching"]["strategy"] == "memory"
-    assert config["description"].startswith("Sample LLMix preset")
-    assert config["tags"] == ["fixture"]
+    assert config["description"].startswith("Fast cheap multi-tool calls")
+    assert "tags" not in config
 
 
 def test_load_mda_config_direct_module_import_matches_config_facade() -> None:
