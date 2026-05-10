@@ -12,7 +12,7 @@ safely without reimplementing Sigstore crypto:
 - MDA source-schema validation
 - integrity canonicalization and digest verification
 - `requires.network` enforcement
-- RC2 trusted-runtime checks plus explicit Rekor/Sigstore/did:web verifier
+- RC3 trusted-runtime checks plus explicit Rekor/Sigstore/did:web verifier
   injection
 
 ## Install
@@ -44,7 +44,7 @@ let cfg: Config = load_mda_source(
 )?;
 ```
 
-For production signed configs, pass `trusted_runtime=true` with a strict RC2
+For production signed configs, pass `trusted_runtime=true` with a strict RC3
 trust policy, `RekorClient`, and verifier hooks. The crate intentionally does
 not fake signature validation: if a required verifier is not configured,
 loading fails closed.
