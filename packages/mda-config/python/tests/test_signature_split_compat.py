@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from snoai_mda_config import ErrorCategory, MdaConfigError, validate_trust_policy
 from snoai_mda_config.signature import (
     DidWebTrustedSigner,
+    SignatureEntry,
     SigstoreTrustedSigner,
-    TrustPolicy,
     TrustedSigner,
+    TrustPolicy,
     verify_signatures,
 )
 
@@ -42,14 +45,17 @@ def test_signature_rejects_non_string_payload_type_as_schema_error() -> None:
     with pytest.raises(MdaConfigError) as exc_info:
         verify_signatures(
             [
-                {
-                    "signer": "did-web:trusted.example.com",
-                    "key-id": "did:web:trusted.example.com#key-1",
-                    "payload-digest": "sha256:" + "0" * 64,
-                    "algorithm": "ed25519",
-                    "signature": "signature",
-                    "payload-type": 123,
-                }
+                cast(
+                    SignatureEntry,
+                    {
+                        "signer": "did-web:trusted.example.com",
+                        "key-id": "did:web:trusted.example.com#key-1",
+                        "payload-digest": "sha256:" + "0" * 64,
+                        "algorithm": "ed25519",
+                        "signature": "signature",
+                        "payload-type": 123,
+                    },
+                )
             ],
             {"algorithm": "sha256", "digest": "sha256:" + "0" * 64},
             {

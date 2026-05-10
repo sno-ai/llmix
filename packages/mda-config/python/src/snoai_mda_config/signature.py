@@ -31,10 +31,16 @@ from .signature_types import (  # noqa: F401
     SigstoreVerifier,
 )
 from .trust_policy import (
-    DidWebTrustedSigner,
-    SigstoreTrustedSigner,
+    DidWebTrustedSigner as DidWebTrustedSigner,
+)
+from .trust_policy import (
+    SigstoreTrustedSigner as SigstoreTrustedSigner,
+)
+from .trust_policy import (
+    TrustedSigner as TrustedSigner,
+)
+from .trust_policy import (
     TrustPolicy,
-    TrustedSigner,
     policy_contains_did_web,
     sigstore_subjects_for,
     trusts_did_web_domain,

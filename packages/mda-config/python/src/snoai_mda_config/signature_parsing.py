@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 
 from .errors import ErrorCategory, MdaConfigError
-from .signature_types import SignatureEntry
 
 DEFAULT_PAYLOAD_TYPE = "application/vnd.mda.integrity+json"
 _PAYLOAD_TYPE_RE = re.compile(
@@ -41,7 +41,7 @@ def parse_did_web_signer(signer: str) -> str:
     return domain
 
 
-def declared_payload_type(sig: SignatureEntry) -> str:
+def declared_payload_type(sig: Mapping[str, object]) -> str:
     payload_type = sig.get("payload-type", DEFAULT_PAYLOAD_TYPE)
     if (
         not isinstance(payload_type, str)
