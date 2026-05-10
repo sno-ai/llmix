@@ -16,6 +16,11 @@ __pycache__/
 # Session
 .remember/*
 
+# Local release/dev workflow
+VERSION.YAML
+VERSION.yaml
+internal/dev-scripts/
+
 # Pytest
 .pytest_cache/
 .ruff_cache/
@@ -26,4 +31,6 @@ __pycache__/
 # Rust
 packages/llmix/rust/target/
 packages/mda-config/rust/target/
-.claude/scheduled_tasks.lock
+.claude/*
+.codex/*
+openspec/*

@@ -6,7 +6,7 @@ The MDA CLI and these packages do different jobs. Use
 [`@markdown-ai/cli`](https://github.com/sno-ai/mda-markdown) while authoring:
 create a file, validate it, compute or verify integrity, and compile it into
 agent-facing Markdown when you need `SKILL.md`, `AGENTS.md`, or
-`CLAUDE.md`.
+`CLAUDE.md`, or `MCP-SERVER.md`.
 
 Use `mda-config` at runtime: load an already-authored `.mda` source file,
 validate the frontmatter against your product schema, optionally enforce

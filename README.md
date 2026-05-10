@@ -58,11 +58,9 @@ pip install "sno-llmix[redis]"
 cargo add llmix-rs --features providers-openai,redis
 ```
 
-LLMix also carries the MDA config foundation packages in this monorepo. They keep
-their original package names: `@snoai/mda-config` for TypeScript and
-`snoai-mda-config` for Python and Rust. Use them when you need to validate,
-compose, load, or enforce trust policy for `.mda` configuration files outside
-the LLMix runtime.
+LLMix uses the MDA config packages for preset loading. They are also published
+as standalone runtime loaders for apps that need `.mda` validation, integrity,
+or trust-policy enforcement outside LLMix.
 
 ---
 
@@ -74,7 +72,7 @@ the LLMix runtime.
 - [Rust guide](docs/llmix/llmix-rust.md)
 - [Secure LLMix configuration](docs/llmix/secure-llmix-configuration.md)
 - [Key pool operations](docs/llmix/key-pool-operations.md)
-- [MDA config quick start](docs/mda-config/cli-and-runtime-quick-start.md)
+- [Standalone MDA config loader docs](docs/mda-config/README.md)
 
 ---
 
