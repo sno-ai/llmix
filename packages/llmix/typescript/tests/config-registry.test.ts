@@ -11,6 +11,7 @@ import {
 	InvalidConfigError,
 	loadMdaConfig,
 } from "../src/index.js"
+import { snapshotRegistryPath, snapshotRelativePath } from "../src/config-registry-common.js"
 
 let passed = 0
 let failed = 0
@@ -85,6 +86,34 @@ async function writeAuthoringPreset(
 			"# Registry test preset",
 			"",
 		].join("\n"),
+		"utf-8",
+	)
+}
+
+type TestManifestPreset = {
+	authoring_path: string
+	authoring_sha256: string
+	resolved_path: string
+	resolved_sha256: string
+}
+
+type TestManifest = {
+	presets: Record<string, TestManifestPreset>
+}
+
+async function rewriteManifest(
+	root: string,
+	revision: string,
+	mutate: (manifest: TestManifest) => void,
+): Promise<void> {
+	const manifestPath = path.join(root, "snapshots", revision, "manifest.json")
+	const manifest = JSON.parse(await readFile(manifestPath, "utf-8")) as TestManifest
+	mutate(manifest)
+	const manifestContent = `${JSON.stringify(manifest, null, 2)}\n`
+	await writeFile(manifestPath, manifestContent, "utf-8")
+	await writeFile(
+		path.join(root, "current.json"),
+		`${JSON.stringify({ revision, manifest_sha256: sha256Text(manifestContent) })}\n`,
 		"utf-8",
 	)
 }
@@ -351,7 +380,7 @@ await run("manager keeps last known good config when pointer changes to missing 
 	})
 })
 
-await run("manager keeps last known good config when current pointer becomes malformed", async () => {
+await run("manager surfaces malformed current pointer after startup", async () => {
 	await withTempRoot("malformed-current-after-open", async (root) => {
 		await writeAuthoringPreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
@@ -362,10 +391,9 @@ await run("manager keeps last known good config when current pointer becomes mal
 		const manager = await ConfigRegistryManager.open(root)
 
 		await writeFile(path.join(root, "current.json"), '{"revision":42}\n', "utf-8")
-		const config = await manager.getPreset("search", "summary")
+		await assert.rejects(manager.getPreset("search", "summary"), InvalidConfigError)
 
 		assert.equal(manager.activeRevision, published.revision)
-		assert.equal(config.model, "gpt-4.1-mini")
 		assert.ok(manager.lastReloadError instanceof InvalidConfigError)
 		assert.ok(manager.lastSuccessfulReloadAt instanceof Date)
 		assert.ok(manager.lastReloadFailureAt instanceof Date)
@@ -393,6 +421,72 @@ await run("manager validates manifest hash changes for the active revision", asy
 		assert.equal(config.model, "gpt-4.1-mini")
 		assert.ok(manager.lastReloadError instanceof InvalidConfigError)
 		assert.ok(manager.lastReloadFailureAt instanceof Date)
+	})
+})
+
+await run("snapshotRelativePath requires an exact revision path boundary", async () => {
+	assert.equal(snapshotRegistryPath("v1", "resolved/search/summary.json"), "snapshots/v1/resolved/search/summary.json")
+	assert.equal(snapshotRelativePath("v1", "snapshots/v1/manifest.json"), "manifest.json")
+	assert.throws(() => snapshotRelativePath("v1", "snapshots/v10/manifest.json"), /outside the active snapshot/)
+	assert.throws(() => snapshotRelativePath("v1", "snapshots/v1"), /outside the active snapshot/)
+	assert.throws(() => snapshotRegistryPath("v1", "../current.json"), /traversal segments/)
+	assert.throws(() => snapshotRegistryPath("v1", "/tmp/current.json"), /relative POSIX path/)
+	assert.throws(() => snapshotRegistryPath("v1", "authoring\\search.mda"), /relative POSIX path/)
+})
+
+await run("manager rejects malformed manifest artifact digest on startup", async () => {
+	await withTempRoot("manifest-bad-digest", async (root) => {
+		await writeAuthoringPreset(root, "search", "summary", {
+			model: "gpt-4.1-mini",
+			maxOutputTokens: 256,
+		})
+
+		const published = await new ConfigRegistryPublisher(root).publish()
+		await rewriteManifest(root, published.revision, (manifest) => {
+			const entry = manifest.presets["search/summary"]
+			assert.ok(entry)
+			entry.resolved_sha256 = "not-a-sha256"
+		})
+
+		await assert.rejects(ConfigRegistryManager.open(root), /Invalid SHA-256 digest/)
+	})
+})
+
+await run("manager rejects manifest artifact traversal path on startup", async () => {
+	await withTempRoot("manifest-traversal", async (root) => {
+		await writeAuthoringPreset(root, "search", "summary", {
+			model: "gpt-4.1-mini",
+			maxOutputTokens: 256,
+		})
+
+		const published = await new ConfigRegistryPublisher(root).publish()
+		await rewriteManifest(root, published.revision, (manifest) => {
+			const entry = manifest.presets["search/summary"]
+			assert.ok(entry)
+			entry.resolved_path = "../outside.json"
+		})
+
+		await assert.rejects(ConfigRegistryManager.open(root), /traversal segments/)
+	})
+})
+
+await run("publish retry activates an existing matching snapshot after current write failure", async () => {
+	await withTempRoot("publish-activation-retry", async (root) => {
+		await writeAuthoringPreset(root, "search", "summary", {
+			model: "gpt-4.1-mini",
+			maxOutputTokens: 256,
+		})
+		await mkdir(path.join(root, "current.json"), { recursive: true })
+
+		await assert.rejects(new ConfigRegistryPublisher(root).publish({ revision: "activation_retry" }), Error)
+		await rm(path.join(root, "current.json"), { recursive: true, force: true })
+		const published = await new ConfigRegistryPublisher(root).publish({ revision: "activation_retry" })
+		const manager = await ConfigRegistryManager.open(root)
+
+		assert.equal(published.activated, true)
+		assert.equal(manager.activeRevision, "activation_retry")
+		assert.equal((await manager.getPreset("search", "summary")).model, "gpt-4.1-mini")
+		assert.deepEqual(await readdir(path.join(root, "snapshots", ".staging")).catch(() => []), [])
 	})
 })
 
@@ -463,7 +557,7 @@ await run("parallel publishes use isolated staging and current pointer writes", 
 	})
 })
 
-await run("parallel publishes of the same revision leave one active snapshot", async () => {
+await run("parallel publishes of the same matching revision are idempotent", async () => {
 	await withTempRoot("parallel-same-revision", async (root) => {
 		await writeAuthoringPreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
@@ -481,8 +575,8 @@ await run("parallel publishes of the same revision leave one active snapshot", a
 		const manager = await ConfigRegistryManager.open(root)
 		const stagingEntries = await readdir(path.join(root, "snapshots", ".staging")).catch(() => [])
 
-		assert.equal(fulfilled.length, 1)
-		assert.equal(rejected.length, 1)
+		assert.equal(fulfilled.length, 2)
+		assert.equal(rejected.length, 0)
 		assert.equal(pointer.revision, "same_revision")
 		assert.equal(manager.activeRevision, "same_revision")
 		assert.equal((await manager.getPreset("search", "summary")).model, "gpt-4.1-mini")

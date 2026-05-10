@@ -283,11 +283,11 @@ function registryRootSignature(payloadSha256: string): string {
 	return Buffer.from(`registry-root:${payloadSha256}`).toString("base64url")
 }
 
-function registryRootSigner(): RegistryRootSigner {
+function registryRootSigner(domain = REGISTRY_ROOT_DOMAIN, keyId = REGISTRY_ROOT_KEY_ID): RegistryRootSigner {
 	return ({ integrity, payloadSha256, payloadType }) => ({
 		algorithm: "ed25519",
-		signer: `did-web:${REGISTRY_ROOT_DOMAIN}`,
-		"key-id": REGISTRY_ROOT_KEY_ID,
+		signer: `did-web:${domain}`,
+		"key-id": keyId,
 		"payload-digest": integrity.digest,
 		"payload-type": payloadType,
 		signature: registryRootSignature(payloadSha256),
@@ -316,7 +316,11 @@ async function readRegistryRoot(root: string, revision: string): Promise<Registr
 	return JSON.parse(await readFile(path.join(root, "snapshots", revision, "registry-root.json"), "utf-8")) as RegistryRootEnvelope
 }
 
-await run("direct MDA loading accepts RC3 trustedRuntime did:web options", async () => {
+async function writeRegistryRoot(root: string, revision: string, envelope: RegistryRootEnvelope): Promise<void> {
+	await writeFile(path.join(root, "snapshots", revision, "registry-root.json"), `${JSON.stringify(envelope, null, 2)}\n`, "utf-8")
+}
+
+await run("direct MDA loading accepts trustedRuntime did:web options", async () => {
 	await withTempRoot("direct-did-web", async (root) => {
 		const { source, digest } = trustedDidWebMda("direct-did-web")
 		const filePath = await writeAuthoringSource(root, "search", "direct_did_web", source)
@@ -440,8 +444,9 @@ await run("publisher writes signed registry root covering current binding, manif
 
 		const resolved = JSON.parse(await readFile(path.join(root, resolvedDigest.path), "utf-8")) as { model?: unknown }
 
+		assert.ok(published.registryRootPath)
 		assert.equal(published.registryRootPath, path.join(root, "snapshots", published.revision, "registry-root.json"))
-		assert.equal(published.registryRootSha256, envelope.payload_sha256)
+		assert.equal(published.registryRootSha256, await sha256File(published.registryRootPath))
 		assert.equal(envelope.integrity.digest, `sha256:${envelope.payload_sha256}`)
 		assert.equal(payload.revision, published.revision)
 		assert.equal(payload.current.path, "current.json")
@@ -456,6 +461,162 @@ await run("publisher writes signed registry root covering current binding, manif
 	})
 })
 
+await run("runtime rejects signed registry root payload binding mismatches", async () => {
+	await withTempRoot("signed-root-binding-mismatch", async (root) => {
+		await writeUnsignedAuthoringPreset(root)
+
+		const published = await new ConfigRegistryPublisher(root).publish({
+			revision: "2026-05-10T00:00:00.000Z",
+			registryRoot: { signer: registryRootSigner() },
+		})
+		const original = await readRegistryRoot(root, published.revision)
+		const cases: Array<{
+			name: string
+			pattern: RegExp
+			mutate(envelope: RegistryRootEnvelope): void
+		}> = [
+			{
+				name: "current revision",
+				pattern: /current revision/,
+				mutate: (envelope) => {
+					envelope.payload.current.revision = "2026-05-10T00:00:01.000Z"
+				},
+			},
+			{
+				name: "current manifest digest",
+				pattern: /current manifest digest/,
+				mutate: (envelope) => {
+					envelope.payload.current.manifest_sha256 = "0".repeat(64)
+				},
+			},
+			{
+				name: "current binding digest",
+				pattern: /current binding digest/,
+				mutate: (envelope) => {
+					envelope.payload.current.sha256 = "0".repeat(64)
+				},
+			},
+			{
+				name: "manifest path",
+				pattern: /manifest path/,
+				mutate: (envelope) => {
+					envelope.payload.manifest.path = "snapshots/2026-05-10T00:00:01.000Z/manifest.json"
+				},
+			},
+				{
+					name: "duplicate file path",
+					pattern: /duplicate file path/,
+					mutate: (envelope) => {
+						const firstFile = envelope.payload.files[0]
+						assert.ok(firstFile)
+						envelope.payload.files.push({ ...firstFile, sha256: "0".repeat(64) })
+					},
+				},
+				{
+					name: "file wrong revision",
+					pattern: /outside the active snapshot/,
+					mutate: (envelope) => {
+						const firstFile = envelope.payload.files[0]
+						assert.ok(firstFile)
+						firstFile.path = "snapshots/2026-05-10T00:00:01.000Z/authoring/signed/demo.mda"
+					},
+				},
+				{
+					name: "file non-snapshot path",
+					pattern: /outside the active snapshot/,
+					mutate: (envelope) => {
+						const firstFile = envelope.payload.files[0]
+						assert.ok(firstFile)
+						firstFile.path = "current.json"
+					},
+				},
+				{
+					name: "file traversal path",
+					pattern: /traversal segments/,
+					mutate: (envelope) => {
+						const firstFile = envelope.payload.files[0]
+						assert.ok(firstFile)
+						firstFile.path = `snapshots/${published.revision}/authoring/../current.json`
+					},
+				},
+				{
+					name: "file role mismatch",
+					pattern: /authoring file path/,
+					mutate: (envelope) => {
+						const firstFile = envelope.payload.files.find((file) => file.role === "authoring")
+						assert.ok(firstFile)
+						firstFile.path = `snapshots/${published.revision}/resolved/signed/demo.json`
+					},
+				},
+			]
+
+		for (const testCase of cases) {
+			const envelope = JSON.parse(JSON.stringify(original)) as RegistryRootEnvelope
+			testCase.mutate(envelope)
+			await writeRegistryRoot(root, published.revision, envelope)
+			await assert.rejects(
+				ConfigRegistryManager.open(root, {
+					signedRoot: {
+						trustPolicy: REGISTRY_ROOT_POLICY,
+						didWebVerifier: registryRootVerifier(true),
+					},
+				}),
+				testCase.pattern,
+				testCase.name,
+			)
+		}
+	})
+})
+
+await run("publisher rejects existing revision with different registry root", async () => {
+	await withTempRoot("signed-root-existing-conflict", async (root) => {
+		await writeUnsignedAuthoringPreset(root)
+
+		await new ConfigRegistryPublisher(root).publish({
+			revision: "same_signed_root_revision",
+			registryRoot: { signer: registryRootSigner() },
+		})
+
+		await assert.rejects(
+			new ConfigRegistryPublisher(root).publish({
+				revision: "same_signed_root_revision",
+				registryRoot: { signer: registryRootSigner("other.example.com", "did:web:other.example.com#root") },
+			}),
+			/different registry root/,
+		)
+		await assertNoStagingEntries(root)
+	})
+})
+
+await run("runtime fails closed on signed registry root refresh failure", async () => {
+	await withTempRoot("signed-root-refresh-fail-closed", async (root) => {
+		await writeUnsignedAuthoringPreset(root)
+
+		const first = await new ConfigRegistryPublisher(root).publish({
+			revision: "signed_refresh_first",
+			registryRoot: { signer: registryRootSigner() },
+		})
+		const manager = await ConfigRegistryManager.open(root, {
+			signedRoot: {
+				trustPolicy: REGISTRY_ROOT_POLICY,
+				didWebVerifier: registryRootVerifier(true),
+			},
+		})
+
+		const second = await new ConfigRegistryPublisher(root).publish({
+			revision: "signed_refresh_second",
+			registryRoot: { signer: registryRootSigner() },
+		})
+		const envelope = await readRegistryRoot(root, second.revision)
+		envelope.payload.current.sha256 = "0".repeat(64)
+		await writeRegistryRoot(root, second.revision, envelope)
+
+		await assert.rejects(manager.getPreset("signed", "demo"), /current binding digest/)
+		assert.equal(manager.activeRevision, first.revision)
+		assert.ok(manager.lastReloadError instanceof Error)
+	})
+})
+
 await run("runtime opens signed registry root with external verifier and rejects untrusted roots", async () => {
 	await withTempRoot("signed-root-runtime", async (root) => {
 		await writeUnsignedAuthoringPreset(root)
@@ -463,15 +624,13 @@ await run("runtime opens signed registry root with external verifier and rejects
 		const published = await new ConfigRegistryPublisher(root).publish({
 			registryRoot: { signer: registryRootSigner() },
 		})
-		const rootDigest = published.registryRootSha256
-		if (rootDigest === undefined) {
-			throw new Error("publish should return a registry root digest")
-		}
+		const envelope = await readRegistryRoot(root, published.revision)
+		const rootPayloadDigest = envelope.payload_sha256
 		const manager = await ConfigRegistryManager.open(root, {
 			signedRoot: {
 				trustPolicy: REGISTRY_ROOT_POLICY,
 				didWebVerifier: registryRootVerifier(true),
-				expectedRootDigest: rootDigest,
+				expectedRootDigest: rootPayloadDigest,
 			},
 		})
 

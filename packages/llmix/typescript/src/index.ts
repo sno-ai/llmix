@@ -45,8 +45,24 @@ export {
 export {
   ConfigRegistryManager,
   ConfigRegistryPublisher,
+  type ConfigRegistryJsonObject,
+  type ConfigRegistryJsonValue,
+  type ConfigRegistryOpenOptions,
   type ConfigRegistryPublishOptions,
   type PublishedRevision,
+  type RegistryRootCurrentBinding,
+  type RegistryRootEnvelope,
+  type RegistryRootFileDigest,
+  type RegistryRootFreshnessInput,
+  type RegistryRootHighWatermark,
+  type RegistryRootIntegrity,
+  type RegistryRootManifestBinding,
+  type RegistryRootPayload,
+  type RegistryRootSignature,
+  type RegistryRootSigner,
+  type RegistryRootSigningInput,
+  type RegistryRootSigningOptions,
+  type RegistryRootVerificationOptions,
 } from "./config-registry.js";
 
 // =============================================================================
