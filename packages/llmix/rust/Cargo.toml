@@ -33,7 +33,7 @@ hyper-rustls = { version = "=0.27.7", optional = true }
 reqwest = { version = "=0.12.28", optional = true, default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
-sha2 = "0.10.8"
+sha2 = "0.11.0"
 snoai-mda-config = { path = "../../mda-config/rust", version = "1.1.1" }
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["fs", "macros", "rt", "sync", "time"] }
