@@ -550,6 +550,38 @@ await run("runtime rejects signed registry root rollback and freshness policy vi
 	})
 })
 
+await run("runtime rejects numeric custom revision rollback with minimumRevision", async () => {
+	await withTempRoot("signed-root-numeric-revision", async (root) => {
+		await writeUnsignedAuthoringPreset(root)
+
+		const older = await new ConfigRegistryPublisher(root).publish({
+			revision: "9",
+			registryRoot: { signer: registryRootSigner() },
+		})
+		const newer = await new ConfigRegistryPublisher(root).publish({
+			revision: "10",
+			registryRoot: { signer: registryRootSigner() },
+		})
+
+		await writeFile(
+			path.join(root, "current.json"),
+			`${JSON.stringify({ revision: older.revision, manifest_sha256: older.manifestSha256 }, null, 2)}\n`,
+			"utf-8",
+		)
+
+		await assert.rejects(
+			ConfigRegistryManager.open(root, {
+				signedRoot: {
+					trustPolicy: REGISTRY_ROOT_POLICY,
+					didWebVerifier: registryRootVerifier(true),
+					minimumRevision: newer.revision,
+				},
+			}),
+			/older than minimum/,
+		)
+	})
+})
+
 console.log(`\n${"=".repeat(40)}`)
 console.log(`Results: ${passed} passed, ${failed} failed`)
 if (failed > 0) {
