@@ -200,7 +200,7 @@ async function writeAuthoringSource(root: string, moduleName: string, presetName
 	return filePath
 }
 
-async function writeUnsignedAuthoringPreset(root: string): Promise<void> {
+async function writeUnsignedAuthoringPreset(root: string, model = "gpt-4.1-mini", maxOutputTokens = 128): Promise<void> {
 	await writeAuthoringSource(
 		root,
 		"search",
@@ -213,8 +213,8 @@ async function writeUnsignedAuthoringPreset(root: string): Promise<void> {
 			"  snoai-llmix:",
 			"    common:",
 			"      provider: openai",
-			"      model: gpt-4.1-mini",
-			"      maxOutputTokens: 128",
+			`      model: ${model}`,
+			`      maxOutputTokens: ${maxOutputTokens}`,
 			"---",
 			BODY,
 		].join("\n"),
@@ -335,6 +335,23 @@ await run("direct MDA loading accepts trustedRuntime did:web options", async () 
 		assert.equal(loaded.provider, "openai")
 		assert.equal(loaded.model, "gpt-4.1-mini")
 		assert.equal(loaded.common?.maxOutputTokens, 256)
+	})
+})
+
+await run("direct MDA loading rejects a signed file after payload tampering", async () => {
+	await withTempRoot("direct-did-web-tamper", async (root) => {
+		const { source, digest } = trustedDidWebMda("direct-did-web-tamper")
+		const filePath = await writeAuthoringSource(root, "search", "direct_did_web_tamper", source)
+		const options: MdaConfigLoadOptions = {
+			trustedRuntime: true,
+			trustPolicy: DID_WEB_POLICY,
+			didWebVerifier: didWebVerifier(true, digest),
+		}
+
+		assert.equal((await loadMdaConfig(filePath, options)).model, "gpt-4.1-mini")
+		await writeFile(filePath, source.replace("model: gpt-4.1-mini", "model: gpt-5-mini"), "utf-8")
+
+		await assert.rejects(loadMdaConfig(filePath, options), /digest|integrity|signature|verification/i)
 	})
 })
 
@@ -645,6 +662,43 @@ await run("runtime opens signed registry root with external verifier and rejects
 			}),
 			/no cryptographically verified signature/,
 		)
+	})
+})
+
+await run("runtime rejects coherent registry replacement when external root digest stays pinned", async () => {
+	await withTempRoot("signed-root-package-replacement", async (root) => {
+		await writeUnsignedAuthoringPreset(root, "gpt-4.1-mini", 128)
+		const original = await new ConfigRegistryPublisher(root).publish({
+			revision: "package_original",
+			registryRoot: { signer: registryRootSigner() },
+		})
+		const originalEnvelope = await readRegistryRoot(root, original.revision)
+		const pinnedOptions = {
+			signedRoot: {
+				trustPolicy: REGISTRY_ROOT_POLICY,
+				didWebVerifier: registryRootVerifier(true),
+				expectedRootDigest: originalEnvelope.payload_sha256,
+			},
+		} as const
+
+		const originalManager = await ConfigRegistryManager.open(root, pinnedOptions)
+		assert.equal((await originalManager.getPreset("search", "summary")).model, "gpt-4.1-mini")
+
+		await writeUnsignedAuthoringPreset(root, "gpt-5-mini", 4096)
+		const replacement = await new ConfigRegistryPublisher(root).publish({
+			revision: "package_replacement",
+			registryRoot: { signer: registryRootSigner() },
+		})
+		const replacementManager = await ConfigRegistryManager.open(root, {
+			signedRoot: {
+				trustPolicy: REGISTRY_ROOT_POLICY,
+				didWebVerifier: registryRootVerifier(true),
+			},
+		})
+
+		assert.notEqual(replacement.manifestSha256, original.manifestSha256)
+		assert.equal((await replacementManager.getPreset("search", "summary")).model, "gpt-5-mini")
+		await assert.rejects(ConfigRegistryManager.open(root, pinnedOptions), /expectedRootDigest/)
 	})
 })
 
