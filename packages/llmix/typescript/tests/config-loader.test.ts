@@ -44,9 +44,9 @@ await run("loadMdaConfig projects fixture namespace into LLMConfig", async () =>
 	assert.equal("provider" in (loadedFromPath.common ?? {}), false)
 	assert.equal("model" in (loadedFromPath.common ?? {}), false)
 	assert.equal(loadedFromPath.providerOptions?.openai?.reasoningEffort, "medium")
-	assert.equal(loadedFromPath.description, "Sample LLMix preset for MDA loader tests.")
+	assert.ok(loadedFromPath.description?.startsWith("Fast cheap multi-tool calls"))
 	assert.equal(loadedFromPath.caching?.strategy, "memory")
-	assert.deepEqual(loadedFromPath.tags, ["fixture"])
+	assert.equal("tags" in loadedFromPath, false)
 })
 
 await run("VALID_PROVIDERS matches the provider schema", async () => {
