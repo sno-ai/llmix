@@ -27,5 +27,8 @@
     "check:rust": "cargo check --manifest-path packages/llmix/rust/Cargo.toml",
     "check:mda-config:rust": "cargo check --manifest-path packages/mda-config/rust/Cargo.toml",
     "clean": "bun run --cwd packages/llmix/typescript clean && rm -rf packages/mda-config/typescript/dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0"
   }
 }
