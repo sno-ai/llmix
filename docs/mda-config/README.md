@@ -29,9 +29,9 @@ supplied by the caller through verifier/client hooks.
 
 | Package | Status | Path |
 |---------|--------|------|
-| `@snoai/mda-config` (npm, TypeScript) | v1.1.0: frontmatter, source schema, integrity, `requires.network`, schema parser support, verifier hooks | [`packages/mda-config/typescript/`](../../packages/mda-config/typescript/) |
-| `snoai-mda-config` (PyPI, Python) | v1.1.0: frontmatter, source schema, integrity, `requires.network`, pydantic, verifier hooks | [`packages/mda-config/python/`](../../packages/mda-config/python/) |
-| `snoai-mda-config` (crates.io, Rust) | v1.1.0: frontmatter, source schema, integrity, `requires.network`, serde, verifier hooks | [`packages/mda-config/rust/`](../../packages/mda-config/rust/) |
+| `@snoai/mda-config` (npm, TypeScript) | v1.1.1: frontmatter, source schema, integrity, `requires.network`, schema parser support, verifier hooks | [`packages/mda-config/typescript/`](../../packages/mda-config/typescript/) |
+| `snoai-mda-config` (PyPI, Python) | v1.1.1: frontmatter, source schema, integrity, `requires.network`, pydantic, verifier hooks | [`packages/mda-config/python/`](../../packages/mda-config/python/) |
+| `snoai-mda-config` (crates.io, Rust) | v1.1.1: frontmatter, source schema, integrity, `requires.network`, serde, verifier hooks | [`packages/mda-config/rust/`](../../packages/mda-config/rust/) |
 
 ## Quick Start
 
