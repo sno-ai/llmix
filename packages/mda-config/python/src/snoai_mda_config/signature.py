@@ -135,7 +135,7 @@ def verify_signatures(
     sigstore_verifier: SigstoreVerifier | None = None,
     did_web_verifier: DidWebVerifier | None = None,
 ) -> None:
-    """Evaluate signatures against an RC2 trust policy threshold."""
+    """Evaluate signatures against a trust policy threshold."""
 
     policy = (
         trust_policy

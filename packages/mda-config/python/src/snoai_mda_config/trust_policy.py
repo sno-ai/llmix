@@ -10,7 +10,7 @@ from .errors import ErrorCategory, MdaConfigError
 
 @dataclass(frozen=True)
 class SigstoreTrustedSigner:
-    """RC2 Sigstore OIDC trust-policy signer."""
+    """Sigstore OIDC trust-policy signer."""
 
     type: Literal["sigstore-oidc"]
     issuer: str
@@ -19,7 +19,7 @@ class SigstoreTrustedSigner:
 
 @dataclass(frozen=True)
 class DidWebTrustedSigner:
-    """RC2 did:web trust-policy signer."""
+    """did:web trust-policy signer."""
 
     type: Literal["did-web"]
     domain: str
@@ -30,7 +30,7 @@ TrustedSigner = SigstoreTrustedSigner | DidWebTrustedSigner
 
 @dataclass(frozen=True)
 class TrustPolicy:
-    """Validated RC2 trust policy."""
+    """Validated trust policy."""
 
     version: Literal[1]
     trusted_signers: tuple[TrustedSigner, ...]
@@ -39,7 +39,7 @@ class TrustPolicy:
 
 
 def validate_trust_policy(input_value: object) -> TrustPolicy:
-    """Validate and normalize an RC2 trust policy."""
+    """Validate and normalize an trust policy."""
 
     policy = _require_dict(input_value, "trustPolicy")
     _reject_unknown(policy, {"version", "trustedSigners", "minSignatures", "rekor"}, "trustPolicy")
