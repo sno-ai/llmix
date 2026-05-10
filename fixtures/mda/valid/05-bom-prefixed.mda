@@ -1,0 +1,8 @@
+﻿---
+name: bom-prefixed
+description: File begins with UTF-8 BOM; extractor MUST strip the BOM in step 1.
+---
+
+# BOM
+
+body.

@@ -8,7 +8,7 @@
 [![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-b7410e.svg?labelColor=3b3b3b)](https://www.rust-lang.org/)
 [![License: Apache--2.0](https://img.shields.io/badge/License-Apache--2.0-97ca00.svg?labelColor=3b3b3b)](LICENSE)
 
-Read in other languages: **English** · [中文](docs/readme/README.zh-CN.md) · [Deutsch](docs/readme/README.de.md) · [Español](docs/readme/README.es.md) · [Français](docs/readme/README.fr.md) · [Русский](docs/readme/README.ru.md) · [한국어](docs/readme/README.ko.md) · [日本語](docs/readme/README.ja.md) · [हिन्दी](docs/readme/README.hi.md)
+Read in other languages: **English** · [中文](docs/llmix/readme/README.zh-CN.md) · [Deutsch](docs/llmix/readme/README.de.md) · [Español](docs/llmix/readme/README.es.md) · [Français](docs/llmix/readme/README.fr.md) · [Русский](docs/llmix/readme/README.ru.md) · [한국어](docs/llmix/readme/README.ko.md) · [日本語](docs/llmix/readme/README.ja.md) · [हिन्दी](docs/llmix/readme/README.hi.md)
 
 > Config-driven LLM calls for Python, TypeScript, and Rust.
 > Keep your SDK. Move model behavior into MDA presets. Put cache, retries, key rotation, and rollout control around the call.
@@ -58,22 +58,29 @@ pip install "sno-llmix[redis]"
 cargo add llmix-rs --features providers-openai,redis
 ```
 
+LLMix also carries the MDA config foundation packages in this monorepo. They keep
+their original package names: `@snoai/mda-config` for TypeScript and
+`snoai-mda-config` for Python and Rust. Use them when you need to validate,
+compose, load, or enforce trust policy for `.mda` configuration files outside
+the LLMix runtime.
+
 ---
 
 ## Documentation
 
-- [Usage reference](docs/llmix-usage-ref.md)
-- [TypeScript guide](docs/llmix-typescript.md)
-- [Python guide](docs/llmix-python.md)
-- [Rust guide](docs/llmix-rust.md)
-- [Secure LLMix configuration](docs/secure-llmix-configuration.md)
-- [Key pool operations](docs/key-pool-operations.md)
+- [Usage reference](docs/llmix/llmix-usage-ref.md)
+- [TypeScript guide](docs/llmix/llmix-typescript.md)
+- [Python guide](docs/llmix/llmix-python.md)
+- [Rust guide](docs/llmix/llmix-rust.md)
+- [Secure LLMix configuration](docs/llmix/secure-llmix-configuration.md)
+- [Key pool operations](docs/llmix/key-pool-operations.md)
+- [MDA config quick start](docs/mda-config/cli-and-runtime-quick-start.md)
 
 ---
 
 ## At a Glance
 
-![LLMix wraps your existing LLM SDK stack with MDA config, cache, resilience, and key-pool primitives.](docs/images/llmix-wraps-sdk.png)
+![LLMix wraps your existing LLM SDK stack with MDA config, cache, resilience, and key-pool primitives.](docs/llmix/images/llmix-wraps-sdk.png)
 
 LLMix wraps one provider call at a time.
 
@@ -200,13 +207,13 @@ let response = pipeline
     .await;
 ```
 
-See the [Rust guide](docs/llmix-rust.md) for full `main` examples and feature flags.
+See the [Rust guide](docs/llmix/llmix-rust.md) for full `main` examples and feature flags.
 
 ---
 
 ## What You Get Around Every Call
 
-![LLMix request pipeline from config and cache lookup through circuit breaker, singleflight, key-pool rotation, retry loop, dispatch, and telemetry.](docs/images/llmix-call-pipeline.png)
+![LLMix request pipeline from config and cache lookup through circuit breaker, singleflight, key-pool rotation, retry loop, dispatch, and telemetry.](docs/llmix/images/llmix-call-pipeline.png)
 
 | Concern | What LLMix does |
 |---------|-----------------|
@@ -226,7 +233,7 @@ The defaults are meant to be boring. Tune them when real traffic gives you a rea
 
 ## MDA Presets
 
-![LLMix turns editable MDA presets into immutable registry snapshots that Python, TypeScript, and Rust runtimes can read consistently.](docs/images/llmix-mda-config.png)
+![LLMix turns editable MDA presets into immutable registry snapshots that Python, TypeScript, and Rust runtimes can read consistently.](docs/llmix/images/llmix-mda-config.png)
 
 LLMix uses MDA Source Mode for config authoring. The human notes and runtime settings live in one file. The runtime only sees the resolved JSON.
 Python, TypeScript, and Rust can require MDA integrity, `requires.network`, and
@@ -380,19 +387,17 @@ LLMix is useful when the same model-call shape keeps showing up across services.
 ## Development
 
 ```bash
-# TypeScript
+# Install TypeScript workspace dependencies
 bun install
-bun test
-bunx tsc -p tsconfig.check.json
 
-# Python
-uv sync
-uv run pytest tests/python/
-uv run pyright
+# Install Python workspace dependencies
+uv sync --project packages/llmix/python --extra dev
+uv sync --project packages/mda-config/python --all-groups
 
-# Rust
-cargo test --manifest-path rust/llmix-rs/Cargo.toml
-cargo clippy --manifest-path rust/llmix-rs/Cargo.toml -- -D warnings
+# Full monorepo checks
+bun run build
+bun run check
+bun run test
 ```
 
 ---

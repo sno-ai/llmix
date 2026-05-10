@@ -1,0 +1,48 @@
+[package]
+name = "llmix-rs"
+version = "2.0.0"
+edition = "2021"
+rust-version = "1.83"
+license = "Apache-2.0"
+description = "Rust binding for the LLMix orchestration contract with cache, resilience, and config parity"
+repository = "https://github.com/sno-ai/llmix"
+documentation = "https://doc.sno.dev/llmix-rs"
+readme = "README.md"
+keywords = ["llm", "ai", "orchestration", "redis", "tokio"]
+categories = ["asynchronous", "api-bindings"]
+
+[features]
+default = []
+redis = ["dep:redis", "dep:url"]
+providers-openai = ["dep:reqwest", "dep:url", "dep:hyper-rustls"]
+providers-sno-gpu = ["providers-openai"]
+providers-anthropic = ["dep:reqwest", "dep:url", "dep:hyper-rustls"]
+providers-gemini = ["dep:reqwest", "dep:url", "dep:hyper-rustls"]
+helpers-openai = ["providers-openai"]
+helpers-sno-gpu = ["providers-sno-gpu"]
+helpers-anthropic = ["providers-anthropic"]
+helpers-gemini = ["providers-gemini"]
+
+[dependencies]
+async-trait = "0.1.86"
+fs2 = "0.4.3"
+httpdate = "1.0.3"
+indexmap = "2.12"
+lru = "0.12.5"
+hyper-rustls = { version = "=0.27.7", optional = true }
+reqwest = { version = "=0.12.28", optional = true, default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+sha2 = "0.10.8"
+snoai-mda-config = { path = "../../mda-config/rust", version = "1.1.1" }
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["fs", "macros", "rt", "sync", "time"] }
+redis = { version = "=0.32.7", optional = true, default-features = false, features = ["tokio-comp"] }
+url = { version = "=2.5.0", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

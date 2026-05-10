@@ -1,0 +1,20 @@
+---
+name: rekor-entry-wrong
+description: Identical to 03-sigstore-signed but the test injects a Rekor entry whose kind is hashedrekord-v0.0.1; §09-4.2 step 3 MUST reject.
+integrity:
+  algorithm: sha256
+  digest: "sha256:0ced75d0c768c5561753d79ed7b4f3c8ddf4d9df8c9b206130261fe75b01b674"
+signatures:
+  - signer: "sigstore-oidc:https://accounts.google.com"
+    key-id: "fulcio:9c4e7b"
+    payload-digest: "sha256:0ced75d0c768c5561753d79ed7b4f3c8ddf4d9df8c9b206130261fe75b01b674"
+    algorithm: ecdsa-p256
+    signature: "MEUCIQDFIXTURE=="
+    rekor-log-id: "c0d23b6c4f200000000000000000000000000000000000000000000000000000"
+    rekor-log-index: 87654321
+metadata:
+  mda:
+    version: "1.0.0"
+---
+
+# Rekor entry wrong kind

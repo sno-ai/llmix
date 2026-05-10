@@ -14,11 +14,9 @@
 
 ## Tests
 
-- [ ] `bun test` passes
-- [ ] `uv run pytest tests/python/` passes
-- [ ] `cargo test --manifest-path rust/llmix-rs/Cargo.toml` passes
-- [ ] `bunx tsc -p tsconfig.check.json` clean
-- [ ] `uv run pyright` clean
+- [ ] `bun run build` passes
+- [ ] `bun run check` clean
+- [ ] `bun run test` passes
 
 ## Cross-language parity
 

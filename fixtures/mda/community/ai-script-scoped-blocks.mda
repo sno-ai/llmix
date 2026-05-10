@@ -1,0 +1,31 @@
+---
+name: ai-script-scoped-blocks
+description: Community fixture — multiple ai-script blocks tagged with explicit scope (public, internal) to support consumer-side access filtering.
+title: Scoped ai-script blocks sample
+doc-id: 7cd345fa-595a-40b4-9c4c-70afcbe38059
+author: omarismohrmann18
+tags: [fixture, community, ai-script, scope]
+created-date: "2026-05-09T00:00:00Z"
+metadata:
+  ai-script:
+    version: "1"
+    instructions:
+      - scope: public
+        text: |
+          For external-facing requests, route the agent to the documented
+          support escalation path. Do not surface internal tool names.
+      - scope: internal
+        text: |
+          For internal ops requests, the full diagnostic toolchain is
+          available — pageops, runbook-cli, incident-stream.
+---
+
+# Scoped ai-script blocks
+
+This fixture demonstrates an `ai-script` block split into two
+explicitly-scoped sub-blocks (`public` and `internal`). The loader
+surfaces both blocks; consumers are expected to filter at runtime
+based on the agent's tenant identity.
+
+Useful as a starting point for documenting scope filtering patterns
+without prescribing a specific filter implementation.

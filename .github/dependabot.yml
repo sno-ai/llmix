@@ -1,25 +1,46 @@
 version: 2
 updates:
   - package-ecosystem: "npm"
-    directory: "/"
+    directory: "/packages/llmix/typescript"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
     labels: ["dependencies", "typescript"]
 
+  - package-ecosystem: "npm"
+    directory: "/packages/mda-config/typescript"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "typescript", "mda-config"]
+
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/packages/llmix/python"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
     labels: ["dependencies", "python"]
 
+  - package-ecosystem: "pip"
+    directory: "/packages/mda-config/python"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "python", "mda-config"]
+
   - package-ecosystem: "cargo"
-    directory: "/rust/llmix-rs"
+    directory: "/packages/llmix/rust"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
     labels: ["dependencies", "rust"]
+
+  - package-ecosystem: "cargo"
+    directory: "/packages/mda-config/rust"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "rust", "mda-config"]
 
   - package-ecosystem: "github-actions"
     directory: "/"

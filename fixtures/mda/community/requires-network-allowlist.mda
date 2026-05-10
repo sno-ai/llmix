@@ -1,0 +1,24 @@
+---
+name: requires-network-allowlist-community
+description: Community fixture — `requires.network.allowlist` with multiple hostnames including a wildcard pattern.
+title: requires.network allowlist sample
+doc-id: 9fe73541-b2a2-4c64-8a61-bdfa840eb09d
+author: nikolairedmond72
+tags: [fixture, community, requires-network, allowlist]
+created-date: "2026-05-09T00:00:00Z"
+requires:
+  network:
+    allowlist:
+      - "api.openai.com"
+      - "api.anthropic.com"
+      - "*.s3.amazonaws.com"
+---
+
+# Sample with allowlisted outbound network access
+
+This source declares an outbound network allowlist as part of its
+`requires.network` capability block. A loader-enforced runtime should
+open sockets only to these hosts.
+
+The wildcard pattern `*.s3.amazonaws.com` covers regional S3 endpoints
+without enumerating each one explicitly.

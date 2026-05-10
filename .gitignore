@@ -1,5 +1,5 @@
 node_modules/
-typescript/dist/
+packages/llmix/typescript/dist/
 dist/
 build/
 *.log
@@ -7,9 +7,6 @@ build/
 .npmrc
 
 # Python
-python/llmix/__pycache__/
-python/llmix/dispatchers/__pycache__/
-python/llmix/providers/__pycache__/
 __pycache__/
 *.pyc
 *.pyo
@@ -21,10 +18,12 @@ __pycache__/
 
 # Pytest
 .pytest_cache/
+.ruff_cache/
 
 # Test environment secrets
 .env.test
 
 # Rust
-rust/llmix-rs/target/
+packages/llmix/rust/target/
+packages/mda-config/rust/target/
 .claude/scheduled_tasks.lock

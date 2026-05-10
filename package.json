@@ -1,106 +1,31 @@
 {
-  "name": "@snoai/llmix",
-  "version": "2.0.0",
-  "description": "Config-driven harness around your LLM SDK. MDA-driven model swap, two-tier cache, circuit breaker, key-pool rotation.",
-  "author": "Sno AI",
-  "license": "Apache-2.0",
-  "homepage": "https://github.com/sno-ai/llmix#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/sno-ai/llmix.git"
-  },
-  "bugs": {
-    "url": "https://github.com/sno-ai/llmix/issues"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
+  "name": "llmix-monorepo",
+  "private": true,
   "type": "module",
-  "engines": {
-    "node": ">=20"
-  },
-  "main": "./typescript/dist/index.js",
-  "types": "./typescript/dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./typescript/dist/index.d.ts",
-      "import": "./typescript/dist/index.js"
-    },
-    "./pricing": {
-      "types": "./typescript/dist/pricing/index.d.ts",
-      "import": "./typescript/dist/pricing/index.js"
-    }
-  },
-  "files": [
-    "typescript/dist",
-    "typescript/src",
-    "data",
-    "CHANGELOG.md"
+  "workspaces": [
+    "packages/llmix/typescript",
+    "packages/mda-config/typescript"
   ],
   "scripts": {
-    "build": "bun run tsc",
-    "dev": "bun run tsc --watch",
-    "check": "bunx tsc -p tsconfig.check.json",
-    "clean": "rm -rf typescript/dist",
-    "test": "bun test",
-    "prepublishOnly": "bun run clean && bun run build"
-  },
-  "dependencies": {
-    "@snoai/mda-config": "^1.0.2",
-    "@openrouter/sdk": "^0.12.21",
-    "lru-cache": "^11.3.0",
-    "proper-lockfile": "^4.1.2",
-    "zod": "^4.4.3"
-  },
-  "peerDependencies": {
-    "@ai-sdk/anthropic": ">=3.0.0",
-    "@ai-sdk/google": ">=3.0.0",
-    "@ai-sdk/openai": ">=3.0.0",
-    "@anthropic-ai/sdk": ">=0.80.0",
-    "ai": ">=6.0.0",
-    "ioredis": ">=5.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@ai-sdk/anthropic": {
-      "optional": true
-    },
-    "@ai-sdk/google": {
-      "optional": true
-    },
-    "@ai-sdk/openai": {
-      "optional": true
-    },
-    "@anthropic-ai/sdk": {
-      "optional": true
-    },
-    "ai": {
-      "optional": true
-    },
-    "ioredis": {
-      "optional": true
-    }
-  },
-  "devDependencies": {
-    "@ai-sdk/anthropic": "^3.0.66",
-    "@ai-sdk/google": "^3.0.0",
-    "@ai-sdk/openai": "^3.0.0",
-    "@anthropic-ai/sdk": "^0.95.1",
-    "@types/node": "^25.6.2",
-    "@types/proper-lockfile": "^4.1.4",
-    "ai": "^6.0.0",
-    "ioredis": "^5.4.1",
-    "typescript": "^6.0.3"
-  },
-  "keywords": [
-    "llm",
-    "ai",
-    "config",
-    "openai",
-    "anthropic",
-    "google",
-    "deepseek",
-    "cache",
-    "redis",
-    "lru"
-  ]
+    "build": "bun run build:mda-config && bun run build:llmix",
+    "build:llmix": "bun run --cwd packages/llmix/typescript build",
+    "build:mda-config": "bun run --cwd packages/mda-config/typescript build",
+    "check": "bun run check:versions && bun run check:mda-config && bun run check:typescript && bun run lint:mda-config:python && bun run check:mda-config:python && bun run check:python && bun run check:mda-config:rust && bun run check:rust",
+    "check:versions": "scripts/check-version-parity.sh",
+    "check:typescript": "bun run --cwd packages/llmix/typescript check",
+    "check:mda-config": "bun run --cwd packages/mda-config/typescript typecheck",
+    "test": "bun run test:mda-config && bun run test:typescript && bun run test:mda-config:python && bun run test:python && bun run test:mda-config:rust && bun run test:rust",
+    "test:typescript": "bun run --cwd packages/llmix/typescript test",
+    "test:mda-config": "bun run --cwd packages/mda-config/typescript test",
+    "test:python": "uv run --project packages/llmix/python --extra dev pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests",
+    "test:mda-config:python": "uv run --project packages/mda-config/python pytest -c packages/mda-config/python/pyproject.toml packages/mda-config/python/tests",
+    "test:rust": "cargo test --manifest-path packages/llmix/rust/Cargo.toml",
+    "test:mda-config:rust": "cargo test --manifest-path packages/mda-config/rust/Cargo.toml",
+    "check:python": "uv run --project packages/llmix/python --extra dev pyright -p packages/llmix/python",
+    "lint:mda-config:python": "uv run --project packages/mda-config/python ruff check packages/mda-config/python",
+    "check:mda-config:python": "uv run --project packages/mda-config/python pyright -p packages/mda-config/python",
+    "check:rust": "cargo check --manifest-path packages/llmix/rust/Cargo.toml",
+    "check:mda-config:rust": "cargo check --manifest-path packages/mda-config/rust/Cargo.toml",
+    "clean": "bun run --cwd packages/llmix/typescript clean && rm -rf packages/mda-config/typescript/dist"
+  }
 }

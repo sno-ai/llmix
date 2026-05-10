@@ -1,0 +1,33 @@
+---
+name: integrity-multiline-body
+description: Community fixture — multi-line body content exercising integrity-digest canonicalization across mixed paragraph and code-block content.
+title: Multi-line body integrity sample
+doc-id: 655dacfc-4c1e-423d-9ac2-36dafa45ed44
+author: elowenvickers39
+tags: [fixture, community, integrity, multiline]
+created-date: "2026-05-09T00:00:00Z"
+integrity:
+  algorithm: sha-256
+  digest: 0000000000000000000000000000000000000000000000000000000000000000
+---
+
+# Multi-line body integrity check
+
+The integrity field above declares the expected digest of the canonical
+body bytes. A conforming loader rejects this fixture unless the digest
+matches the recomputed value at load time.
+
+This sample exercises three body-content shapes in one document:
+
+1. Plain paragraph text
+2. A fenced code block
+3. A trailing paragraph after the fence
+
+```ts
+import { loadMdaConfig } from '@snoai/mda-config';
+
+const cfg = await loadMdaConfig(path, { verifyIntegrity: true });
+```
+
+Trailing paragraph included to ensure the canonicalizer handles
+body content after a fence boundary correctly.

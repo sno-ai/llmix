@@ -1,0 +1,11 @@
+---
+name: integrity-mismatch
+description: integrity.digest is well-formed but does NOT match the canonical bytes; §08-4 MUST reject.
+integrity:
+  algorithm: sha256
+  digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+---
+
+# Mismatch
+
+The body content here will be hashed but never matches the all-zero digest above.

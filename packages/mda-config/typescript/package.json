@@ -1,0 +1,67 @@
+{
+  "name": "@snoai/mda-config",
+  "version": "1.1.1",
+  "description": "MDA v1.0 source-mode loader: frontmatter extraction, integrity, Sigstore signature verification, requires.network enforcement.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sno-ai/llmix.git",
+    "directory": "packages/mda-config/typescript"
+  },
+  "homepage": "https://github.com/sno-ai/llmix/tree/main/packages/mda-config/typescript",
+  "bugs": {
+    "url": "https://github.com/sno-ai/llmix/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "keywords": [
+    "mda",
+    "frontmatter",
+    "sigstore",
+    "integrity",
+    "config"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@truestamp/canonify": "^2.1.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "js-yaml": "^4.1.0",
+    "sigstore": "^4.1.0"
+  },
+  "peerDependencies": {
+    "zod": "^3.22.0 || ^4.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.14.0",
+    "typescript": "^6.0.3",
+    "vitest": "^2.1.0",
+    "zod": "^3.23.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

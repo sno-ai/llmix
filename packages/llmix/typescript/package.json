@@ -1,0 +1,108 @@
+{
+  "name": "@snoai/llmix",
+  "version": "2.0.0",
+  "description": "Config-driven harness around your LLM SDK. MDA-driven model swap, two-tier cache, circuit breaker, key-pool rotation.",
+  "author": "Sno AI",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/sno-ai/llmix#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sno-ai/llmix.git",
+    "directory": "packages/llmix/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/sno-ai/llmix/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./pricing": {
+      "types": "./dist/pricing/index.d.ts",
+      "import": "./dist/pricing/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "data",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun run tsc",
+    "dev": "bun run tsc --watch",
+    "check": "bunx tsc -p tsconfig.check.json",
+    "clean": "rm -rf dist",
+    "test": "bun test",
+    "prepublishOnly": "bun run clean && bun run build"
+  },
+  "dependencies": {
+    "@ai-sdk/provider": "^3.0.10",
+    "@snoai/mda-config": "^1.1.1",
+    "@openrouter/sdk": "^0.12.21",
+    "lru-cache": "^11.3.0",
+    "proper-lockfile": "^4.1.2",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@ai-sdk/anthropic": ">=3.0.0",
+    "@ai-sdk/google": ">=3.0.0",
+    "@ai-sdk/openai": ">=3.0.0",
+    "@anthropic-ai/sdk": ">=0.80.0",
+    "ai": ">=6.0.0",
+    "ioredis": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@ai-sdk/anthropic": {
+      "optional": true
+    },
+    "@ai-sdk/google": {
+      "optional": true
+    },
+    "@ai-sdk/openai": {
+      "optional": true
+    },
+    "@anthropic-ai/sdk": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    },
+    "ioredis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ai-sdk/anthropic": "^3.0.66",
+    "@ai-sdk/google": "^3.0.0",
+    "@ai-sdk/openai": "^3.0.0",
+    "@anthropic-ai/sdk": "^0.95.1",
+    "@types/node": "^25.6.2",
+    "@types/proper-lockfile": "^4.1.4",
+    "ai": "^6.0.0",
+    "ioredis": "^5.4.1",
+    "typescript": "^6.0.3"
+  },
+  "keywords": [
+    "llm",
+    "ai",
+    "config",
+    "openai",
+    "anthropic",
+    "google",
+    "deepseek",
+    "cache",
+    "redis",
+    "lru"
+  ]
+}

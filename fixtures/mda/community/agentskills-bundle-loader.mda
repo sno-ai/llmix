@@ -1,0 +1,30 @@
+---
+name: agentskills-bundle-loader
+description: Community fixture — `.mda` source intended for agentskills.io runtime consumption, declaring loader options and the post-load shape expected by the manifest builder.
+title: agentskills.io bundle loader sample
+doc-id: 0640e0fe-7d89-4863-8d56-0df54bfc8030
+author: Sooyeon Kim
+tags: [fixture, community, agentskills, loader, bundle]
+created-date: "2026-05-09T00:00:00Z"
+metadata:
+  mda:
+    version: "1.0.0"
+    targets: [SKILL.md]
+  agentskills:
+    runtime: "agentskills.io@>=0.4"
+    loader-options:
+      verify-integrity: true
+      verify-signatures: false
+      require-network-declaration: true
+---
+
+# agentskills.io bundle loader sample
+
+This fixture is a minimal `.mda` source designed to be loaded by an
+agentskills.io runtime. The `metadata.agentskills` block declares the
+runtime version constraint and the loader options the runtime should
+apply when calling `mda-config`.
+
+On a successful load, the runtime can lift the front-matter directly
+into its skill manifest without further parsing — `mda-config` has
+already validated the schema and run the integrity check.

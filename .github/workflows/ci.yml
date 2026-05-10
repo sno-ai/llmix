@@ -27,13 +27,17 @@ jobs:
         run: bun run build
 
       - name: Type check
-        run: bunx tsc -p tsconfig.check.json
+        run: |
+          bun run check:typescript
+          bun run check:mda-config
 
       - name: Test
-        run: bun test
+        run: |
+          bun run test:typescript
+          bun run test:mda-config
 
   python:
-    name: Python
+    name: Python LLMix
     if: ${{ github.event.repository.private == false }}
     runs-on: ubuntu-latest
     steps:
@@ -49,10 +53,59 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --project packages/llmix/python --extra dev
 
       - name: Type check
-        run: uv run pyright
+        run: uv run --project packages/llmix/python --extra dev pyright -p packages/llmix/python
 
       - name: Test
-        run: uv run pytest
+        run: uv run --project packages/llmix/python --extra dev pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests
+
+  python-mda-config:
+    name: Python mda-config
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --project packages/mda-config/python --all-groups
+
+      - name: Lint
+        run: uv run --project packages/mda-config/python ruff check packages/mda-config/python
+
+      - name: Type check
+        run: uv run --project packages/mda-config/python pyright -p packages/mda-config/python
+
+      - name: Test
+        run: uv run --project packages/mda-config/python pytest -c packages/mda-config/python/pyproject.toml packages/mda-config/python/tests
+
+  rust:
+    name: Rust
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.83
+
+      - name: Check
+        run: |
+          cargo check --manifest-path packages/llmix/rust/Cargo.toml
+          cargo check --manifest-path packages/mda-config/rust/Cargo.toml
+
+      - name: Test
+        run: |
+          cargo test --manifest-path packages/llmix/rust/Cargo.toml
+          cargo test --manifest-path packages/mda-config/rust/Cargo.toml

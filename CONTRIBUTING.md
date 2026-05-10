@@ -1,54 +1,59 @@
 # Contributing to LLMix
 
-LLMix is a dual-language library (Python + TypeScript). Contributions must
-maintain cross-language parity where the feature exists in both languages.
+This monorepo contains the LLMix product packages and the foundational
+mda-config packages across Python, TypeScript, and Rust. Contributions must
+maintain runtime parity where a feature exists across languages.
 
 ---
 
 ## Setup
 
 ```bash
-# Python
-uv sync
-
 # TypeScript
 bun install
+
+# Python
+uv sync --project packages/llmix/python --extra dev
+uv sync --project packages/mda-config/python --all-groups
 ```
 
 ## Running Tests
 
 ```bash
-# Python unit tests
-uv run pytest tests/python/test_pipeline.py
-uv run pytest tests/python/test_config_loader.py
-uv run pytest tests/python/test_response_cache.py
-uv run pytest tests/python/test_resilience.py
-uv run pytest tests/python/test_provider_kwargs.py
+# Full monorepo
+bun run build
+bun run check
+bun run test
 
-# TypeScript unit tests
-bun test
-
-# Type checking
-bunx tsc -p tsconfig.check.json
-uv run pyright
+# Package-specific tests are also available
+bun run test:typescript
+bun run test:mda-config
+bun run test:python
+bun run test:mda-config:python
+bun run test:rust
+bun run test:mda-config:rust
 ```
 
 ## Code Quality
 
-Both languages use strict type checking and linting. All PRs must pass:
+All PRs must pass:
 
-- `bunx tsc -p tsconfig.check.json` — zero errors
-- `uv run pyright` — zero errors
-- `bun test` — all tests pass
-- `uv run pytest tests/python/` — all tests pass
+- `bun run build` — TypeScript packages build
+- `bun run check` — TypeScript, Python, Rust, and mda-config lint/type/check pass
+- `bun run test` — LLMix and mda-config tests pass across all runtimes
 
 ## Cross-Language Parity Rules
 
 Changes to core pipeline logic (cache key generation, circuit breaker state,
-retry behavior, AIMD semaphore) must be mirrored in both languages.
+retry behavior, AIMD semaphore) must be mirrored in every runtime that exposes
+the feature.
 
-The cross-language test fixtures in `tests/fixtures/` are the contract. A
-change that passes Python tests but breaks TypeScript fixtures is a regression.
+Changes to mda-config parsing, integrity, signatures, or trusted runtime policy
+must be mirrored in TypeScript, Python, and Rust.
+
+The cross-language test fixtures in `fixtures/llmix/` and `fixtures/mda/` are
+the contract. A change that passes one runtime but breaks another is a
+regression.
 
 ### Known parity gap
 
@@ -58,11 +63,13 @@ be unified in a future release. Do not add more gaps of this type.
 
 ## Data Files
 
-`data/pricing.json`, `data/model-capabilities.json`, and
-`data/config-schema.json` are the canonical source for shared data assets.
+`packages/llmix/typescript/data/pricing.json`,
+`packages/llmix/typescript/data/model-capabilities.json`, and
+`packages/llmix/typescript/data/config-schema.json` are the canonical source
+for shared data assets.
 
-`python/llmix/pricing.json` is a copy used by the Python package distribution.
-When updating pricing data, update both files.
+`packages/llmix/python/llmix/pricing.json` is a copy used by the Python
+package distribution. When updating pricing data, update both files.
 
 ## Branching
 
@@ -84,6 +91,6 @@ chore: bump version to 2.1.0
 
 1. Open a draft PR early for feedback on approach.
 2. All CI checks must be green before requesting review.
-3. For cross-language changes, link the Python and TypeScript changes in the
-   same PR.
+3. For cross-language changes, link the TypeScript, Python, and Rust changes in
+   the same PR.
 4. Update `CHANGELOG.md` under `[Unreleased]`.

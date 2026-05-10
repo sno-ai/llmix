@@ -1,0 +1,8 @@
+---
+name: minimal-config
+description: Minimal valid source-mode .mda file with only name and description.
+---
+
+# Minimal
+
+Body content.
