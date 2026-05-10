@@ -11,7 +11,7 @@ dependencies = [
   "httpx[http2]>=0.28.1,<0.29",
   "cachetools>=5.5.0,<8",
   "pydantic>=2,<3",
-  "snoai-mda-config>=1.1.0,<2",
+  "snoai-mda-config>=1.1.1,<2",
   "json-repair>=0.58.0,<1",
   "openrouter>=0.9.1",
 ]
