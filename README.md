@@ -58,6 +58,12 @@ pip install "sno-llmix[redis]"
 cargo add llmix-rs --features providers-openai,redis
 ```
 
+LLMix also carries the MDA config foundation packages in this monorepo. They keep
+their original package names: `@snoai/mda-config` for TypeScript and
+`snoai-mda-config` for Python and Rust. Use them when you need to validate,
+compose, load, or enforce trust policy for `.mda` configuration files outside
+the LLMix runtime.
+
 ---
 
 ## Documentation
@@ -68,6 +74,7 @@ cargo add llmix-rs --features providers-openai,redis
 - [Rust guide](docs/llmix/llmix-rust.md)
 - [Secure LLMix configuration](docs/llmix/secure-llmix-configuration.md)
 - [Key pool operations](docs/llmix/key-pool-operations.md)
+- [MDA config quick start](docs/mda-config/cli-and-runtime-quick-start.md)
 
 ---
 
@@ -380,19 +387,17 @@ LLMix is useful when the same model-call shape keeps showing up across services.
 ## Development
 
 ```bash
-# TypeScript
+# Install TypeScript workspace dependencies
 bun install
-bun run test:typescript
-bun run check
 
-# Python
+# Install Python workspace dependencies
 uv sync --project packages/llmix/python --extra dev
-uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests
-uv run --project packages/llmix/python pyright -p packages/llmix/python
+uv sync --project packages/mda-config/python --all-groups
 
-# Rust
-cargo test --manifest-path packages/llmix/rust/Cargo.toml
-cargo clippy --manifest-path packages/llmix/rust/Cargo.toml -- -D warnings
+# Full monorepo checks
+bun run build
+bun run check
+bun run test
 ```
 
 ---

@@ -18,10 +18,12 @@ __pycache__/
 
 # Pytest
 .pytest_cache/
+.ruff_cache/
 
 # Test environment secrets
 .env.test
 
 # Rust
 packages/llmix/rust/target/
+packages/mda-config/rust/target/
 .claude/scheduled_tasks.lock

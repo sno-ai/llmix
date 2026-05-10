@@ -1,57 +1,55 @@
 # Contributing to LLMix
 
-LLMix is a cross-runtime library (Python + TypeScript + Rust). Contributions
-must maintain runtime parity where the feature exists across languages.
+This monorepo contains the LLMix product packages and the foundational
+mda-config packages across Python, TypeScript, and Rust. Contributions must
+maintain runtime parity where a feature exists across languages.
 
 ---
 
 ## Setup
 
 ```bash
-# Python
-uv sync --project packages/llmix/python --extra dev
-
 # TypeScript
 bun install
+
+# Python
+uv sync --project packages/llmix/python --extra dev
+uv sync --project packages/mda-config/python --all-groups
 ```
 
 ## Running Tests
 
 ```bash
-# Python unit tests
-uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests/test_pipeline.py
-uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests/test_config_loader.py
-uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests/test_response_cache.py
-uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests/test_resilience.py
-uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests/test_provider_kwargs.py
-
-# TypeScript unit tests
-bun run test:typescript
-
-# Rust tests
-cargo test --manifest-path packages/llmix/rust/Cargo.toml
-
-# Type checking
+# Full monorepo
+bun run build
 bun run check
-uv run --project packages/llmix/python pyright -p packages/llmix/python
-cargo check --manifest-path packages/llmix/rust/Cargo.toml
+bun run test
+
+# Package-specific tests are also available
+bun run test:typescript
+bun run test:mda-config
+bun run test:python
+bun run test:mda-config:python
+bun run test:rust
+bun run test:mda-config:rust
 ```
 
 ## Code Quality
 
-Both languages use strict type checking and linting. All PRs must pass:
+All PRs must pass:
 
-- `bun run check` — zero TypeScript errors
-- `uv run --project packages/llmix/python pyright -p packages/llmix/python` — zero Python type errors
-- `cargo check --manifest-path packages/llmix/rust/Cargo.toml` — zero Rust check errors
-- `bun run test:typescript` — TypeScript tests pass
-- `uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests` — Python tests pass
-- `cargo test --manifest-path packages/llmix/rust/Cargo.toml` — Rust tests pass
+- `bun run build` — TypeScript packages build
+- `bun run check` — TypeScript, Python, Rust, and mda-config lint/type/check pass
+- `bun run test` — LLMix and mda-config tests pass across all runtimes
 
 ## Cross-Language Parity Rules
 
 Changes to core pipeline logic (cache key generation, circuit breaker state,
-retry behavior, AIMD semaphore) must be mirrored in both languages.
+retry behavior, AIMD semaphore) must be mirrored in every runtime that exposes
+the feature.
+
+Changes to mda-config parsing, integrity, signatures, or trusted runtime policy
+must be mirrored in TypeScript, Python, and Rust.
 
 The cross-language test fixtures in `fixtures/llmix/` and `fixtures/mda/` are
 the contract. A change that passes one runtime but breaks another is a
@@ -93,6 +91,6 @@ chore: bump version to 2.1.0
 
 1. Open a draft PR early for feedback on approach.
 2. All CI checks must be green before requesting review.
-3. For cross-language changes, link the Python and TypeScript changes in the
-   same PR.
+3. For cross-language changes, link the TypeScript, Python, and Rust changes in
+   the same PR.
 4. Update `CHANGELOG.md` under `[Unreleased]`.
