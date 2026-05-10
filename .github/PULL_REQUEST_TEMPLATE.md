@@ -14,11 +14,9 @@
 
 ## Tests
 
-- [ ] `bun run test:typescript` passes
-- [ ] `uv run --project packages/llmix/python pytest -c packages/llmix/python/pyproject.toml packages/llmix/python/tests` passes
-- [ ] `cargo test --manifest-path packages/llmix/rust/Cargo.toml` passes
+- [ ] `bun run build` passes
 - [ ] `bun run check` clean
-- [ ] `uv run --project packages/llmix/python pyright -p packages/llmix/python` clean
+- [ ] `bun run test` passes
 
 ## Cross-language parity
 
