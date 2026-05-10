@@ -1,7 +1,7 @@
 name: Claude Code Review
 
-# Runs on a self-hosted runner, matching the review flow used by sibling repos.
-# The runner polls GitHub via outbound HTTPS and requires CLAUDE_CODE_OAUTH_TOKEN.
+# Matches the Claude Code review flow used by sibling repos.
+# This repo has no self-hosted runner assigned, so use GitHub-hosted runners.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -18,7 +18,7 @@ jobs:
   claude-review:
     name: Claude architecture review
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     concurrency:
       group: claude-review-${{ github.event.pull_request.number || github.run_id }}
       cancel-in-progress: true
@@ -105,7 +105,7 @@ jobs:
         (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) &&
          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
       )
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     concurrency:
       group: claude-interactive-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
       cancel-in-progress: false
