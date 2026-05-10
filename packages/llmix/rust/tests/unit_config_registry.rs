@@ -1,11 +1,15 @@
 use llmix_rs::{
-    ConfigNotFoundError, ConfigRegistryManager, ConfigRegistryPublisher, InvalidConfigError,
-    LlmixError, MdaConfigLoadOptions,
+    ConfigNotFoundError, ConfigRegistryManager, ConfigRegistryOpenOptions,
+    ConfigRegistryPublishOptions, ConfigRegistryPublisher, DidWebVerificationInput, DidWebVerifier,
+    InvalidConfigError, LlmixError, LlmixResult, MdaConfigLoadOptions, MdaConfigResult,
+    RegistryRootSignature, RegistryRootSigner, RegistryRootSigningInput,
+    RegistryRootSigningOptions, RegistryRootVerificationOptions, TrustPolicy, TrustedSigner,
 };
 use serde_json::{json, Value};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn unique_temp_dir(prefix: &str) -> PathBuf {
@@ -62,6 +66,80 @@ metadata:
     );
 }
 
+struct TestRegistryRootSigner;
+
+impl RegistryRootSigner for TestRegistryRootSigner {
+    fn sign_registry_root(
+        &self,
+        input: &RegistryRootSigningInput,
+    ) -> LlmixResult<Vec<RegistryRootSignature>> {
+        Ok(vec![RegistryRootSignature {
+            signer: "did-web:tools.example.com".to_string(),
+            key_id: "did:web:tools.example.com#key-1".to_string(),
+            payload_digest: input.integrity.digest.clone(),
+            algorithm: "ed25519".to_string(),
+            signature: "TEST_SIGNATURE".to_string(),
+            rekor_log_id: None,
+            rekor_log_index: None,
+            payload_type: Some(input.payload_type.clone()),
+        }])
+    }
+}
+
+struct TestDidWebVerifier;
+
+impl DidWebVerifier for TestDidWebVerifier {
+    fn verify(&self, input: DidWebVerificationInput<'_>) -> MdaConfigResult<bool> {
+        assert_eq!(input.domain, "tools.example.com");
+        assert_eq!(input.algorithm, "ed25519");
+        assert_eq!(
+            input.payload_type,
+            "application/vnd.snoai.llmix.registry-root+json"
+        );
+        assert!(!input.payload_bytes.is_empty());
+        assert!(!input.pae_bytes.is_empty());
+        Ok(true)
+    }
+}
+
+fn signed_registry_publish_options<'a>(
+    revision: &'a str,
+    signer: &'a dyn RegistryRootSigner,
+) -> ConfigRegistryPublishOptions<'a> {
+    ConfigRegistryPublishOptions {
+        revision: Some(revision),
+        activate: true,
+        mda_options: MdaConfigLoadOptions::default(),
+        registry_root: Some(RegistryRootSigningOptions {
+            signer,
+            min_signatures: Some(1),
+        }),
+    }
+}
+
+fn signed_registry_open_options() -> ConfigRegistryOpenOptions {
+    ConfigRegistryOpenOptions {
+        signed_root: Some(RegistryRootVerificationOptions {
+            trust_policy: TrustPolicy {
+                version: 1,
+                trusted_signers: vec![TrustedSigner::DidWeb {
+                    domain: "tools.example.com".to_string(),
+                }],
+                min_signatures: Some(1),
+                rekor: None,
+            },
+            rekor_client: None,
+            sigstore_verifier: None,
+            did_web_verifier: Some(Arc::new(TestDidWebVerifier)),
+            expected_revision: None,
+            expected_root_digest: None,
+            minimum_revision: None,
+            minimum_published_at: None,
+            high_watermark: None,
+        }),
+    }
+}
+
 #[test]
 fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
     let temp_root = unique_temp_dir("llmix-config-registry-publish");
@@ -116,6 +194,81 @@ fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
     assert_eq!(
         resolved["provider_options"]["openai"]["reasoning_effort"],
         json!("high")
+    );
+}
+
+#[test]
+fn signed_registry_root_publish_and_open_use_public_options() {
+    let temp_root = unique_temp_dir("llmix-config-registry-signed-root");
+    let root = temp_root.join("config/llm");
+    write_authoring_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-5-mini", "high", 1024, "openai")),
+    );
+
+    let signer = TestRegistryRootSigner;
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let published = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
+        .expect("signed publish should succeed");
+    let mut manager =
+        ConfigRegistryManager::open_with_options(&root, signed_registry_open_options())
+            .expect("signed registry should open");
+    let config = manager
+        .get_preset("search", "summary")
+        .expect("signed preset should load");
+
+    assert_eq!(published.revision, "signed-1");
+    assert_eq!(
+        published.registry_root_path.as_deref(),
+        Some(root.join("snapshots/signed-1/registry-root.json").as_path())
+    );
+    assert!(published.registry_root_sha256.is_some());
+    assert_eq!(manager.active_revision(), "signed-1");
+    assert_eq!(config["model"], json!("gpt-5-mini"));
+}
+
+#[test]
+fn signed_registry_root_rejects_tampered_registry_root_payload() {
+    let temp_root = unique_temp_dir("llmix-config-registry-signed-root-tamper");
+    let root = temp_root.join("config/llm");
+    write_authoring_preset(&root, "search", "summary", None);
+
+    let signer = TestRegistryRootSigner;
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let published = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
+        .expect("signed publish should succeed");
+    let root_path = published
+        .registry_root_path
+        .expect("signed publish should write registry-root.json");
+    let mut envelope: Value = serde_json::from_str(
+        &fs::read_to_string(&root_path).expect("registry root should be readable"),
+    )
+    .expect("registry root should parse");
+    envelope["payload"]["revision"] = json!("signed-1-tampered");
+    fs::write(
+        &root_path,
+        serde_json::to_string(&envelope).expect("tampered root should serialize"),
+    )
+    .expect("registry root should be overwritten");
+
+    let error = ConfigRegistryManager::open_with_options(&root, signed_registry_open_options())
+        .expect_err("tampered signed registry root should fail");
+
+    assert!(
+        matches!(
+            error,
+            LlmixError::InvalidConfig(_) | LlmixError::Security(_)
+        ),
+        "unexpected error: {error}"
+    );
+    assert!(
+        error.to_string().contains("payload digest mismatch")
+            || error.to_string().contains("signature verification failed"),
+        "unexpected error: {error}"
     );
 }
 
