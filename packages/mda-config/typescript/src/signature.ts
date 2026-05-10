@@ -1,5 +1,5 @@
 /**
- * MDA v1.0.0-rc.2 §09 — DSSE PAE and trusted signature evaluation.
+ * DSSE PAE and trusted signature evaluation.
  */
 
 import { canonify } from "@truestamp/canonify";
