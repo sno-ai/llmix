@@ -5,19 +5,19 @@
     "": {
       "name": "llmix",
       "devDependencies": {
-        "@types/node": "^20.14.0"
-      }
+        "@types/node": "^20.14.0",
+      },
     },
     "packages/llmix/typescript": {
       "name": "@snoai/llmix",
-      "version": "2.0.1",
+      "version": "2.0.2",
       "dependencies": {
         "@ai-sdk/provider": "^3.0.10",
         "@openrouter/sdk": "^0.12.21",
         "@snoai/mda-config": "^1.1.1",
         "lru-cache": "^11.3.0",
         "proper-lockfile": "^4.1.2",
-        "zod": "^4.4.3"
+        "zod": "^4.4.3",
       },
       "devDependencies": {
         "@ai-sdk/anthropic": "^3.0.66",
@@ -36,7 +36,7 @@
         "@ai-sdk/openai": ">=3.0.0",
         "@anthropic-ai/sdk": ">=0.80.0",
         "ai": ">=6.0.0",
-        "ioredis": ">=5.0.0"
+        "ioredis": ">=5.0.0",
       },
       "optionalPeers": [
         "@ai-sdk/anthropic",
@@ -44,8 +44,8 @@
         "@ai-sdk/openai",
         "@anthropic-ai/sdk",
         "ai",
-        "ioredis"
-      ]
+        "ioredis",
+      ],
     },
     "packages/mda-config/typescript": {
       "name": "@snoai/mda-config",
