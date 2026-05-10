@@ -48,6 +48,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Verify mda-config npm dependency is published
+        run: npm view @snoai/mda-config@^1.1.1 version
+
       - name: Build
         run: bun run build
 
@@ -72,6 +75,8 @@ jobs:
 
       - name: Publish npm package
         working-directory: packages/llmix/typescript
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public
 
   publish-pypi:
@@ -92,6 +97,20 @@ jobs:
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
+
+      - name: Verify mda-config PyPI dependency is published
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+          import urllib.request
+
+          with urllib.request.urlopen("https://pypi.org/pypi/snoai-mda-config/json", timeout=20) as response:
+              releases = json.load(response).get("releases", {})
+          if "1.1.1" not in releases:
+              print("snoai-mda-config 1.1.1 is not published on PyPI", file=sys.stderr)
+              sys.exit(1)
+          PY
 
       - name: Build package
         run: uv build --project packages/llmix/python --out-dir packages/llmix/python/dist
@@ -118,6 +137,9 @@ jobs:
       - name: Authenticate with crates.io
         id: auth
         uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Verify mda-config crate dependency is published
+        run: curl --fail --silent --show-error https://crates.io/api/v1/crates/snoai-mda-config/1.1.1 >/dev/null
 
       - name: Publish crate
         working-directory: packages/llmix/rust
