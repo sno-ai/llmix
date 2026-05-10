@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pytest
 import sys
 import time
 from pathlib import Path
@@ -34,6 +35,7 @@ from conftest import (
     openai_dispatch,
     gemini_dispatch,
     print_summary,
+    SKIPPED_PROVIDER_INTEGRATION_REASON,
     skip_unless,
     skip_unless_tier,
 )
@@ -152,6 +154,7 @@ async def test_14_2_l2_stats():
 # 14.3 L2 cross-provider isolation in Redis
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(reason=SKIPPED_PROVIDER_INTEGRATION_REASON)
 @skip_unless("OPENAI_API_KEY", "GEMINI_API_KEY")
 @skip_unless_tier("t3")
 async def test_14_3_cross_provider_redis_isolation():
@@ -396,7 +399,16 @@ async def test_14_9_strict_redis_requires_url():
 async def main():
     print("Suite 14: Redis L2 Cache Integration Tests")
     print("=" * 60)
-    tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    tests = [
+        test_14_1_l2_data_format,
+        test_14_2_l2_stats,
+        test_14_4_cross_pipeline_sharing,
+        test_14_5_concurrent_l2_reads,
+        test_14_6_clear_only_l1,
+        test_14_7_redis_or_memory_with_valid_redis,
+        test_14_8_write_failure_cascade,
+        test_14_9_strict_redis_requires_url,
+    ]
     for t in tests:
         print(f"\n--- {t.__name__} ---")
         try:

@@ -46,7 +46,13 @@ pub use config::{
     resolve_config_dir, validate_module, validate_preset, validate_version, ConfigDirSource,
     LlmixPathConfig, MdaConfigLoadOptions, ResolvedConfigDir,
 };
-pub use config_registry::{ConfigRegistryManager, ConfigRegistryPublisher, PublishedRevision};
+pub use config_registry::{
+    ConfigRegistryManager, ConfigRegistryOpenOptions, ConfigRegistryPublishOptions,
+    ConfigRegistryPublisher, PublishedRevision, RegistryRootCurrentBinding, RegistryRootEnvelope,
+    RegistryRootFileDigest, RegistryRootHighWatermark, RegistryRootManifestBinding,
+    RegistryRootPayload, RegistryRootSignature, RegistryRootSigner, RegistryRootSigningInput,
+    RegistryRootSigningOptions, RegistryRootVerificationOptions,
+};
 pub use dispatch::DispatchFn;
 pub use error::{
     AdaptiveSemaphoreClosedError, CircuitOpenError, ConfigAccessError, ConfigNotFoundError,
@@ -83,7 +89,8 @@ pub use response_cache::{
     CACHE_KEY_PREFIX,
 };
 pub use snoai_mda_config::{
-    DidWebVerifier, RekorClient, RekorPolicy, SigstoreVerifier, TrustPolicy, TrustedSigner,
+    DidWebVerificationInput, DidWebVerifier, MdaConfigError, RekorClient, RekorPolicy,
+    Result as MdaConfigResult, SigstoreVerifier, TrustPolicy, TrustedSigner,
 };
 pub use thinking::{strip_thinking, StripThinkingResult};
 pub use types::{

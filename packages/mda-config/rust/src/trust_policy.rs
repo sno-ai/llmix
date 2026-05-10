@@ -124,7 +124,7 @@ pub fn validate_trust_policy(value: Value) -> Result<TrustPolicy> {
     let policy: TrustPolicy = serde_json::from_value(value).map_err(|cause| {
         MdaConfigError::with_details(
             ErrorCategory::TrustPolicyViolation,
-            "trust policy does not match RC2 schema",
+            "trust policy does not match schema",
             serde_json::json!({ "cause": cause.to_string() }),
         )
     })?;

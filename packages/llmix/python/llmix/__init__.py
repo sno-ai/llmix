@@ -45,10 +45,17 @@ _LAZY_IMPORTS: dict[str, str] = {
     "load_mda_config": "llmix.mda_loader",
     "load_mda_config_from_file": "llmix.mda_loader",
     "load_mda_config_preset": "llmix.mda_loader",
+    "ConfigRegistryOpenOptions": "llmix.config_registry",
     "ConfigRegistryPublishOptions": "llmix.config_registry",
     "ConfigRegistryManager": "llmix.config_registry",
     "ConfigRegistryPublisher": "llmix.config_registry",
     "PublishedRevision": "llmix.config_registry",
+    "RegistryRootFreshnessInput": "llmix.config_registry",
+    "RegistryRootHighWatermark": "llmix.config_registry",
+    "RegistryRootSigner": "llmix.config_registry",
+    "RegistryRootSigningInput": "llmix.config_registry",
+    "RegistryRootSigningOptions": "llmix.config_registry",
+    "RegistryRootVerificationOptions": "llmix.config_registry",
     # resilience
     "CircuitBreaker": "llmix.resilience",
     "CircuitOpenError": "llmix.resilience",
@@ -89,10 +96,17 @@ if TYPE_CHECKING:
     from llmix.config import LLMixPathConfig as LLMixPathConfig
     from llmix.config import ResolvedConfigDir as ResolvedConfigDir
     from llmix.config import resolve_config_dir as resolve_config_dir
+    from llmix.config_registry import ConfigRegistryOpenOptions as ConfigRegistryOpenOptions
     from llmix.config_registry import ConfigRegistryPublishOptions as ConfigRegistryPublishOptions
     from llmix.config_registry import ConfigRegistryManager as ConfigRegistryManager
     from llmix.config_registry import ConfigRegistryPublisher as ConfigRegistryPublisher
     from llmix.config_registry import PublishedRevision as PublishedRevision
+    from llmix.config_registry import RegistryRootFreshnessInput as RegistryRootFreshnessInput
+    from llmix.config_registry import RegistryRootHighWatermark as RegistryRootHighWatermark
+    from llmix.config_registry import RegistryRootSigner as RegistryRootSigner
+    from llmix.config_registry import RegistryRootSigningInput as RegistryRootSigningInput
+    from llmix.config_registry import RegistryRootSigningOptions as RegistryRootSigningOptions
+    from llmix.config_registry import RegistryRootVerificationOptions as RegistryRootVerificationOptions
     from llmix.mda_loader import MdaConfigLoadOptions as MdaConfigLoadOptions
     from llmix.mda_loader import build_mda_config_file_path as build_mda_config_file_path
     from llmix.mda_loader import load_mda_config as load_mda_config
@@ -171,10 +185,17 @@ __all__ = [
     "load_mda_config",
     "load_mda_config_from_file",
     "load_mda_config_preset",
+    "ConfigRegistryOpenOptions",
     "ConfigRegistryPublishOptions",
     "ConfigRegistryManager",
     "ConfigRegistryPublisher",
     "PublishedRevision",
+    "RegistryRootFreshnessInput",
+    "RegistryRootHighWatermark",
+    "RegistryRootSigner",
+    "RegistryRootSigningInput",
+    "RegistryRootSigningOptions",
+    "RegistryRootVerificationOptions",
     "CircuitBreaker",
     "CircuitOpenError",
     "CircuitState",

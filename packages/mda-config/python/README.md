@@ -5,7 +5,7 @@ Python source-mode loader for MDA v1.0 configuration artifacts.
 This package mirrors the TypeScript `@snoai/mda-config` and Rust
 `snoai-mda-config` loader contract. The v1.0 surface covers frontmatter
 extraction, MDA source-schema validation, integrity verification,
-`requires.network` enforcement, RC2 trusted-runtime verifier hooks, and
+`requires.network` enforcement, trusted-runtime verifier hooks, and
 consumer pydantic validation.
 
 Python does not perform real Rekor transport or Sigstore cryptography by
@@ -35,7 +35,7 @@ config = load_mda_source(
 
 For signed presets, also pass `verify_signatures=True`,
 `trust_policy=...`, `rekor_client=...`, and verifier hooks. For production
-trusted-runtime loading, prefer `trusted_runtime=True` with a strict RC2 policy:
+trusted-runtime loading, prefer `trusted_runtime=True` with a strict policy:
 
 ```python
 config = load_mda_source(

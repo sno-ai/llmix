@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pytest
 import sys
 import time
 from pathlib import Path
@@ -32,7 +33,6 @@ from conftest import (
     assert_not_contains,
     assert_success,
     assert_true,
-    assert_valid_usage,
     env,
     gemini_dispatch,
     make_call_input,
@@ -40,6 +40,7 @@ from conftest import (
     novita_dispatch,
     openai_dispatch,
     print_summary,
+    SKIPPED_PROVIDER_INTEGRATION_REASON,
     skip_unless,
     sno_gpu_dispatch,
 )
@@ -206,6 +207,7 @@ async def test_7_2_sno_gpu_keep_thinking():
 # 7.3: Novita Qwen3.5 stripping
 # =============================================================================
 
+@pytest.mark.skip(reason=SKIPPED_PROVIDER_INTEGRATION_REASON)
 @skip_unless("NOVITA_API_KEY")
 async def test_7_3_novita_thinking_strip():
     """Novita Qwen3.5 with thinking enabled — strips <think> blocks.
@@ -280,6 +282,7 @@ async def test_7_4_openai_passthrough():
 # 7.5: Anthropic passthrough — claude-haiku
 # =============================================================================
 
+@pytest.mark.skip(reason=SKIPPED_PROVIDER_INTEGRATION_REASON)
 @skip_unless("ANTHROPIC_API_KEY")
 async def test_7_5_anthropic_passthrough():
     """Claude Haiku: no thinking tags, thinking_content is None."""
@@ -310,6 +313,7 @@ async def test_7_5_anthropic_passthrough():
 # 7.6: Gemini passthrough — gemini-2.5-flash
 # =============================================================================
 
+@pytest.mark.skip(reason=SKIPPED_PROVIDER_INTEGRATION_REASON)
 @skip_unless("GEMINI_API_KEY")
 async def test_7_6_gemini_passthrough():
     """Gemini 2.5 Flash: no thinking tags, thinking_content is None."""
@@ -365,7 +369,7 @@ async def test_7_7_sno_gpu_thinking_json():
     # Strip markdown fences if present
     if content.startswith("```"):
         lines = content.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [line for line in lines if not line.strip().startswith("```")]
         content = "\n".join(lines).strip()
 
     try:
@@ -467,7 +471,7 @@ async def test_7_9_code_with_think_tag():
             r.thinking_content is not None,
             "7.9: thinking_content captured (false positive — contains code, not reasoning)",
         )
-        print(f"  KNOWN LIMITATION confirmed: code <think> tag was stripped")
+        print("  KNOWN LIMITATION confirmed: code <think> tag was stripped")
         print(f"  raw content preview: {raw_content[:200]!r}")
         print(f"  stripped content preview: {r.content[:200]!r}")
         print(f"  thinking_content preview: {(r.thinking_content or '')[:200]!r}")
@@ -477,7 +481,7 @@ async def test_7_9_code_with_think_tag():
             r.thinking_content is None,
             "7.9: no thinking_content (model didn't output literal <think>)",
         )
-        print(f"  Model did not output literal <think> tag — no false positive to test")
+        print("  Model did not output literal <think> tag — no false positive to test")
         print(f"  content preview: {r.content[:200]!r}")
 
 
@@ -495,10 +499,7 @@ async def main():
     tests = [
         test_7_1_sno_gpu_thinking_strip,
         test_7_2_sno_gpu_keep_thinking,
-        test_7_3_novita_thinking_strip,
         test_7_4_openai_passthrough,
-        test_7_5_anthropic_passthrough,
-        test_7_6_gemini_passthrough,
         test_7_7_sno_gpu_thinking_json,
         test_7_8_sno_gpu_thinking_long,
         test_7_9_code_with_think_tag,

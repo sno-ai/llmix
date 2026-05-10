@@ -1018,7 +1018,7 @@ wheels = [
 
 [[package]]
 name = "sno-llmix"
-version = "2.0.1"
+version = "2.0.2"
 source = { editable = "packages/llmix/python" }
 dependencies = [
     { name = "anthropic" },
@@ -1085,7 +1085,7 @@ requires-dist = [
     { name = "jcs", specifier = ">=0.2.1,<0.3" },
     { name = "jsonschema", specifier = ">=4.20,<5" },
     { name = "pydantic", specifier = ">=2,<3" },
-    { name = "ruamel-yaml", specifier = ">=0.18,<0.19" },
+    { name = "ruamel-yaml", specifier = ">=0.18,<0.20" },
 ]
 
 [package.metadata.requires-dev]

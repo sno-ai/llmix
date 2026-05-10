@@ -1,4 +1,4 @@
-"""MDA v1.0.0-rc.2 trust policy validation."""
+"""MDA trust policy validation."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from .errors import ErrorCategory, MdaConfigError
 
 @dataclass(frozen=True)
 class SigstoreTrustedSigner:
-    """RC2 Sigstore OIDC trust-policy signer."""
+    """Sigstore OIDC trust-policy signer."""
 
     type: Literal["sigstore-oidc"]
     issuer: str
@@ -19,7 +19,7 @@ class SigstoreTrustedSigner:
 
 @dataclass(frozen=True)
 class DidWebTrustedSigner:
-    """RC2 did:web trust-policy signer."""
+    """did:web trust-policy signer."""
 
     type: Literal["did-web"]
     domain: str
@@ -30,7 +30,7 @@ TrustedSigner = SigstoreTrustedSigner | DidWebTrustedSigner
 
 @dataclass(frozen=True)
 class TrustPolicy:
-    """Validated RC2 trust policy."""
+    """Validated trust policy."""
 
     version: Literal[1]
     trusted_signers: tuple[TrustedSigner, ...]
@@ -39,7 +39,7 @@ class TrustPolicy:
 
 
 def validate_trust_policy(input_value: object) -> TrustPolicy:
-    """Validate and normalize an RC2 trust policy."""
+    """Validate and normalize an trust policy."""
 
     policy = _require_dict(input_value, "trustPolicy")
     _reject_unknown(policy, {"version", "trustedSigners", "minSignatures", "rekor"}, "trustPolicy")
@@ -52,7 +52,7 @@ def validate_trust_policy(input_value: object) -> TrustPolicy:
     if len(trusted_signers_raw) == 0:
         _violation("trustPolicy.trustedSigners must be a non-empty array")
     min_signatures = policy.get("minSignatures", 1)
-    if not isinstance(min_signatures, int) or min_signatures < 1:
+    if type(min_signatures) is not int or min_signatures < 1:
         _violation("trustPolicy.minSignatures must be an integer >= 1")
 
     trusted_signers = tuple(_validate_signer(signer) for signer in trusted_signers_raw)

@@ -4,7 +4,7 @@ LLMix Integration Test Infrastructure
 Shared helpers for real integration tests:
 - Environment validation and skip decorators
 - Instrumented real-dispatch wrapper (real HTTP + observability)
-- Real provider dispatch functions (OpenAI, Anthropic, Gemini)
+- Real provider dispatch functions
 - Assertion helpers with deep result evaluation
 - Timing utilities
 """
@@ -35,6 +35,19 @@ from llmix.pipeline import (
 )
 from llmix.key_pool import KeyPool
 from llmix.response_cache import TwoTierCache
+
+
+ACTIVE_PROVIDER_INTEGRATION_TARGETS = ("OpenAI", "OpenRouter", "Sno GPU")
+SKIPPED_PROVIDER_INTEGRATION_REASON = (
+    "Provider integration scope is limited to OpenAI, OpenRouter, and Sno GPU."
+)
+
+collect_ignore = [
+    "test_e2e_anthropic.py",
+    "test_e2e_gemini.py",
+    "test_e2e_novita.py",
+    "test_e2e_openai_compat_dispatchers.py",
+]
 
 
 # =============================================================================

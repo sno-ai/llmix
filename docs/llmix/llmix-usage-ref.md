@@ -331,12 +331,16 @@ The reserved semantic payload type for signed LLMix presets is:
 application/vnd.snoai-llmix.preset+json
 ```
 
-LLMix does not invent a separate signature envelope. Sigstore signature
-verification, integrity fields, and trust policy are delegated to the MDA
-mechanism layer. Python, TypeScript, and Rust can require integrity,
-`requires.network`, and verifier-hook based signature verification during load
-or registry publish. Real Rekor transport and Sigstore cryptography are supplied
-by caller-provided clients/verifiers.
+LLMix delegates signed `.mda` verification to the MDA mechanism layer. For
+production publishes, prefer `trustedRuntime: true` in TypeScript or
+`trusted_runtime=True` in Python with a trust policy and caller-provided Rekor,
+Sigstore, and/or did:web verifier hooks.
+
+The TypeScript and Python registries can also write and verify a signed
+`registry-root.json` that covers `current.json`, the snapshot manifest, copied
+`.mda` authoring files, and resolved JSON files as one bundle. Runtime trust
+anchors for that root must come from application or deployment configuration
+outside the registry directory being verified.
 
 Direct MDA loading helpers still exist for authoring tools and tests:
 

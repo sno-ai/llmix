@@ -1,17 +1,44 @@
-"""MDA v1.0.0-rc.2 DSSE PAE and trusted signature evaluation."""
+"""DSSE PAE and trusted signature evaluation."""
+
+# pyright: reportUnusedImport=false
 
 from __future__ import annotations
 
 import base64
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import NoReturn, NotRequired, Protocol, TypedDict
+from typing import NoReturn
 
 import jcs  # type: ignore[reportMissingTypeStubs]
 
 from .errors import ErrorCategory, MdaConfigError
 from .integrity import IntegrityField
+from .signature_parsing import (  # noqa: F401
+    DEFAULT_PAYLOAD_TYPE,
+    declared_payload_type,
+    parse_did_web_signer,
+    parse_sigstore_signer,
+)
+from .signature_types import (  # noqa: F401
+    DidWebVerificationInput,
+    DidWebVerifier,
+    DsseEnvelope,
+    DsseSignature,
+    RekorClient,
+    RekorEntry,
+    SignatureEntry,
+    SigstoreVerificationResult,
+    SigstoreVerifier,
+)
+from .trust_policy import (
+    DidWebTrustedSigner as DidWebTrustedSigner,
+)
+from .trust_policy import (
+    SigstoreTrustedSigner as SigstoreTrustedSigner,
+)
+from .trust_policy import (
+    TrustedSigner as TrustedSigner,
+)
 from .trust_policy import (
     TrustPolicy,
     policy_contains_did_web,
@@ -19,104 +46,6 @@ from .trust_policy import (
     trusts_did_web_domain,
     validate_trust_policy,
 )
-
-DEFAULT_PAYLOAD_TYPE = "application/vnd.mda.integrity+json"
-_PAYLOAD_TYPE_RE = re.compile(
-    r"^application/vnd\.[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\+json$"
-)
-
-
-SignatureEntry = TypedDict(
-    "SignatureEntry",
-    {
-        "signer": str,
-        "key-id": str,
-        "payload-digest": str,
-        "algorithm": str,
-        "signature": str,
-        "rekor-log-id": NotRequired[str],
-        "rekor-log-index": NotRequired[int],
-        "payload-type": NotRequired[str],
-    },
-)
-
-
-class DsseSignature(TypedDict, total=False):
-    """One signature inside a Rekor DSSE envelope."""
-
-    sig: str
-    keyid: str
-
-
-class DsseEnvelope(TypedDict):
-    """Rekor-indexed DSSE envelope subset used by MDA verification."""
-
-    payload_type: str
-    payload: str
-    signatures: list[DsseSignature]
-
-
-class RekorEntry(TypedDict, total=False):
-    """Rekor dsse-v0.0.1 entry subset used by MDA verification."""
-
-    kind: str
-    log_id: str
-    log_index: int
-    inclusion_verified: bool
-    certificate_pem: str
-    dsse_envelope: DsseEnvelope
-
-
-@dataclass(frozen=True)
-class SigstoreVerificationResult:
-    """Verified identity returned by an injected Sigstore verifier."""
-
-    certificate_pem: str | None = None
-    issuer: str | None = None
-    subject: str | None = None
-    subject_alternative_name: str | None = None
-
-
-@dataclass(frozen=True)
-class DidWebVerificationInput:
-    """Input passed to a did:web verifier hook."""
-
-    domain: str
-    key_id: str
-    algorithm: str
-    signature: str
-    payload_type: str
-    payload_bytes: bytes
-    pae_bytes: bytes
-
-
-class RekorClient(Protocol):
-    """Pluggable Rekor lookup used by signature verification."""
-
-    def fetch_entry(self, rekor_url: str, log_id: str, log_index: int) -> RekorEntry | None:
-        """Fetch a Rekor entry by policy URL and log coordinates."""
-        ...
-
-
-class SigstoreVerifier(Protocol):
-    """Injected Sigstore verifier hook for Fulcio, inclusion, and signature crypto."""
-
-    def verify(
-        self,
-        entry: RekorEntry,
-        signature: SignatureEntry,
-        pae_bytes: bytes,
-    ) -> SigstoreVerificationResult:
-        """Verify one Rekor entry/signature/PAE tuple."""
-        ...
-
-
-class DidWebVerifier(Protocol):
-    """Injected did:web cryptographic verifier hook."""
-
-    def verify(self, input_value: DidWebVerificationInput) -> bool:
-        """Return true only for a cryptographically valid did:web signature."""
-        ...
 
 
 def construct_dsse_pae(payload_type: str, payload_bytes: bytes) -> bytes:
@@ -135,7 +64,7 @@ def verify_signatures(
     sigstore_verifier: SigstoreVerifier | None = None,
     did_web_verifier: DidWebVerifier | None = None,
 ) -> None:
-    """Evaluate signatures against an RC2 trust policy threshold."""
+    """Evaluate signatures against a trust policy threshold."""
 
     policy = (
         trust_policy
@@ -248,8 +177,8 @@ def _verify_sigstore_candidate(
     rekor_client: RekorClient | None,
     sigstore_verifier: SigstoreVerifier | None,
 ) -> str | None:
-    issuer = _parse_sigstore_signer(sig["signer"])
-    payload_type = _declared_payload_type(sig)
+    issuer = parse_sigstore_signer(sig["signer"])
+    payload_type = declared_payload_type(sig)
     pae_bytes = construct_dsse_pae(payload_type, payload_bytes)
     entry = _fetch_rekor_entry(sig, policy, rekor_client)
     _validate_rekor_dsse_envelope(entry, sig, payload_type, payload_bytes)
@@ -279,8 +208,10 @@ def _verify_did_web_candidate(
     policy: TrustPolicy,
     did_web_verifier: DidWebVerifier | None,
 ) -> str | None:
-    domain = _parse_did_web_signer(sig["signer"])
-    payload_type = _declared_payload_type(sig)
+    domain = parse_did_web_signer(sig["signer"])
+    if not trusts_did_web_domain(policy, domain):
+        return None
+    payload_type = declared_payload_type(sig)
     ok = did_web_verifier.verify(  # type: ignore[union-attr]
         DidWebVerificationInput(
             domain=domain,
@@ -292,7 +223,7 @@ def _verify_did_web_candidate(
             pae_bytes=construct_dsse_pae(payload_type, payload_bytes),
         )
     )
-    if not ok or not trusts_did_web_domain(policy, domain):
+    if not ok:
         return None
     return f"did-web\0{domain}"
 
@@ -338,9 +269,9 @@ def _fetch_rekor_entry(
 
 
 def _validate_signature_shape(sig: SignatureEntry) -> None:
-    _declared_payload_type(sig)
+    declared_payload_type(sig)
     if sig["signer"].startswith("sigstore-oidc:"):
-        _parse_sigstore_signer(sig["signer"])
+        parse_sigstore_signer(sig["signer"])
         if not sig.get("rekor-log-id") or sig.get("rekor-log-index") is None:
             raise MdaConfigError(
                 ErrorCategory.RekorInclusionFailure,
@@ -349,7 +280,7 @@ def _validate_signature_shape(sig: SignatureEntry) -> None:
             )
         return
     if sig["signer"].startswith("did-web:"):
-        _parse_did_web_signer(sig["signer"])
+        parse_did_web_signer(sig["signer"])
         if "rekor-log-id" in sig or "rekor-log-index" in sig:
             raise MdaConfigError(
                 ErrorCategory.SchemaViolation,
@@ -371,45 +302,6 @@ def _assert_payload_digest(sig: SignatureEntry, integrity: IntegrityField) -> No
             "signature payload-digest does not equal integrity.digest",
             {"signer": sig["signer"]},
         )
-
-
-def _parse_sigstore_signer(signer: str) -> str:
-    prefix = "sigstore-oidc:"
-    if not signer.startswith(prefix) or "#" in signer:
-        raise MdaConfigError(
-            ErrorCategory.UnknownSignerMethod,
-            "Sigstore signer must be 'sigstore-oidc:<issuer>' with no subject suffix",
-            {"signer": signer},
-        )
-    issuer = signer[len(prefix) :]
-    if not issuer:
-        raise MdaConfigError(ErrorCategory.UnknownSignerMethod, "Sigstore signer issuer is empty")
-    return issuer
-
-
-def _parse_did_web_signer(signer: str) -> str:
-    prefix = "did-web:"
-    if not signer.startswith(prefix) or "#" in signer:
-        raise MdaConfigError(
-            ErrorCategory.UnknownSignerMethod,
-            "did:web signer must be 'did-web:<domain>'",
-            {"signer": signer},
-        )
-    domain = signer[len(prefix) :]
-    if not domain:
-        raise MdaConfigError(ErrorCategory.UnknownSignerMethod, "did:web signer domain is empty")
-    return domain
-
-
-def _declared_payload_type(sig: SignatureEntry) -> str:
-    payload_type = sig.get("payload-type", DEFAULT_PAYLOAD_TYPE)
-    if "+jcs+json" in payload_type or _PAYLOAD_TYPE_RE.fullmatch(payload_type) is None:
-        raise MdaConfigError(
-            ErrorCategory.SchemaViolation,
-            "signature payload-type must be application/vnd.<vendor>.<doc-type>+json",
-            {"signer": sig["signer"], "payloadType": payload_type},
-        )
-    return payload_type
 
 
 def _validate_rekor_dsse_envelope(

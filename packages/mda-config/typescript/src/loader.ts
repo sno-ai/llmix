@@ -45,7 +45,7 @@ export interface LoadMdaSourceOptions extends RequiresEnvironment {
   verifyIntegrity?: boolean;
   /** Stage E — verify §09 signatures. */
   verifySignatures?: boolean;
-  /** RC2 §13 production trusted-runtime profile. */
+  /** 13 production trusted-runtime profile. */
   trustedRuntime?: boolean;
   /** Stage F — enforce §10-3.3 `requires.network`. */
   enforceRequires?: boolean;

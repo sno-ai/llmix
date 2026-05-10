@@ -126,6 +126,40 @@ config = manager.get_preset("search", "summary")
 print(manager.available_presets())
 ```
 
+For signed production bundles, verify MDA source files while publishing and open
+the registry through a signed root:
+
+```python
+from llmix import (
+    ConfigRegistryManager,
+    ConfigRegistryOpenOptions,
+    ConfigRegistryPublisher,
+    ConfigRegistryPublishOptions,
+    RegistryRootSigningOptions,
+    RegistryRootVerificationOptions,
+)
+
+ConfigRegistryPublisher(root).publish(
+    options=ConfigRegistryPublishOptions(
+        trusted_runtime=True,
+        trust_policy=trust_policy,
+        did_web_verifier=did_web_verifier,
+        registry_root=RegistryRootSigningOptions(signer=registry_root_signer),
+    )
+)
+
+manager = ConfigRegistryManager.open(
+    root,
+    ConfigRegistryOpenOptions(
+        signed_root=RegistryRootVerificationOptions(
+            trust_policy=registry_root_trust_policy,
+            did_web_verifier=did_web_verifier,
+            expected_root_digest=expected_root_digest,
+        )
+    ),
+)
+```
+
 Then pass the resolved config into the pipeline:
 
 ```python
