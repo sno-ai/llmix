@@ -121,8 +121,7 @@ const LLMixPresetSchema = z.object({
 });
 
 const cfg = await loadMdaSource(presetPath, LLMixPresetSchema, {
-  verifyIntegrity: true,
-  verifySignatures: true,
+  trustedRuntime: true,
   enforceRequires: true,
   allowedNetworks: ["api.openai.com", "api.anthropic.com"],
   trustPolicy: {

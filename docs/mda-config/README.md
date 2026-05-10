@@ -17,7 +17,7 @@ CI job. The loader belongs in the process that actually consumes the config.
 
 The TypeScript, Python, and Rust packages expose the same MDA v1.0 source-mode
 contract: frontmatter extraction, source-schema validation, integrity
-verification, `requires.network` enforcement, and RC2 trusted-runtime verifier
+verification, `requires.network` enforcement, and RC3 trusted-runtime verifier
 hooks. Real Rekor transport, Sigstore cryptography, and did:web cryptography are
 supplied by the caller through verifier/client hooks.
 

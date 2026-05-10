@@ -60,14 +60,15 @@ the registry that production will read.
 
 Current runtime support is language-specific:
 
-- TypeScript, Python, and Rust can ask the MDA parser to verify integrity,
-  enforce `requires.network`, and run verifier-hook based signature checks
-  during load or registry publish.
-- For signatures, pass a trust policy plus Rekor and Sigstore verifier
-  implementations; missing verifier pieces make publish/load fail.
+- TypeScript can publish only from RC3 trusted `.mda` sources by passing
+  `trustedRuntime: true`, a trust policy, and the required Rekor, Sigstore, or
+  did:web verifier hooks.
+- Python and Rust expose the same MDA trust concepts through their MDA config
+  packages; registry-level signed-root parity remains follow-up work.
 
-For production, the clean pattern is: verify or sign during release, publish the
-registry, ship the registry with the app, and keep deployed files read-only.
+For production, the clean pattern is: verify signed `.mda` during release,
+publish a signed registry root, ship the registry with the app, keep deployed
+files read-only, and supply trust anchors from outside the registry bundle.
 
 ### What should production code do?
 
@@ -295,13 +296,17 @@ config/llm/
       authoring/
       resolved/
       manifest.json  # LLMix-generated index file
+      registry-root.json
   current.json
-  trusted-signers.json
 ```
 
+The trust policy, public keys, expected root digest, and high-watermark state
+are supplied by application or deployment configuration at runtime. They are not
+stored under `config/llm/` as the authority for the same registry bundle.
+
 TypeScript can require MDA integrity and signatures while publishing the
-registry files. For signed presets, pass a trust policy plus Rekor and Sigstore
-verifier implementations:
+registry files. For signed presets, use `trustedRuntime: true` with a trust
+policy plus Rekor, Sigstore, and/or did:web verifier implementations:
 
 ```typescript
 import { ConfigRegistryPublisher } from "@snoai/llmix";
@@ -309,23 +314,50 @@ import { ConfigRegistryPublisher } from "@snoai/llmix";
 const publisher = new ConfigRegistryPublisher("config/llm");
 
 await publisher.publish({
-  verifyIntegrity: true,
-  verifySignatures: true,
+  trustedRuntime: true,
   trustPolicy,
   rekorClient,
   sigstoreVerifier,
+  registryRoot: { signer: registryRootSigner },
 });
 ```
 
-Rust exposes the same gate through `publish_with_mda_options(...)`:
+`verifySignatures` is a lower-level helper for focused diagnostics. It is not
+the recommended production anti-tamper boundary by itself.
+
+The default signing profile should be GitHub Actions keyless Sigstore with
+Rekor transparency logging, pinned to the exact repository, ref or environment,
+and workflow identity you release from. For higher-assurance releases, require
+multiple independent signers, such as GitHub OIDC plus a cloud KMS/HSM identity
+or did:web signer controlled through separate access.
+
+Runtime verification should open the registry with trust anchors supplied by
+application or deployment configuration, not loaded from the registry directory
+being verified:
+
+```typescript
+import { ConfigRegistryManager } from "@snoai/llmix";
+
+const manager = await ConfigRegistryManager.open("config/llm", {
+  signedRoot: {
+    trustPolicy: registryRootTrustPolicy,
+    rekorClient,
+    sigstoreVerifier,
+    didWebVerifier,
+    expectedRootDigest,
+  },
+});
+```
+
+Rust exposes source `.mda` trust gates through `publish_with_mda_options(...)`;
+signed registry-root parity is follow-up work:
 
 ```rust
 use llmix_rs::{ConfigRegistryPublisher, MdaConfigLoadOptions};
 
 let publisher = ConfigRegistryPublisher::new("config/llm")?;
 let options = MdaConfigLoadOptions {
-    verify_integrity: true,
-    verify_signatures: true,
+    trusted_runtime: true,
     trust_policy: Some(trust_policy),
     rekor_client: Some(&rekor_client),
     sigstore_verifier: Some(&sigstore_verifier),
