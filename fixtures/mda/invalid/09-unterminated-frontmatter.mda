@@ -1,0 +1,5 @@
+---
+name: unterminated
+description: opening fence with no closing fence
+
+# Body never reached

@@ -1,0 +1,16 @@
+---
+name: body-with-hr
+description: Body contains Markdown horizontal rules; only the first --- closes the frontmatter.
+---
+
+# Body with horizontal rules
+
+Paragraph one.
+
+---
+
+Paragraph after a horizontal rule.
+
+---
+
+End.

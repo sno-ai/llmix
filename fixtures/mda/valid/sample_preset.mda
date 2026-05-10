@@ -1,11 +1,17 @@
 ---
-name: sample-preset
-description: Sample LLMix preset for MDA loader tests.
+name: gpt5-mini-fast
+description: Fast cheap multi-tool calls for everyday agent work. Use when latency matters more than reasoning depth.
+requires:
+  network: ["api.openai.com"]
 metadata:
+  mda:
+    doc-id: 38f5a922-81b2-4f1a-8d8c-3a5be4ea7511
+    version: "1.2.0"
+    tags: [openai, fast, low-cost]
   snoai-llmix:
     common:
-      provider: openai
       model: gpt-5-mini
+      provider: openai
       temperature: 0.7
       maxOutputTokens: 4096
     providerOptions:
@@ -13,10 +19,26 @@ metadata:
         reasoningEffort: medium
     caching:
       strategy: memory
-tags:
-  - fixture
+integrity:
+  algorithm: sha256
+  digest: "sha256:2ec514f3b02a9a3ebb048317edfd945d9ffa1cebf6207e941d42d29f7ff35393"
+signatures:
+  - signer: "sigstore-oidc:https://accounts.google.com"
+    key-id: "fulcio:7f9c"
+    payload-digest: "sha256:2ec514f3b02a9a3ebb048317edfd945d9ffa1cebf6207e941d42d29f7ff35393"
+    algorithm: ecdsa-p256
+    signature: "MEUCIQDFIXTURE=="
+    rekor-log-id: "c0d23b6c4f200000000000000000000000000000000000000000000000000"
+    rekor-log-index: 12345678
 ---
 
-# sample-preset
+# gpt5-mini-fast
 
-MDA loader fixture.
+Use when:
+- Multi-tool dispatch where each call should be cheap
+- Latency-sensitive interactive UX
+- Reasoning depth is not the bottleneck
+
+Avoid when:
+- Long single-shot reasoning (use `opus-thinking` instead)
+- Function-calling against unknown tools (model lacks tool-use coverage)

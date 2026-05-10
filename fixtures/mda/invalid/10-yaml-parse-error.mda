@@ -1,0 +1,9 @@
+---
+name: bad-yaml
+description: "unbalanced quotes
+metadata:
+  mda:
+    version: "1.0.0"
+---
+
+# YAML parse error

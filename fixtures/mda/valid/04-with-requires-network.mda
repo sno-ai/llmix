@@ -1,0 +1,15 @@
+---
+name: requires-network
+description: Source declaring a top-level requires.network allow-list.
+requires:
+  network: ["api.openai.com"]
+metadata:
+  snoai-llmix:
+    common:
+      model: gpt-5-mini
+      provider: openai
+---
+
+# Requires network
+
+Loader enforces requires.network against the operator's allowedNetworks.

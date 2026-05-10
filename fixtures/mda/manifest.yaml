@@ -1,0 +1,112 @@
+# @snoai/mda-config fixture manifest.
+# Strict subset of MDA's conformance/manifest.yaml shape.
+# Each entry binds a fixture to its expected verdict and (on reject) §11-3 error category.
+
+version: 1
+spec: v1.0.0-rc.2
+
+fixtures:
+  # ─── valid ──────────────────────────────────────────────────────────────
+  - id: "01-minimal"
+    path: valid/01-minimal.mda
+    verdict: accept
+    rules: [§02-2.1, §02-2.2]
+    description: Minimal source — only name and description.
+
+  - id: "02-with-integrity"
+    path: valid/02-with-integrity.mda
+    verdict: accept
+    semantic-checks: [integrity]
+    rules: [§02-2.7, §08-2, §08-3, §08-4]
+    description: Top-level integrity field whose digest matches the canonical bytes.
+
+  - id: "03-sigstore-signed"
+    path: valid/03-sigstore-signed.mda
+    verdict: accept
+    semantic-checks: [integrity, signatures]
+    rules: [§02-2.8, §09-2, §09-3.1, §09-4, §13]
+    description: Sigstore-signed source with signer issuer only; cryptographic verification uses a mock Rekor client + verifier in tests.
+
+  - id: "04-with-requires-network"
+    path: valid/04-with-requires-network.mda
+    verdict: accept
+    semantic-checks: [requires-network]
+    rules: [§10-3.3, §10-4]
+    description: Top-level requires.network allow-list satisfied by the operator environment.
+
+  - id: "05-bom-prefixed"
+    path: valid/05-bom-prefixed.mda
+    extraction-expected: ok
+    verdict: accept
+    rules: [§02-1.1 step 1]
+    description: File begins with UTF-8 BOM.
+
+  - id: "06-crlf-line-endings"
+    path: valid/06-crlf-line-endings.mda
+    extraction-expected: ok
+    verdict: accept
+    rules: [§02-1.1 step 3]
+    description: CRLF line endings normalize to LF before fence scanning.
+
+  - id: "07-body-contains-hr"
+    path: valid/07-body-contains-hr.mda
+    extraction-expected: ok
+    verdict: accept
+    rules: [§02-1.1 step 5, §02-1.1 step 6]
+    description: Body contains Markdown horizontal rules; only the FIRST closes the frontmatter.
+
+  - id: "08-empty-body"
+    path: valid/08-empty-body.mda
+    extraction-expected: ok
+    verdict: accept
+    rules: [§02-1.1 step 7, §08-3.3]
+    description: Frontmatter-only source; empty body is conformant.
+
+  # ─── invalid ────────────────────────────────────────────────────────────
+  - id: "09-unterminated-frontmatter"
+    path: invalid/09-unterminated-frontmatter.mda
+    extraction-expected: unterminated-frontmatter
+    verdict: reject
+    expected-error: unterminated-frontmatter
+    rules: [§02-1.1 step 5]
+
+  - id: "10-yaml-parse-error"
+    path: invalid/10-yaml-parse-error.mda
+    verdict: reject
+    expected-error: frontmatter-yaml-parse-error
+    rules: [§02-1.1]
+
+  - id: "11-integrity-mismatch"
+    path: invalid/11-integrity-mismatch.mda
+    verdict: reject
+    semantic-checks: [integrity]
+    expected-error: integrity-mismatch
+    rules: [§08-4]
+
+  - id: "12-signature-digest-mismatch"
+    path: invalid/12-signature-digest-mismatch.mda
+    verdict: reject
+    expected-error: signature-digest-mismatch
+    rules: [§09-2]
+
+  - id: "13-non-utf8"
+    path: invalid/13-non-utf8.mda
+    extraction-expected: invalid-encoding
+    verdict: reject
+    expected-error: invalid-encoding
+    rules: [§02-1.1 step 2]
+
+  - id: "14-rekor-entry-type-wrong"
+    path: invalid/14-rekor-entry-type-wrong.mda
+    verdict: reject
+    semantic-checks: [signatures]
+    expected-error: rekor-entry-type-mismatch
+    rules: [§09-4.2, §13]
+    description: Mock Rekor client returns a hashedrekord-v0.0.1 entry; loader MUST reject.
+
+  - id: "15-network-violation"
+    path: invalid/15-network-violation.mda
+    verdict: reject
+    semantic-checks: [requires-network]
+    expected-error: requires-not-satisfied
+    rules: [§10-3.3, §10-4]

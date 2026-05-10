@@ -1,0 +1,21 @@
+---
+name: sigstore-signed
+description: Source declaring an integrity anchor and a Sigstore-OIDC signature; cryptographic verification uses a mock Rekor client and verifier in tests.
+integrity:
+  algorithm: sha256
+  digest: "sha256:9697448b6f3f88b71870dd5b608999ade717f73d4eebf67f02ac03dfe177a37e"
+signatures:
+  - signer: "sigstore-oidc:https://accounts.google.com"
+    key-id: "fulcio:9c4e7b2f1a05c3b9e2d6c2b1e7f0a8d4c3b9e2f1a05c3b9e2d6c2b1e7f0a8d4c"
+    payload-digest: "sha256:9697448b6f3f88b71870dd5b608999ade717f73d4eebf67f02ac03dfe177a37e"
+    algorithm: ecdsa-p256
+    signature: "MEUCIQDkXFIXTUREONLYBASE64=="
+    rekor-log-id: "c0d23b6c4f200000000000000000000000000000000000000000000000000000"
+    rekor-log-index: 87654321
+    payload-type: "application/vnd.snoai-llmix.preset+json"
+metadata:
+  mda:
+    version: "1.0.0"
+---
+
+# Sigstore signed

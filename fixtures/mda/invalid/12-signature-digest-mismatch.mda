@@ -1,0 +1,17 @@
+---
+name: signature-digest-mismatch
+description: integrity.digest and signatures[0].payload-digest are both well-formed but unequal; §09-2 MUST reject.
+integrity:
+  algorithm: sha256
+  digest: "sha256:a4f9c0d2e8b3a16e9c01b8f3d2a5c7b14e9f8a3d6c2b1e7f0a8d4c3b9e2f1a05"
+signatures:
+  - signer: "sigstore-oidc:https://accounts.google.com"
+    key-id: "fulcio:9c4e7b"
+    payload-digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    algorithm: ecdsa-p256
+    signature: "MEUCBASE64=="
+    rekor-log-id: "c0d23b6c4f200000000000000000000000000000000000000000000000000000"
+    rekor-log-index: 87654321
+---
+
+# Bad

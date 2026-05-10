@@ -1,0 +1,8 @@
+---
+name: crlf-config
+description: CRLF line endings throughout; extractor MUST normalize to LF before scanning.
+---
+
+# CRLF
+
+body.

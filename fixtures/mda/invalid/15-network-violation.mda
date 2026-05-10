@@ -1,0 +1,13 @@
+---
+name: network-violation
+description: requires.network lists a host that is NOT in the operator allow-list; §10-4 MUST reject.
+requires:
+  network: ["api.disallowed.example.com"]
+metadata:
+  snoai-llmix:
+    common:
+      model: gpt-5-mini
+      provider: openai
+---
+
+# Network violation

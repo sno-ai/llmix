@@ -1,0 +1,14 @@
+---
+name: with-integrity
+description: Source declaring an integrity anchor whose digest matches the canonical bytes.
+integrity:
+  algorithm: sha256
+  digest: "sha256:2259366cf445b4ca014780a0f2b8ee4aa9b8ebea92c1f7eda0c2903159f6ca48"
+metadata:
+  mda:
+    version: "1.0.0"
+---
+
+# With integrity
+
+This body is part of the canonical artifact bytes.

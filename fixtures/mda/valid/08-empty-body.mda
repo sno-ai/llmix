@@ -1,0 +1,4 @@
+---
+name: empty-body
+description: Frontmatter-only source with an empty body string after the closing fence.
+---
