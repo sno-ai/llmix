@@ -1018,7 +1018,7 @@ wheels = [
 
 [[package]]
 name = "sno-llmix"
-version = "2.0.3"
+version = "2.0.4"
 source = { editable = "packages/llmix/python" }
 dependencies = [
     { name = "anthropic" },

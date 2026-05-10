@@ -10,7 +10,7 @@
     },
     "packages/llmix/typescript": {
       "name": "@snoai/llmix",
-      "version": "2.0.3",
+      "version": "2.0.4",
       "dependencies": {
         "@ai-sdk/provider": "^3.0.10",
         "@openrouter/sdk": "^0.12.21",
