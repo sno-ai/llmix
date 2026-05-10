@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
@@ -128,7 +128,7 @@ jobs:
           echo "ref=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
           ref: ${{ steps.resolve-ref.outputs.ref || github.event.pull_request.head.sha || github.sha }}
