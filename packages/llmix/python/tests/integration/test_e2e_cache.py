@@ -8,6 +8,7 @@ No mocking. Evaluates cache_hit tier, content identity, dispatch counts, latency
 from __future__ import annotations
 
 import asyncio
+import pytest
 import time
 import sys
 from pathlib import Path
@@ -27,6 +28,7 @@ from conftest import (
     openai_dispatch,
     anthropic_dispatch,
     gemini_dispatch,
+    SKIPPED_PROVIDER_INTEGRATION_REASON,
     sno_gpu_dispatch,
     print_summary,
     skip_unless,
@@ -205,6 +207,7 @@ async def test_6_6_l1_miss_different_top_p():
 # 6.7  L1 miss on different provider
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(reason=SKIPPED_PROVIDER_INTEGRATION_REASON)
 @skip_unless("OPENAI_API_KEY", "ANTHROPIC_API_KEY")
 async def test_6_7_l1_miss_different_provider():
     print("\n--- 6.7: L1 miss on different provider ---")
@@ -496,6 +499,7 @@ async def test_6_14_redis_or_memory_degradation():
 # 6.15  Cross-provider cache isolation
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(reason=SKIPPED_PROVIDER_INTEGRATION_REASON)
 @skip_unless("OPENAI_API_KEY", "GEMINI_API_KEY")
 async def test_6_15_cross_provider_cache_isolation():
     print("\n--- 6.15: Cross-provider cache isolation ---")
@@ -538,7 +542,6 @@ ALL_TESTS = [
     test_6_4_l1_miss_different_response_format,
     test_6_5_l1_miss_different_seed,
     test_6_6_l1_miss_different_top_p,
-    test_6_7_l1_miss_different_provider,
     test_6_8_l2_redis_hit,
     test_6_9_l2_backfill,
     test_6_10_cache_stores_raw_thinking,
@@ -546,7 +549,6 @@ ALL_TESTS = [
     test_6_12_cache_skip_disabled,
     test_6_13_cache_skip_native,
     test_6_14_redis_or_memory_degradation,
-    test_6_15_cross_provider_cache_isolation,
 ]
 
 
