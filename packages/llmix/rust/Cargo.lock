@@ -1026,9 +1026,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "snoai-mda-config"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2f23c6af612acaea60ad05db821e856adce68bffc53b637afb185c388f4e7e1"
+version = "1.1.1"
 dependencies = [
  "base64",
  "indexmap",
