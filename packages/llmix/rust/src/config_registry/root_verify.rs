@@ -1,8 +1,11 @@
-use super::fs_ops::{read_json_object, safe_join_relative, sha256_file, validate_revision};
+use super::fs_ops::{
+    read_json_object, safe_join_relative, sha256_bytes, sha256_file, validate_revision,
+};
 use super::root::{
-    normalize_sha256_digest, registry_root_file_digests, registry_root_signature_to_mda,
-    registry_root_signing_input, snapshot_registry_path, snapshot_relative_path,
-    sort_registry_root_files, validate_registry_root_signature, validate_sha256,
+    current_pointer_bytes, normalize_sha256_digest, registry_root_file_digests,
+    registry_root_signature_to_mda, registry_root_signing_input, snapshot_registry_path,
+    snapshot_relative_path, sort_registry_root_files, validate_registry_root_signature,
+    validate_sha256,
 };
 use super::*;
 use chrono::DateTime;
@@ -288,6 +291,17 @@ fn validate_registry_root_payload(payload: &RegistryRootPayload, source: &str) -
         "registry root current manifest",
     )?;
     validate_sha256(&payload.current.sha256, "registry root current binding")?;
+    let current_pointer = CurrentPointer {
+        revision: payload.current.revision.clone(),
+        manifest_sha256: Some(payload.current.manifest_sha256.clone()),
+    };
+    let current_sha256 = sha256_bytes(&current_pointer_bytes(&current_pointer)?);
+    if payload.current.sha256 != current_sha256 {
+        return Err(InvalidConfigError {
+            message: format!("Registry root current binding digest mismatch: {source}"),
+        }
+        .into());
+    }
     validate_sha256(&payload.manifest.sha256, "registry root manifest")?;
     for file in &payload.files {
         if file.role != "authoring" && file.role != "resolved" {

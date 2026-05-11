@@ -25,6 +25,7 @@ from llmix import (
     registry_root_options_from_trust_manifest,
 )
 from llmix.config_registry_types import REGISTRY_ROOT_PAYLOAD_TYPE
+from llmix.config_registry_root_parse import parse_registry_root_envelope
 from llmix.types import InvalidConfigError, SecurityError
 
 DOMAIN = "registry.example.com"
@@ -299,6 +300,19 @@ def test_signed_registry_root_rejects_current_manifest_digest_tampering(
 
     with pytest.raises(InvalidConfigError, match="manifest"):
         ConfigRegistryManager.open(root, _open_options())
+
+
+def test_registry_root_parser_rejects_current_binding_digest_mismatch(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _publish_signed_registry(root)
+    root_path = root / "snapshots" / "rev-1" / "registry-root.json"
+    envelope = _read_json(root_path)
+    envelope["payload"]["current"]["sha256"] = "0" * 64
+
+    with pytest.raises(InvalidConfigError, match="current binding digest"):
+        parse_registry_root_envelope(envelope, str(root_path))
 
 
 def test_unsigned_registry_rejects_manifest_digest_mismatch(tmp_path: Path) -> None:

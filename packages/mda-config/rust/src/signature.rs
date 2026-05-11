@@ -115,14 +115,15 @@ pub fn verify_signatures(
     did_web_verifier: Option<&dyn DidWebVerifier>,
 ) -> Result<()> {
     let payload_bytes = pae_payload_bytes(integrity)?;
-    verify_signatures_with_payload(
+    let legacy_payload_bytes = legacy_pae_payload_bytes(integrity)?;
+    verify_signatures_with_payload_candidates(
         signatures,
         integrity,
         policy,
         rekor_client,
         sigstore_verifier,
         did_web_verifier,
-        &payload_bytes,
+        &[payload_bytes.as_slice(), legacy_payload_bytes.as_slice()],
     )
 }
 
@@ -134,6 +135,26 @@ pub fn verify_signatures_with_payload(
     sigstore_verifier: Option<&dyn SigstoreVerifier>,
     did_web_verifier: Option<&dyn DidWebVerifier>,
     payload_bytes: &[u8],
+) -> Result<()> {
+    verify_signatures_with_payload_candidates(
+        signatures,
+        integrity,
+        policy,
+        rekor_client,
+        sigstore_verifier,
+        did_web_verifier,
+        &[payload_bytes],
+    )
+}
+
+fn verify_signatures_with_payload_candidates(
+    signatures: &[SignatureEntry],
+    integrity: &IntegrityField,
+    policy: &TrustPolicy,
+    rekor_client: Option<&dyn RekorClient>,
+    sigstore_verifier: Option<&dyn SigstoreVerifier>,
+    did_web_verifier: Option<&dyn DidWebVerifier>,
+    payload_candidates: &[&[u8]],
 ) -> Result<()> {
     policy.validate()?;
     assert_verifier_hooks(policy, rekor_client, sigstore_verifier, did_web_verifier)?;
@@ -150,36 +171,57 @@ pub fn verify_signatures_with_payload(
     }
 
     let required = policy.required_signatures();
-    let mut trusted = HashSet::new();
-    let mut candidate_errors = Vec::new();
-    for sig in signatures {
-        match verify_candidate(
-            sig,
-            payload_bytes,
-            policy,
-            rekor_client,
-            sigstore_verifier,
-            did_web_verifier,
-        ) {
-            Ok(Some(identity)) => {
-                trusted.insert(identity);
-                if trusted.len() >= required {
-                    return Ok(());
+    let mut max_trusted = 0;
+    let mut best_candidate_errors: Option<Vec<MdaConfigError>> = None;
+    let mut best_candidate_score = -1;
+    let mut saw_no_trusted_candidate = false;
+    for payload_bytes in payload_candidates {
+        let mut trusted = HashSet::new();
+        let mut payload_errors = Vec::new();
+        for sig in signatures {
+            match verify_candidate(
+                sig,
+                payload_bytes,
+                policy,
+                rekor_client,
+                sigstore_verifier,
+                did_web_verifier,
+            ) {
+                Ok(Some(identity)) => {
+                    trusted.insert(identity);
+                    if trusted.len() >= required {
+                        return Ok(());
+                    }
                 }
+                Ok(None) => {}
+                Err(err) => payload_errors.push(err),
             }
-            Ok(None) => {}
-            Err(err) => candidate_errors.push(err),
+        }
+        max_trusted = max_trusted.max(trusted.len());
+        if payload_errors.is_empty() {
+            saw_no_trusted_candidate = true;
+        } else {
+            let score = candidate_error_score(&payload_errors);
+            if score > best_candidate_score {
+                best_candidate_score = score;
+                best_candidate_errors = Some(payload_errors);
+            }
         }
     }
 
-    if !trusted.is_empty() {
+    if max_trusted > 0 {
         return Err(MdaConfigError::with_details(
             ErrorCategory::InsufficientTrustedSignatures,
             "trusted signatures did not satisfy minSignatures",
-            serde_json::json!({ "trusted": trusted.len(), "required": required }),
+            serde_json::json!({ "trusted": max_trusted, "required": required }),
         ));
     }
-    Err(most_specific_candidate_error(&candidate_errors))
+    if saw_no_trusted_candidate {
+        return Err(no_trusted_signature_error());
+    }
+    Err(most_specific_candidate_error(
+        best_candidate_errors.as_deref().unwrap_or(&[]),
+    ))
 }
 
 fn assert_verifier_hooks(
@@ -509,6 +551,14 @@ fn pae_payload_bytes(integrity: &IntegrityField) -> Result<Vec<u8>> {
     Ok(canonical_json(&payload)?.into_bytes())
 }
 
+fn legacy_pae_payload_bytes(integrity: &IntegrityField) -> Result<Vec<u8>> {
+    let payload = serde_json::json!({
+        "algorithm": integrity.algorithm.as_str(),
+        "digest": integrity.digest,
+    });
+    Ok(canonical_json(&payload)?.into_bytes())
+}
+
 fn most_specific_candidate_error(errors: &[MdaConfigError]) -> MdaConfigError {
     for category in [
         ErrorCategory::RekorEntryTypeMismatch,
@@ -524,6 +574,32 @@ fn most_specific_candidate_error(errors: &[MdaConfigError]) -> MdaConfigError {
             );
         }
     }
+    no_trusted_signature_error()
+}
+
+fn candidate_error_score(errors: &[MdaConfigError]) -> i32 {
+    if errors.iter().any(|err| {
+        err.category == ErrorCategory::SignatureVerificationFailure
+            || err.category == ErrorCategory::FulcioChainFailure
+    }) {
+        return 3;
+    }
+    if errors
+        .iter()
+        .any(|err| err.category == ErrorCategory::RekorEntryTypeMismatch)
+    {
+        return 2;
+    }
+    if errors
+        .iter()
+        .any(|err| err.category == ErrorCategory::RekorInclusionFailure)
+    {
+        return 1;
+    }
+    0
+}
+
+fn no_trusted_signature_error() -> MdaConfigError {
     MdaConfigError::new(
         ErrorCategory::NoTrustedSignature,
         "no cryptographically verified signature matched the trust policy",

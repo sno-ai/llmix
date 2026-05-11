@@ -212,6 +212,13 @@ function validateRegistryRootPayloadBindings(payload: RegistryRootPayload, sourc
 	if (payload.current.manifest_sha256 !== payload.manifest.sha256) {
 		throw new InvalidConfigError(`Registry root current manifest digest does not match manifest binding: ${sourcePath}`)
 	}
+	const currentSha256 = currentPointerSha256({
+		revision: payload.current.revision,
+		manifestSha256: payload.current.manifest_sha256,
+	})
+	if (payload.current.sha256 !== currentSha256) {
+		throw new InvalidConfigError(`Registry root current binding digest mismatch: ${sourcePath}`)
+	}
 	if (payload.manifest.path !== snapshotRegistryPath(payload.revision, "manifest.json")) {
 		throw new InvalidConfigError(`Registry root manifest path does not match payload revision: ${sourcePath}`)
 	}

@@ -401,6 +401,42 @@ fn signed_registry_root_rejects_tampered_registry_root_payload() {
 }
 
 #[test]
+fn signed_registry_root_rejects_current_binding_digest_mismatch_during_parse() {
+    let temp_root = unique_temp_dir("llmix-config-registry-current-binding-tamper");
+    let root = temp_root.join("config/llm");
+    write_authoring_preset(&root, "search", "summary", None);
+
+    let signer = TestRegistryRootSigner;
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let published = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
+        .expect("signed publish should succeed");
+    let root_path = published
+        .registry_root_path
+        .expect("signed publish should write registry-root.json");
+    let mut envelope: Value = serde_json::from_str(
+        &fs::read_to_string(&root_path).expect("registry root should be readable"),
+    )
+    .expect("registry root should parse");
+    envelope["payload"]["current"]["sha256"] = json!("0".repeat(64));
+    fs::write(
+        &root_path,
+        serde_json::to_string(&envelope).expect("tampered root should serialize"),
+    )
+    .expect("registry root should be overwritten");
+
+    let error = ConfigRegistryManager::open_with_options(&root, signed_registry_open_options())
+        .expect_err("current binding mismatch should fail during root parse");
+
+    assert!(
+        error
+            .to_string()
+            .contains("current binding digest mismatch"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
 fn publish_uses_unique_staging_dir_for_explicit_revision() {
     let temp_root = unique_temp_dir("llmix-config-registry-unique-stage");
     let root = temp_root.join("config/llm");

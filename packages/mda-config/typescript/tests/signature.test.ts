@@ -99,6 +99,62 @@ describe("§09-3.1 DSSE PAE envelope", () => {
       .toBe(true);
   });
 
+  it("accepts legacy integrity payload bytes on the default signature path", async () => {
+    let captured: Uint8Array | undefined;
+    const verifier: SigstoreVerifier = {
+      async verify(_entry, _signature, paeBytes) {
+        captured = paeBytes;
+        return {
+          identity: {
+            issuer: "https://accounts.google.com",
+            subjectAlternativeName: "releases@snoai.com",
+          },
+        };
+      },
+    };
+    const integrity = {
+      algorithm: "sha256" as const,
+      digest:
+        "sha256:a4f9c0d2e8b3a16e9c01b8f3d2a5c7b14e9f8a3d6c2b1e7f0a8d4c3b9e2f1a05",
+    };
+    const expectedPayload = Buffer.from(JSON.stringify(integrity)).toString("base64");
+    const rekorClient: RekorClient = {
+      async fetchEntry() {
+        return {
+          kind: "dsse-v0.0.1",
+          logId: "logid",
+          logIndex: 1,
+          inclusionVerified: true,
+          certificatePem: "",
+          dsseEnvelope: {
+            payloadType: DEFAULT_PAYLOAD_TYPE,
+            payload: expectedPayload,
+            signatures: [{ sig: "MEUC=", keyid: "fulcio:abc" }],
+          },
+        };
+      },
+    };
+
+    await verifySignatures(
+      [
+        {
+          signer: "sigstore-oidc:https://accounts.google.com",
+          "key-id": "fulcio:abc",
+          "payload-digest": integrity.digest,
+          algorithm: "ecdsa-p256",
+          signature: "MEUC=",
+          "rekor-log-id": "logid",
+          "rekor-log-index": 1,
+        },
+      ],
+      integrity,
+      GOOGLE_POLICY,
+      { rekorClient, sigstoreVerifier: verifier },
+    );
+
+    expect(new TextDecoder().decode(captured!)).toContain(JSON.stringify(integrity));
+  });
+
   it("can verify signatures over caller-supplied payload bytes", async () => {
     const integrity = {
       algorithm: "sha256" as const,

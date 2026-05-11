@@ -134,6 +134,12 @@ export function paePayloadBytes(integrity: IntegrityField): Uint8Array {
   );
 }
 
+function legacyPaePayloadBytes(integrity: IntegrityField): Uint8Array {
+  return new TextEncoder().encode(
+    canonify({ algorithm: integrity.algorithm, digest: integrity.digest }),
+  );
+}
+
 /** §13 — evaluate signatures against an  trust policy threshold. */
 export async function verifySignatures(
   signatures: SignatureEntry[],
@@ -150,31 +156,52 @@ export async function verifySignatures(
     );
   }
 
-  const payloadBytes = options.payloadBytes ?? paePayloadBytes(integrity);
-  const trusted = new Set<string>();
-  const candidateErrors: MdaConfigError[] = [];
+  const payloadCandidates = options.payloadBytes !== undefined
+    ? [options.payloadBytes]
+    : [paePayloadBytes(integrity), legacyPaePayloadBytes(integrity)];
+  let maxTrusted = 0;
+  let bestCandidateErrors: MdaConfigError[] = [];
+  let bestCandidateScore = -1;
+  let sawNoTrustedCandidate = false;
+  const required = policy.minSignatures ?? 1;
 
-  for (const sig of signatures) {
-    validateSignatureShape(sig);
-    assertPayloadDigest(sig, integrity);
-    try {
-      const identity = await verifyCandidate(sig, integrity, payloadBytes, policy, options);
-      if (identity) trusted.add(identity);
-    } catch (cause) {
-      candidateErrors.push(asMdaError(cause, ErrorCategory.SignatureVerificationFailure));
+  for (const payloadBytes of payloadCandidates) {
+    const trusted = new Set<string>();
+    const payloadErrors: MdaConfigError[] = [];
+    for (const sig of signatures) {
+      validateSignatureShape(sig);
+      assertPayloadDigest(sig, integrity);
+      try {
+        const identity = await verifyCandidate(sig, integrity, payloadBytes, policy, options);
+        if (identity) trusted.add(identity);
+      } catch (cause) {
+        payloadErrors.push(asMdaError(cause, ErrorCategory.SignatureVerificationFailure));
+      }
+    }
+
+    if (trusted.size >= required) return;
+    maxTrusted = Math.max(maxTrusted, trusted.size);
+    if (payloadErrors.length === 0) {
+      sawNoTrustedCandidate = true;
+    } else {
+      const score = candidateErrorScore(payloadErrors);
+      if (score > bestCandidateScore) {
+        bestCandidateScore = score;
+        bestCandidateErrors = payloadErrors;
+      }
     }
   }
-
-  const required = policy.minSignatures ?? 1;
-  if (trusted.size >= required) return;
-  if (trusted.size > 0) {
+  if (maxTrusted > 0) {
     throw new MdaConfigError(
       ErrorCategory.InsufficientTrustedSignatures,
       "trusted signatures did not satisfy minSignatures",
-      { trusted: trusted.size, required },
+      { trusted: maxTrusted, required },
     );
   }
-  throw mostSpecificCandidateError(candidateErrors);
+  if (sawNoTrustedCandidate) {
+    throw noTrustedSignatureError();
+  }
+  throw mostSpecificCandidateError(bestCandidateErrors);
 }
 
 const defaultSigstoreVerifier: SigstoreVerifier = {
@@ -459,10 +486,32 @@ function mostSpecificCandidateError(errors: MdaConfigError[]): MdaConfigError {
     errors.find((err) => err.category === ErrorCategory.RekorInclusionFailure) ??
     errors.find((err) => err.category === ErrorCategory.FulcioChainFailure) ??
     errors.find((err) => err.category === ErrorCategory.SignatureVerificationFailure) ??
-    new MdaConfigError(
-      ErrorCategory.NoTrustedSignature,
-      "no cryptographically verified signature matched the trust policy",
-    );
+    noTrustedSignatureError();
+}
+
+function candidateErrorScore(errors: MdaConfigError[]): number {
+  if (
+    errors.some((err) =>
+      err.category === ErrorCategory.SignatureVerificationFailure ||
+      err.category === ErrorCategory.FulcioChainFailure
+    )
+  ) {
+    return 3;
+  }
+  if (errors.some((err) => err.category === ErrorCategory.RekorEntryTypeMismatch)) {
+    return 2;
+  }
+  if (errors.some((err) => err.category === ErrorCategory.RekorInclusionFailure)) {
+    return 1;
+  }
+  return 0;
+}
+
+function noTrustedSignatureError(): MdaConfigError {
+  return new MdaConfigError(
+    ErrorCategory.NoTrustedSignature,
+    "no cryptographically verified signature matched the trust policy",
+  );
 }
 
 function asMdaError(cause: unknown, fallback: ErrorCategory): MdaConfigError {

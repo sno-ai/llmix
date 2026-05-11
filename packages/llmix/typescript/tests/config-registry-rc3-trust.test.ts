@@ -20,7 +20,7 @@ import {
 	type RegistryRootSigner,
 	type RegistryRootSignature,
 } from "../src/index.js"
-import { createRegistryRootEnvelope } from "../src/config-registry-root.js"
+import { createRegistryRootEnvelope, parseRegistryRootEnvelope } from "../src/config-registry-root.js"
 
 let passed = 0
 let failed = 0
@@ -506,6 +506,24 @@ await run("publisher writes signed registry root covering current binding, manif
 		assert.equal(await sha256File(path.join(root, authoringDigest.path)), authoringDigest.sha256)
 		assert.equal(await sha256File(path.join(root, resolvedDigest.path)), resolvedDigest.sha256)
 		assert.equal(resolved.model, "gpt-4.1-mini")
+	})
+})
+
+await run("parser rejects registry root current binding digest mismatches", async () => {
+	await withTempRoot("signed-root-current-binding-parser", async (root) => {
+		await writeUnsignedAuthoringPreset(root)
+
+		const published = await new ConfigRegistryPublisher(root).publish({
+			revision: "2026-05-10T00:00:00.000Z",
+			registryRoot: { signer: registryRootSigner() },
+		})
+		const envelope = await readRegistryRoot(root, published.revision)
+		envelope.payload.current.sha256 = "0".repeat(64)
+
+		assert.throws(
+			() => parseRegistryRootEnvelope(envelope as unknown as Parameters<typeof parseRegistryRootEnvelope>[0], "registry-root.json"),
+			/current binding digest/,
+		)
 	})
 })
 

@@ -142,6 +142,11 @@ def _payload_b64(integrity: dict[str, str]) -> str:
     return base64.b64encode(payload).decode()
 
 
+def _legacy_payload_b64(integrity: dict[str, str]) -> str:
+    payload = json.dumps(integrity, separators=(",", ":"), sort_keys=True).encode()
+    return base64.b64encode(payload).decode()
+
+
 def _rekor_entry(
     integrity: dict[str, str],
     *,
@@ -444,6 +449,23 @@ def test_signature_verification_happy_path_succeeds() -> None:
         verify_signatures=True,
         trust_policy=_trust_policy(),
         rekor_client=FakeRekorClient(_rekor_entry(integrity)),
+        sigstore_verifier=FakeSigstoreVerifier(),
+    )
+
+    assert cfg.name == "signed-config"
+
+
+def test_signature_verification_accepts_legacy_integrity_payload_bytes() -> None:
+    source, integrity = _signed_source()
+
+    cfg = load_mda_source_from_bytes(
+        source,
+        schema=MinimalSchema,
+        verify_signatures=True,
+        trust_policy=_trust_policy(),
+        rekor_client=FakeRekorClient(
+            _rekor_entry(integrity, payload=_legacy_payload_b64(integrity))
+        ),
         sigstore_verifier=FakeSigstoreVerifier(),
     )
 
