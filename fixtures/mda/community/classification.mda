@@ -1,0 +1,49 @@
+---
+name: classification
+version: "1.0"
+provider: openai
+model: gpt-4.1-mini
+temperature: 0.0
+max_output_tokens: 64
+description: "Text classification with deterministic label output"
+---
+
+# Classification Preset
+
+A zero-temperature, constrained-output preset for deterministic text
+classification tasks: sentiment analysis, intent detection, topic
+labeling, and content categorization.
+
+## Configuration Notes
+
+- **Temperature 0.0**: Classification must be deterministic. The same
+  input should always produce the same label.
+- **Max output 64 tokens**: Labels are short. Constraining output
+  prevents the model from generating explanations or hedging.
+- **Model**: `gpt-4.1-mini` is cost-effective for classification.
+  Upgrade to `gpt-4.1` only if accuracy on edge cases is critical.
+
+## Structured Output
+
+For reliable parsing, request JSON output in your system prompt:
+
+```
+Classify the following text. Respond with ONLY a JSON object:
+{"label": "<category>", "confidence": <0.0-1.0>}
+
+Categories: billing, technical, account, general
+```
+
+## Multi-Label Classification
+
+For texts that may belong to multiple categories, adjust the prompt
+to return an array:
+
+```
+{"labels": ["billing", "account"], "primary": "billing"}
+```
+
+## Performance Notes
+
+At temperature 0.0, classification calls are highly cacheable.
+Enable caching to avoid redundant API calls for repeated inputs.
