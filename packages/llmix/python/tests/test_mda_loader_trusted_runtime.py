@@ -157,7 +157,9 @@ def _write_sigstore_signed_mda(path: Path) -> tuple[Path, RekorEntry]:
         "inclusion_verified": True,
         "dsse_envelope": {
             "payload_type": DEFAULT_PAYLOAD_TYPE,
-            "payload": base64.b64encode(_canonical_json(integrity)).decode("ascii"),
+            "payload": base64.b64encode(_canonical_json({"integrity": integrity})).decode(
+                "ascii"
+            ),
             "signatures": [{"sig": signature["signature"], "keyid": signature["key-id"]}],
         },
     }

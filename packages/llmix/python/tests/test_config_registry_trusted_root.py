@@ -20,6 +20,8 @@ from llmix import (
     RegistryRootSigningInput,
     RegistryRootSigningOptions,
     RegistryRootVerificationOptions,
+    load_llmix_trust_manifest,
+    registry_root_options_from_trust_manifest,
 )
 from llmix.config_registry_types import REGISTRY_ROOT_PAYLOAD_TYPE
 from llmix.types import InvalidConfigError, SecurityError
@@ -319,6 +321,54 @@ def test_signed_registry_root_expected_digest_pins_published_artifact(
 
     with pytest.raises(SecurityError, match="expected_root_digest"):
         ConfigRegistryManager.open(root, _open_options(expected_root_digest="0" * 64))
+
+
+def test_signed_registry_root_opens_from_cli_trust_manifest_schema(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_authoring_preset(root)
+    published = ConfigRegistryPublisher(root).publish(
+        revision="rev-1", options=_publish_options()
+    )
+
+    assert published.registry_root_sha256 is not None
+    assert published.registry_root_path is not None
+    envelope = _read_json(published.registry_root_path)
+    manifest_path = tmp_path / "llmix-trust.json"
+    _write_json(
+        manifest_path,
+        {
+            "version": 1,
+            "kind": "llmix-trust-manifest",
+            "expectedRootDigest": f"sha256:{published.registry_root_sha256}",
+            "sourceSetDigest": f"sha256:{'1' * 64}",
+            "releasePlanDigest": f"sha256:{'2' * 64}",
+            "registryRootTrustPolicy": _trust_policy(),
+            "rekorPolicy": None,
+            "minimumRevision": None,
+            "minimumPublishedAt": None,
+            "highWatermark": None,
+            "registryRootSignerIdentity": {"type": "did-web", "domain": DOMAIN},
+            "registryRoot": {
+                "path": str(published.registry_root_path),
+                "revision": published.revision,
+                "publishedAt": envelope["payload"]["published_at"],
+                "highWatermark": published.revision,
+            },
+            "releasePlan": {"path": "release-plan.json", "sourceCount": 1},
+        },
+    )
+
+    options = registry_root_options_from_trust_manifest(
+        load_llmix_trust_manifest(manifest_path),
+        did_web_verifier=RootDidWebVerifier(),
+    )
+    manager = ConfigRegistryManager.open(
+        root, ConfigRegistryOpenOptions(signed_root=options)
+    )
+
+    assert manager.get_preset("search", "summary")["model"] == "gpt-4.1-mini"
 
 
 def test_failed_registry_root_signing_does_not_activate_new_revision(

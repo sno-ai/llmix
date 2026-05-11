@@ -133,7 +133,9 @@ def _write_signed_mda(path: Path) -> tuple[Path, dict[str, str]]:
 
 
 def _rekor_entry(integrity: dict[str, str]) -> RekorEntry:
-    payload = json.dumps(integrity, separators=(",", ":"), sort_keys=True).encode()
+    payload = json.dumps(
+        {"integrity": integrity}, separators=(",", ":"), sort_keys=True
+    ).encode()
     return {
         "kind": "dsse-v0.0.1",
         "log_id": "test-log",
