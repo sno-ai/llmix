@@ -7,10 +7,153 @@ approved?
 Short version:
 
 1. Put LLMix model settings in `.mda` files.
-2. Check or sign those files during release.
-3. Publish the LLMix registry.
-4. In production, load the published registry instead of reading editable `.mda`
-   files on every request.
+2. Sign those `.mda` files during release.
+3. Publish a signed LLMix registry root from verified `.mda` files.
+4. Store the runtime trust anchors outside `config/llm/`.
+5. In production, open the published registry with signed-root verification.
+
+The registry is the thing being checked. It cannot be the thing that proves
+itself. The trust anchor has to come from somewhere else.
+
+## Quick Start: Production Registry Trust
+
+Use this path when a production service must only run model settings your team
+approved.
+
+1. Create or update the `.mda` presets in a staging directory.
+2. Validate the presets and attach integrity.
+3. Sign the presets with your release identity.
+4. Publish the LLMix registry from those signed presets with
+   `trustedRuntime: true`.
+5. Sign the registry root produced by the publisher.
+6. Write the root digest, registry-root trust policy, and freshness policy to
+   deployment config.
+7. Start the app with those outside trust anchors.
+
+This is the same flow whether a human runs the release or an AI agent runs it
+for them. The agent should use machine-readable command output, stop on the
+first failed gate, and write into staging paths until the release artifacts are
+ready.
+
+The deployment should look like two separate inputs:
+
+```text
+app image or package
+  config/llm/
+    snapshots/
+      2026-05-09T120000Z/
+        resolved/
+        manifest.json
+        registry-root.json
+    current.json
+
+deployment config, secret manager, or release metadata
+  llmix.registryRootTrustPolicy
+  llmix.expectedRootDigest
+  llmix.rekorPolicy
+  llmix.highWatermark
+```
+
+`registry-root.json` is not the anchor. It is the signed evidence. If someone
+can replace the whole registry directory, they can replace that file too.
+
+The anchor is the outside value that does not move with the registry bundle:
+
+- a pinned `expectedRootDigest`;
+- a trust policy that pins the signer identity;
+- public keys, KMS/HSM identity, did:web verifier config, or Sigstore policy;
+- Rekor transparency log policy for Sigstore signatures;
+- high-watermark state used to reject rollback.
+
+For static app releases, pinning `expectedRootDigest` is the clearest boundary.
+Every meaningful registry change produces a different root digest. If the
+deployed files are swapped, runtime rejects them because the outside digest does
+not match.
+
+For continuously updated services, use signer policy plus freshness checks:
+`minimumRevision`, `minimumPublishedAt`, or an external high-watermark. That
+keeps an old but validly signed registry from coming back later like a bad cache
+entry.
+
+TypeScript runtime code should open the registry with anchors supplied by the
+application or deployment system:
+
+```typescript
+import { ConfigRegistryManager } from "@snoai/llmix";
+
+const manager = await ConfigRegistryManager.open("config/llm", {
+  signedRoot: {
+    trustPolicy: registryRootTrustPolicy,
+    rekorClient,
+    sigstoreVerifier,
+    didWebVerifier,
+    expectedRootDigest,
+    highWatermark,
+  },
+});
+```
+
+The important part is not the exact storage system. A file under `/etc`, a
+Kubernetes config, a mobile app binary, a signed release manifest, or a secret
+manager can all work. The important part is that it is not stored under the
+registry directory it is supposed to verify.
+
+### What the MDA CLI Can Do
+
+The MDA CLI should feel like the normal way to prepare MDA artifacts. A person
+or agent should be able to use one tool for the authoring loop:
+
+1. scaffold or update `.mda` files;
+2. validate source files;
+3. canonicalize content when a reproducible payload is needed;
+4. attach or verify integrity;
+5. compile generated Markdown targets when the artifact is for an agent runtime;
+6. sign with an explicit release identity;
+7. verify signatures against an explicit trust policy;
+8. emit machine-readable release metadata.
+
+That last output matters for LLMix. The registry bundle and the deployment trust
+manifest are two different artifacts.
+
+```text
+release output
+  config/llm/
+    snapshots/
+    current.json
+
+deployment trust manifest
+  expectedRootDigest
+  registryRootTrustPolicy
+  rekorPolicy
+  minimumRevision
+  minimumPublishedAt
+  highWatermark
+```
+
+The CLI can produce or help produce the manifest. It still should not become the
+production authority by itself. If a tool writes a trust policy into the same
+`config/llm/` directory, an attacker who can replace the registry can replace
+that policy too. That is just moving the lock onto the same door.
+
+For LLMix, the comfortable release path is:
+
+1. `mda validate` every source preset.
+2. `mda integrity verify` or attach integrity.
+3. `mda sign` each preset with the release identity.
+4. `mda verify` the signed presets against the release policy.
+5. Publish the LLMix registry with `trustedRuntime: true`.
+6. Sign the registry root.
+7. Emit `expectedRootDigest`, signer identity, and freshness metadata.
+8. Write that manifest to the external deployment channel.
+
+Today, the MDA CLI already has the right authoring shape: explicit targets,
+machine-readable JSON, validation, compile, canonicalization, integrity checks,
+and conformance checks. Full signing, full cryptographic verification, and the
+LLMix deployment trust manifest are the pieces this workflow asks the tooling to
+finish.
+
+After release, production only needs the runtime package, the registry bundle,
+and the external anchors. The CLI does not have to run while serving requests.
 
 ## Q&A
 
@@ -71,6 +214,7 @@ Current runtime support is language-specific:
 For production, the clean pattern is: verify signed `.mda` during release,
 publish a signed registry root, ship the registry with the app, keep deployed
 files read-only, and supply trust anchors from outside the registry bundle.
+The Quick Start above is the normal deployment shape.
 
 ### What should production code do?
 
@@ -265,27 +409,14 @@ create or verify signed MDA files.
 
 ## Recommended Release Flow
 
-For production services, use a plain release flow:
+For production services, keep authoring, release, and runtime separate.
 
-1. Put each model choice in a real `.mda` file, such as
-   `authoring/search_summary/openai_fast.mda`.
-2. Sign those `.mda` files with the MDA signing workflow your team already uses.
-   This is the step that says "this model config is approved."
-3. In CI or during release, publish the LLMix registry with verification checks
-   turned on. The trust policy says which signer you trust. If a preset is
-   unsigned or signed by the wrong identity, the publish step fails.
-4. Ship the generated `snapshots/` directory and `current.json` with your app,
-   package, or container image.
-5. In production, read only the published registry with
-   `ConfigRegistryManager`. Do not load editable `.mda` files during request
-   handling.
+Authoring is where people edit `.mda` files. CI is where those files become an
+approved registry. Runtime is where the app reads the approved registry and says
+yes or no. Keep those jobs separate and the whole system is much easier to
+reason about.
 
-This gives application teams a simple deployment model: no signing service is
-needed while handling user requests, and no cloud call is needed before every
-model request. The production service reads the files that were already
-published with the app.
-
-The layout should look like this:
+The registry layout should look like this:
 
 ```text
 config/llm/
@@ -305,6 +436,10 @@ config/llm/
 The trust policy, public keys, expected root digest, and high-watermark state
 are supplied by application or deployment configuration at runtime. They are not
 stored under `config/llm/` as the authority for the same registry bundle.
+
+During release, publish from trusted `.mda` sources. If a preset is unsigned,
+has bad integrity, or is signed by the wrong identity, publishing fails before
+the registry can reach production.
 
 TypeScript can require MDA integrity and signatures while publishing the
 registry files. For signed presets, use `trustedRuntime: true` with a trust
