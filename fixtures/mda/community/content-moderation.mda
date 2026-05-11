@@ -1,0 +1,58 @@
+---
+name: content-moderation
+version: "1.0"
+provider: openai
+model: gpt-4.1-mini
+temperature: 0.0
+max_output_tokens: 128
+description: "Content moderation with deterministic safety judgments"
+---
+
+# Content Moderation Preset
+
+A zero-temperature, fast-response preset for content moderation
+decisions. Optimized for high throughput and deterministic results.
+
+## Configuration Notes
+
+- **Temperature 0.0**: Safety decisions must be deterministic and
+  reproducible. The same content must always get the same verdict.
+- **Max output 128 tokens**: Moderation output is a short structured
+  response (verdict + category + confidence). Keep it minimal.
+- **Model**: `gpt-4.1-mini` for cost efficiency. Moderation runs on
+  every user message — cost per call must be minimal.
+
+## Output Format
+
+Request structured JSON output:
+
+```json
+{
+  "safe": true,
+  "categories": [],
+  "confidence": 0.98
+}
+```
+
+Or when flagged:
+
+```json
+{
+  "safe": false,
+  "categories": ["harassment", "hate_speech"],
+  "confidence": 0.94,
+  "severity": "high"
+}
+```
+
+## Performance
+
+- Average latency: 200-400ms (mini model, short output)
+- Cacheable: Yes — identical inputs get identical verdicts
+- Batch support: Use `call_batch()` for bulk moderation
+
+## Complementary Setup
+
+For defense in depth, chain with OpenAI's moderation endpoint
+(free, fast) as a first pass, then use this preset for borderline
+cases that need nuanced judgment.
