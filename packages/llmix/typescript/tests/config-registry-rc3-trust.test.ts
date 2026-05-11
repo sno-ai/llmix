@@ -18,6 +18,7 @@ import {
 	type MdaConfigLoadOptions,
 	type RegistryRootEnvelope,
 	type RegistryRootSigner,
+	type RegistryRootSignature,
 } from "../src/index.js"
 import { createRegistryRootEnvelope } from "../src/config-registry-root.js"
 
@@ -92,6 +93,10 @@ function canonicalJson(value: JsonValue): string {
 		throw new Error("Unsupported JSON value")
 	}
 	return encoded
+}
+
+function canonicalPrettyJson(value: JsonValue): string {
+	return `${JSON.stringify(JSON.parse(canonicalJson(value)), null, 2)}\n`
 }
 
 function presetFrontmatter(presetName: string): JsonValue {
@@ -324,6 +329,26 @@ async function writeRegistryRoot(root: string, revision: string, envelope: Regis
 
 async function resignRegistryRoot(envelope: RegistryRootEnvelope): Promise<RegistryRootEnvelope> {
 	return createRegistryRootEnvelope(envelope.payload, { signer: registryRootSigner() })
+}
+
+function resignRegistryRootLegacyPretty(envelope: RegistryRootEnvelope): RegistryRootEnvelope {
+	const canonicalPayload = canonicalPrettyJson(envelope.payload as unknown as JsonValue)
+	const payloadSha256 = createHash("sha256").update(canonicalPayload).digest("hex")
+	const integrity = { algorithm: "sha256" as const, digest: `sha256:${payloadSha256}` }
+	const signature: RegistryRootSignature = {
+		algorithm: "ed25519",
+		signer: `did-web:${REGISTRY_ROOT_DOMAIN}`,
+		"key-id": REGISTRY_ROOT_KEY_ID,
+		"payload-digest": integrity.digest,
+		"payload-type": REGISTRY_ROOT_PAYLOAD_TYPE,
+		signature: registryRootSignature(payloadSha256),
+	}
+	return {
+		...envelope,
+		integrity,
+		payload_sha256: payloadSha256,
+		signatures: [signature],
+	}
 }
 
 await run("direct MDA loading accepts trustedRuntime did:web options", async () => {
@@ -673,6 +698,28 @@ await run("runtime opens signed registry root with external verifier and rejects
 	})
 })
 
+await run("runtime opens legacy pretty-canonical signed registry roots", async () => {
+	await withTempRoot("signed-root-legacy-pretty", async (root) => {
+		await writeUnsignedAuthoringPreset(root)
+
+		const published = await new ConfigRegistryPublisher(root).publish({
+			registryRoot: { signer: registryRootSigner() },
+		})
+		const envelope = resignRegistryRootLegacyPretty(await readRegistryRoot(root, published.revision))
+		await writeRegistryRoot(root, published.revision, envelope)
+
+		const manager = await ConfigRegistryManager.open(root, {
+			signedRoot: {
+				trustPolicy: REGISTRY_ROOT_POLICY,
+				didWebVerifier: registryRootVerifier(true),
+			},
+		})
+
+		assert.equal(manager.activeRevision, published.revision)
+		assert.equal((await manager.getPreset("search", "summary")).model, "gpt-4.1-mini")
+	})
+})
+
 await run("runtime opens signed registry from CLI trust manifest schema", async () => {
 	await withTempRoot("registry-root-trust-manifest", async (root) => {
 		await writeUnsignedAuthoringPreset(root)
@@ -723,6 +770,18 @@ await run("runtime opens signed registry from CLI trust manifest schema", async 
 		assert.equal(optionsWithWatermark.minimumRevision, published.revision)
 		const managerWithWatermark = await ConfigRegistryManager.open(root, { signedRoot: optionsWithWatermark })
 		assert.equal((await managerWithWatermark.getPreset("search", "summary")).model, "gpt-4.1-mini")
+
+		const manifestWithoutNullableFields = { ...manifest } as Record<string, unknown>
+		delete manifestWithoutNullableFields["rekorPolicy"]
+		delete manifestWithoutNullableFields["minimumRevision"]
+		delete manifestWithoutNullableFields["minimumPublishedAt"]
+		delete manifestWithoutNullableFields["highWatermark"]
+		await writeFile(manifestPath, `${JSON.stringify(manifestWithoutNullableFields, null, 2)}\n`, "utf-8")
+		const parsedWithoutNullableFields = await loadLlmixTrustManifest(manifestPath)
+		assert.equal(parsedWithoutNullableFields.rekorPolicy, null)
+		assert.equal(parsedWithoutNullableFields.minimumRevision, null)
+		assert.equal(parsedWithoutNullableFields.minimumPublishedAt, null)
+		assert.equal(parsedWithoutNullableFields.highWatermark, null)
 	})
 })
 

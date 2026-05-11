@@ -170,14 +170,14 @@ function ensureJsonValue(value: JsonValue | undefined, sourcePath: string): Json
 }
 
 function ensureNullableObject(value: unknown, sourcePath: string): JsonObject | null {
-	if (value === null) {
+	if (value === null || value === undefined) {
 		return null
 	}
 	return ensureObject(value, sourcePath)
 }
 
 function ensureNullableString(value: unknown, sourcePath: string): string | null {
-	if (value === null) {
+	if (value === null || value === undefined) {
 		return null
 	}
 	return ensureNonEmptyString(value, sourcePath)

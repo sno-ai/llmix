@@ -3,6 +3,7 @@ import { verifySignatures, type DidWebVerifier, type RekorClient, type Signature
 import { InvalidConfigError, SecurityError } from "./types.js"
 import {
 	canonicalCompactJsonString,
+	canonicalJsonString,
 	compareRevision,
 	currentPointerSha256,
 	ensureNumberField,
@@ -114,6 +115,27 @@ function registryRootSigningInput(payload: RegistryRootPayload): RegistryRootSig
 		payload,
 		canonicalPayload,
 		integrity: registryRootIntegrity(payloadSha256),
+		payloadType: REGISTRY_ROOT_PAYLOAD_TYPE,
+		payloadSha256,
+	}
+}
+
+function registryRootSigningInputForEnvelope(envelope: RegistryRootEnvelope): RegistryRootSigningInput {
+	const signingInput = registryRootSigningInput(envelope.payload)
+	if (signingInput.payloadSha256 === envelope.payload_sha256 && signingInput.integrity.digest === envelope.integrity.digest) {
+		return signingInput
+	}
+
+	const canonicalPayload = canonicalJsonString(envelope.payload)
+	const payloadSha256 = sha256Bytes(canonicalPayload)
+	const integrity = registryRootIntegrity(payloadSha256)
+	if (payloadSha256 !== envelope.payload_sha256 || integrity.digest !== envelope.integrity.digest) {
+		throw new InvalidConfigError("Registry root payload digest mismatch")
+	}
+	return {
+		payload: envelope.payload,
+		canonicalPayload,
+		integrity,
 		payloadType: REGISTRY_ROOT_PAYLOAD_TYPE,
 		payloadSha256,
 	}
@@ -330,10 +352,7 @@ export async function verifyRegistryRootSignatures(
 	envelope: RegistryRootEnvelope,
 	options: RegistryRootVerificationOptions,
 ): Promise<void> {
-	const signingInput = registryRootSigningInput(envelope.payload)
-	if (signingInput.payloadSha256 !== envelope.payload_sha256 || signingInput.integrity.digest !== envelope.integrity.digest) {
-		throw new InvalidConfigError("Registry root payload digest mismatch")
-	}
+	const signingInput = registryRootSigningInputForEnvelope(envelope)
 	const verificationHooks: {
 		rekorClient?: RekorClient
 		sigstoreVerifier?: SigstoreVerifier
@@ -394,7 +413,7 @@ async function enforceHighWatermark(
 	envelope: RegistryRootEnvelope,
 	highWatermark: RegistryRootHighWatermark,
 ): Promise<void> {
-	const signingInput = registryRootSigningInput(envelope.payload)
+	const signingInput = registryRootSigningInputForEnvelope(envelope)
 	if (!(await highWatermark({ envelope, ...signingInput }))) {
 		throw new SecurityError("Registry root rejected by high-watermark policy")
 	}
