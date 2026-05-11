@@ -1,0 +1,45 @@
+---
+name: code-review
+version: "1.0"
+provider: anthropic
+model: claude-sonnet-4-5-20250514
+temperature: 0.1
+max_output_tokens: 2048
+description: "Automated code review with structured feedback"
+---
+
+# Code Review Preset
+
+A structured code review preset using Claude for its strong reasoning
+about code correctness, security, and maintainability.
+
+## Configuration Notes
+
+- **Temperature 0.1**: Near-deterministic output ensures consistent,
+  reproducible reviews. This minimizes hallucinated issues.
+- **Max output 2048 tokens**: Code reviews need space for inline
+  suggestions, explanations, and severity ratings.
+- **Provider**: Anthropic chosen for superior code reasoning and
+  lower hallucination rate on technical content.
+
+## Expected Input Format
+
+Provide the diff or file contents in the user message. For best results,
+include the file path and language:
+
+```
+Review this Python code for bugs, security issues, and style:
+
+File: src/auth/handler.py
+```python
+def verify_token(token: str) -> bool:
+    ...
+```
+```
+
+## Output Structure
+
+The model will produce feedback grouped by severity:
+- **Critical**: Security vulnerabilities, data loss risks
+- **Warning**: Logic errors, performance issues
+- **Suggestion**: Style improvements, readability
