@@ -19,6 +19,7 @@ import {
 	type RegistryRootEnvelope,
 	type RegistryRootSigner,
 } from "../src/index.js"
+import { createRegistryRootEnvelope } from "../src/config-registry-root.js"
 
 let passed = 0
 let failed = 0
@@ -321,6 +322,10 @@ async function writeRegistryRoot(root: string, revision: string, envelope: Regis
 	await writeFile(path.join(root, "snapshots", revision, "registry-root.json"), `${JSON.stringify(envelope, null, 2)}\n`, "utf-8")
 }
 
+async function resignRegistryRoot(envelope: RegistryRootEnvelope): Promise<RegistryRootEnvelope> {
+	return createRegistryRootEnvelope(envelope.payload, { signer: registryRootSigner() })
+}
+
 await run("direct MDA loading accepts trustedRuntime did:web options", async () => {
 	await withTempRoot("direct-did-web", async (root) => {
 		const { source, digest } = trustedDidWebMda("direct-did-web")
@@ -571,7 +576,7 @@ await run("runtime rejects signed registry root payload binding mismatches", asy
 		for (const testCase of cases) {
 			const envelope = JSON.parse(JSON.stringify(original)) as RegistryRootEnvelope
 			testCase.mutate(envelope)
-			await writeRegistryRoot(root, published.revision, envelope)
+			await writeRegistryRoot(root, published.revision, await resignRegistryRoot(envelope))
 			await assert.rejects(
 				ConfigRegistryManager.open(root, {
 					signedRoot: {
@@ -627,7 +632,7 @@ await run("runtime fails closed on signed registry root refresh failure", async 
 		})
 		const envelope = await readRegistryRoot(root, second.revision)
 		envelope.payload.current.sha256 = "0".repeat(64)
-		await writeRegistryRoot(root, second.revision, envelope)
+		await writeRegistryRoot(root, second.revision, await resignRegistryRoot(envelope))
 
 		await assert.rejects(manager.getPreset("signed", "demo"), /current binding digest/)
 		assert.equal(manager.activeRevision, first.revision)
@@ -707,6 +712,17 @@ await run("runtime opens signed registry from CLI trust manifest schema", async 
 
 		assert.equal(manager.activeRevision, published.revision)
 		assert.equal((await manager.getPreset("search", "summary")).model, "gpt-4.1-mini")
+
+		const manifestWithWatermark: LlmixTrustManifest = {
+			...manifest,
+			highWatermark: published.revision,
+		}
+		const optionsWithWatermark = registryRootOptionsFromTrustManifest(manifestWithWatermark, {
+			didWebVerifier: registryRootVerifier(true),
+		})
+		assert.equal(optionsWithWatermark.minimumRevision, published.revision)
+		const managerWithWatermark = await ConfigRegistryManager.open(root, { signedRoot: optionsWithWatermark })
+		assert.equal((await managerWithWatermark.getPreset("search", "summary")).model, "gpt-4.1-mini")
 	})
 })
 

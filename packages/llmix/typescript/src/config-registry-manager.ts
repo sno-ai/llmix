@@ -6,7 +6,6 @@ import { validateModule, validatePreset, verifyPathContainmentAsync } from "./md
 import {
 	canonicalJsonString,
 	cloneConfig,
-	currentPointerSha256,
 	fromCanonicalResolvedConfig,
 	parseCurrentPointer,
 	parseJsonObjectBytes,
@@ -230,10 +229,11 @@ export class ConfigRegistryManager {
 		}
 		const rootPath = path.join(snapshotPath, REGISTRY_ROOT_FILENAME)
 		const rootDigest = await sha256File(rootPath)
+		const currentDigest = await sha256File(this.currentPath)
 		const envelope = parseRegistryRootEnvelope(await readJsonObject(rootPath), rootPath)
 		await verifyRegistryRootSignatures(envelope, this.signedRootOptions)
 		await enforceRegistryRootFreshness(envelope, this.signedRootOptions, rootDigest)
-		await this.verifyRegistryRootPayload(envelope.payload, pointer, manifest, snapshotPath)
+		await this.verifyRegistryRootPayload(envelope.payload, pointer, manifest, snapshotPath, currentDigest)
 	}
 
 	private async verifyRegistryRootPayload(
@@ -241,8 +241,9 @@ export class ConfigRegistryManager {
 		pointer: CurrentPointer,
 		manifest: RegistryManifest,
 		snapshotPath: string,
+		currentDigest: string,
 	): Promise<void> {
-		this.verifyRegistryRootBindings(payload, pointer, manifest)
+		this.verifyRegistryRootBindings(payload, pointer, manifest, currentDigest)
 
 		const expectedFiles = registryRootFileDigests(manifest)
 		const actualFiles = sortedRegistryRootFiles(payload.files)
@@ -265,6 +266,7 @@ export class ConfigRegistryManager {
 		payload: RegistryRootPayload,
 		pointer: CurrentPointer,
 		manifest: RegistryManifest,
+		currentDigest: string,
 	): void {
 		if (payload.revision !== pointer.revision || payload.revision !== manifest.revision) {
 			throw new SecurityError("Registry root revision does not match the active current pointer")
@@ -272,7 +274,7 @@ export class ConfigRegistryManager {
 		if (payload.current.revision !== pointer.revision || payload.current.manifest_sha256 !== pointer.manifestSha256) {
 			throw new SecurityError("Registry root current binding does not match current.json")
 		}
-		if (payload.current.sha256 !== currentPointerSha256(pointer)) {
+		if (payload.current.sha256 !== currentDigest) {
 			throw new SecurityError("Registry root current binding digest mismatch")
 		}
 		if (payload.manifest.path !== snapshotRegistryPath(pointer.revision, "manifest.json")) {

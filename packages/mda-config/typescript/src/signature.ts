@@ -97,6 +97,7 @@ export interface SignatureVerificationOptions {
   rekorClient?: RekorClient;
   sigstoreVerifier?: SigstoreVerifier;
   didWebVerifier?: DidWebVerifier;
+  payloadBytes?: Uint8Array;
 }
 
 async function verifySigstoreBundle(
@@ -126,9 +127,11 @@ export function constructDssePae(
   return out;
 }
 
-/** §09 — JCS-canonicalize the integrity object for PAE payload bytes. */
+/** §09 — JCS-canonicalize the integrity envelope for PAE payload bytes. */
 export function paePayloadBytes(integrity: IntegrityField): Uint8Array {
-  return new TextEncoder().encode(canonify(integrity));
+  return new TextEncoder().encode(
+    canonify({ integrity: { algorithm: integrity.algorithm, digest: integrity.digest } }),
+  );
 }
 
 /** §13 — evaluate signatures against an  trust policy threshold. */
@@ -147,7 +150,7 @@ export async function verifySignatures(
     );
   }
 
-  const payloadBytes = paePayloadBytes(integrity);
+  const payloadBytes = options.payloadBytes ?? paePayloadBytes(integrity);
   const trusted = new Set<string>();
   const candidateErrors: MdaConfigError[] = [];
 

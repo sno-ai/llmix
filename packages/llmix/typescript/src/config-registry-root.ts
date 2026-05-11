@@ -2,13 +2,14 @@ import { verifySignatures, type DidWebVerifier, type RekorClient, type Signature
 
 import { InvalidConfigError, SecurityError } from "./types.js"
 import {
-	canonicalJsonString,
+	canonicalCompactJsonString,
 	compareRevision,
 	currentPointerSha256,
 	ensureNumberField,
 	ensureObjectField,
 	ensureStringField,
 	isJsonObject,
+	normalizeSha256Digest,
 	sha256Bytes,
 	snapshotRegistryPath,
 	snapshotRelativePath,
@@ -95,7 +96,7 @@ export function buildRegistryRootPayload(manifest: RegistryManifest, manifestSha
 }
 
 function canonicalRegistryRootPayload(payload: RegistryRootPayload): string {
-	return canonicalJsonString(payload)
+	return canonicalCompactJsonString(payload)
 }
 
 function registryRootIntegrity(payloadSha256: string): RegistryRootIntegrity {
@@ -188,9 +189,6 @@ function validateRegistryRootPayloadBindings(payload: RegistryRootPayload, sourc
 	}
 	if (payload.current.manifest_sha256 !== payload.manifest.sha256) {
 		throw new InvalidConfigError(`Registry root current manifest digest does not match manifest binding: ${sourcePath}`)
-	}
-	if (payload.current.sha256 !== currentPointerSha256({ revision: payload.revision, manifestSha256: payload.manifest.sha256 })) {
-		throw new InvalidConfigError(`Registry root current binding digest mismatch: ${sourcePath}`)
 	}
 	if (payload.manifest.path !== snapshotRegistryPath(payload.revision, "manifest.json")) {
 		throw new InvalidConfigError(`Registry root manifest path does not match payload revision: ${sourcePath}`)
@@ -340,6 +338,7 @@ export async function verifyRegistryRootSignatures(
 		rekorClient?: RekorClient
 		sigstoreVerifier?: SigstoreVerifier
 		didWebVerifier?: DidWebVerifier
+		payloadBytes?: Uint8Array
 	} = {}
 	if (options.rekorClient !== undefined) {
 		verificationHooks.rekorClient = options.rekorClient
@@ -350,6 +349,7 @@ export async function verifyRegistryRootSignatures(
 	if (options.didWebVerifier !== undefined) {
 		verificationHooks.didWebVerifier = options.didWebVerifier
 	}
+	verificationHooks.payloadBytes = new TextEncoder().encode(signingInput.canonicalPayload)
 	await verifySignatures(envelope.signatures, envelope.integrity, options.trustPolicy, verificationHooks)
 }
 
@@ -369,8 +369,8 @@ export async function enforceRegistryRootFreshness(
 		enforceMinimumPublishedAt(payload.published_at, options.minimumPublishedAt)
 	}
 	if (options.expectedRootDigest !== undefined) {
-		validateSha256(options.expectedRootDigest, "expected registry root digest")
-		if (rootDigest !== options.expectedRootDigest) {
+		const expectedRootDigest = normalizeSha256Digest(options.expectedRootDigest, "expected registry root digest")
+		if (rootDigest !== expectedRootDigest) {
 			throw new SecurityError("Registry root digest does not match expectedRootDigest")
 		}
 	}

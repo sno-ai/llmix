@@ -559,6 +559,8 @@ const LLMixMdaCommonSchema = CommonParamsSchema.extend({
 
 const LLMixMdaNamespaceSchema = z
   .object({
+    module: z.string().min(1).optional(),
+    preset: z.string().min(1).optional(),
     common: LLMixMdaCommonSchema,
     providerOptions: ProviderOptionsSchema.optional(),
     timeout: TimeoutConfigSchema.optional(),
