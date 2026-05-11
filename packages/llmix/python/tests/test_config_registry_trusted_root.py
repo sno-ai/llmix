@@ -31,6 +31,23 @@ from llmix.types import InvalidConfigError, SecurityError
 DOMAIN = "registry.example.com"
 
 
+def test_top_level_star_import_exports_trust_manifest_api() -> None:
+    namespace: dict[str, Any] = {}
+    exec("from llmix import *", namespace)
+
+    for name in [
+        "LLMIX_TRUST_MANIFEST_KIND",
+        "LLMIX_TRUST_MANIFEST_VERSION",
+        "LlmixTrustManifest",
+        "LlmixTrustManifestRegistryRoot",
+        "LlmixTrustManifestReleasePlan",
+        "load_llmix_trust_manifest",
+        "parse_llmix_trust_manifest",
+        "registry_root_options_from_trust_manifest",
+    ]:
+        assert name in namespace
+
+
 class RootDidWebVerifier:
     def __init__(
         self, *, ok: bool = True, expected_payload_type: str = REGISTRY_ROOT_PAYLOAD_TYPE
