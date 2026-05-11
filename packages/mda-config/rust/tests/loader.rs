@@ -184,7 +184,7 @@ impl DidWebVerifier for PanicDidWebVerifier {
 
 const FIXTURE_PAYLOAD_TYPE: &str = "application/vnd.snoai-llmix.preset+json";
 const FIXTURE_PAYLOAD_B64: &str =
-    "eyJhbGdvcml0aG0iOiJzaGEyNTYiLCJkaWdlc3QiOiJzaGEyNTY6OTY5NzQ0OGI2ZjNmODhiNzE4NzBkZDViNjA4OTk5YWRlNzE3ZjczZDRlZWJmNjdmMDJhYzAzZGZlMTc3YTM3ZSJ9";
+    "eyJpbnRlZ3JpdHkiOnsiYWxnb3JpdGhtIjoic2hhMjU2IiwiZGlnZXN0Ijoic2hhMjU2Ojk2OTc0NDhiNmYzZjg4YjcxODcwZGQ1YjYwODk5OWFkZTcxN2Y3M2Q0ZWViZjY3ZjAyYWMwM2RmZTE3N2EzN2UifX0=";
 const FIXTURE_SIGNATURE: &str = "MEUCIQDkXFIXTUREONLYBASE64==";
 const FIXTURE_KEY_ID: &str =
     "fulcio:9c4e7b2f1a05c3b9e2d6c2b1e7f0a8d4c3b9e2f1a05c3b9e2d6c2b1e7f0a8d4c";

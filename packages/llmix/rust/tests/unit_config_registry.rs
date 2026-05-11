@@ -1,4 +1,5 @@
 use llmix_rs::{
+    load_llmix_trust_manifest, registry_root_options_from_trust_manifest_with_hooks,
     ConfigNotFoundError, ConfigRegistryManager, ConfigRegistryOpenOptions,
     ConfigRegistryPublishOptions, ConfigRegistryPublisher, DidWebVerificationInput, DidWebVerifier,
     InvalidConfigError, LlmixError, LlmixResult, MdaConfigLoadOptions, MdaConfigResult,
@@ -228,6 +229,133 @@ fn signed_registry_root_publish_and_open_use_public_options() {
     assert!(published.registry_root_sha256.is_some());
     assert_eq!(manager.active_revision(), "signed-1");
     assert_eq!(config["model"], json!("gpt-5-mini"));
+}
+
+#[test]
+fn signed_registry_root_opens_from_cli_trust_manifest_schema() {
+    let temp_root = unique_temp_dir("llmix-config-registry-trust-manifest");
+    let root = temp_root.join("config/llm");
+    write_authoring_preset(&root, "search", "summary", None);
+
+    let signer = TestRegistryRootSigner;
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let published = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
+        .expect("signed publish should succeed");
+    let root_path = published
+        .registry_root_path
+        .as_ref()
+        .expect("signed publish should write registry-root.json");
+    let manifest_path = temp_root.join("llmix-trust.json");
+    let mut manifest_value = json!({
+        "version": 1,
+        "kind": "llmix-trust-manifest",
+        "expectedRootDigest": format!("sha256:{}", published.registry_root_sha256.as_ref().expect("root digest")),
+        "sourceSetDigest": format!("sha256:{}", "1".repeat(64)),
+        "releasePlanDigest": format!("sha256:{}", "2".repeat(64)),
+        "registryRootTrustPolicy": {
+            "version": 1,
+            "trustedSigners": [{"type": "did-web", "domain": "tools.example.com"}]
+        },
+        "rekorPolicy": null,
+        "minimumRevision": null,
+        "minimumPublishedAt": "2020-01-01T00:00:00.000Z",
+        "highWatermark": null,
+        "registryRootSignerIdentity": {"type": "did-web", "domain": "tools.example.com"},
+        "registryRoot": {
+            "path": root_path.to_string_lossy(),
+            "revision": published.revision.clone(),
+            "publishedAt": "2026-05-10T00:00:00.000Z",
+            "highWatermark": published.revision.clone()
+        },
+        "releasePlan": {"path": "release-plan.json", "sourceCount": 1}
+    });
+    write_file(
+        &manifest_path,
+        &serde_json::to_string_pretty(&manifest_value).expect("trust manifest should serialize"),
+    );
+
+    let manifest = load_llmix_trust_manifest(&manifest_path).expect("manifest should load");
+    let options = registry_root_options_from_trust_manifest_with_hooks(
+        &manifest,
+        None,
+        None,
+        Some(Arc::new(TestDidWebVerifier)),
+        None,
+    )
+    .expect("options should map from manifest");
+    let mut manager = ConfigRegistryManager::open_with_options(
+        &root,
+        ConfigRegistryOpenOptions {
+            signed_root: Some(options),
+        },
+    )
+    .expect("signed registry should open");
+    let config = manager
+        .get_preset("search", "summary")
+        .expect("signed preset should load");
+
+    assert_eq!(config["model"], json!("gpt-4.1-mini"));
+
+    manifest_value["highWatermark"] = json!(published.revision.clone());
+    write_file(
+        &manifest_path,
+        &serde_json::to_string_pretty(&manifest_value).expect("trust manifest should serialize"),
+    );
+    let manifest = load_llmix_trust_manifest(&manifest_path).expect("manifest should load");
+    let options = registry_root_options_from_trust_manifest_with_hooks(
+        &manifest,
+        None,
+        None,
+        Some(Arc::new(TestDidWebVerifier)),
+        None,
+    )
+    .expect("manifest highWatermark should map to minimum revision");
+    assert_eq!(
+        options.minimum_revision.as_deref(),
+        Some(published.revision.as_str())
+    );
+    let mut manager = ConfigRegistryManager::open_with_options(
+        &root,
+        ConfigRegistryOpenOptions {
+            signed_root: Some(options),
+        },
+    )
+    .expect("signed registry should open with manifest highWatermark");
+    let config = manager
+        .get_preset("search", "summary")
+        .expect("signed preset should load");
+    assert_eq!(config["model"], json!("gpt-4.1-mini"));
+
+    manifest_value["highWatermark"] = json!("../bad");
+    write_file(
+        &manifest_path,
+        &serde_json::to_string_pretty(&manifest_value).expect("trust manifest should serialize"),
+    );
+    let manifest = load_llmix_trust_manifest(&manifest_path).expect("manifest should parse");
+    let options = registry_root_options_from_trust_manifest_with_hooks(
+        &manifest,
+        None,
+        None,
+        Some(Arc::new(TestDidWebVerifier)),
+        None,
+    )
+    .expect("options should map from manifest");
+    let result = ConfigRegistryManager::open_with_options(
+        &root,
+        ConfigRegistryOpenOptions {
+            signed_root: Some(options),
+        },
+    );
+    assert!(result.is_err());
+    assert!(
+        result
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("Invalid registry revision"),
+        "invalid manifest highWatermark should be rejected"
+    );
 }
 
 #[test]

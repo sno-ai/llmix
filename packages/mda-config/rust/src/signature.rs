@@ -114,6 +114,27 @@ pub fn verify_signatures(
     sigstore_verifier: Option<&dyn SigstoreVerifier>,
     did_web_verifier: Option<&dyn DidWebVerifier>,
 ) -> Result<()> {
+    let payload_bytes = pae_payload_bytes(integrity)?;
+    verify_signatures_with_payload(
+        signatures,
+        integrity,
+        policy,
+        rekor_client,
+        sigstore_verifier,
+        did_web_verifier,
+        &payload_bytes,
+    )
+}
+
+pub fn verify_signatures_with_payload(
+    signatures: &[SignatureEntry],
+    integrity: &IntegrityField,
+    policy: &TrustPolicy,
+    rekor_client: Option<&dyn RekorClient>,
+    sigstore_verifier: Option<&dyn SigstoreVerifier>,
+    did_web_verifier: Option<&dyn DidWebVerifier>,
+    payload_bytes: &[u8],
+) -> Result<()> {
     policy.validate()?;
     assert_verifier_hooks(policy, rekor_client, sigstore_verifier, did_web_verifier)?;
     if signatures.is_empty() {
@@ -128,14 +149,13 @@ pub fn verify_signatures(
         assert_payload_digest(sig, integrity)?;
     }
 
-    let payload_bytes = pae_payload_bytes(integrity)?;
     let required = policy.required_signatures();
     let mut trusted = HashSet::new();
     let mut candidate_errors = Vec::new();
     for sig in signatures {
         match verify_candidate(
             sig,
-            &payload_bytes,
+            payload_bytes,
             policy,
             rekor_client,
             sigstore_verifier,
@@ -480,13 +500,12 @@ fn parse_did_web_signer(signer: &str) -> Result<&str> {
 }
 
 fn pae_payload_bytes(integrity: &IntegrityField) -> Result<Vec<u8>> {
-    let payload = serde_json::to_value(integrity).map_err(|cause| {
-        MdaConfigError::with_details(
-            ErrorCategory::SchemaViolation,
-            "integrity payload could not be serialized",
-            serde_json::json!({ "cause": cause.to_string() }),
-        )
-    })?;
+    let payload = serde_json::json!({
+        "integrity": {
+            "algorithm": integrity.algorithm.as_str(),
+            "digest": integrity.digest,
+        },
+    });
     Ok(canonical_json(&payload)?.into_bytes())
 }
 

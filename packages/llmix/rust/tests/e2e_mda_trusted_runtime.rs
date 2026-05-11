@@ -46,7 +46,7 @@ impl RegistryRootSigner for DeterministicRegistryRootSigner {
             key_id: SIGNER_KEY_ID.to_string(),
             payload_digest: input.integrity.digest.clone(),
             algorithm: "ed25519".to_string(),
-            signature: sign_integrity(&input.payload_type, &input.integrity),
+            signature: sign_payload(&input.payload_type, input.canonical_payload.as_bytes()),
             rekor_log_id: None,
             rekor_log_index: None,
             payload_type: Some(input.payload_type.clone()),
@@ -283,12 +283,16 @@ signatures:
 
 fn sign_integrity(payload_type: &str, integrity: &IntegrityField) -> String {
     let payload_bytes = format!(
-        r#"{{"algorithm":"{}","digest":"{}"}}"#,
+        r#"{{"integrity":{{"algorithm":"{}","digest":"{}"}}}}"#,
         integrity.algorithm.as_str(),
         integrity.digest
     )
     .into_bytes();
-    let pae_bytes = construct_dsse_pae(payload_type, &payload_bytes);
+    sign_payload(payload_type, &payload_bytes)
+}
+
+fn sign_payload(payload_type: &str, payload_bytes: &[u8]) -> String {
+    let pae_bytes = construct_dsse_pae(payload_type, payload_bytes);
     sha256_hex(&pae_bytes)
 }
 

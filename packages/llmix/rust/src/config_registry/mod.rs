@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use snoai_mda_config::{
-    verify_signatures as verify_mda_signatures, DidWebVerifier, HashAlgorithm, IntegrityField,
-    RekorClient, SignatureEntry, SigstoreVerifier, TrustPolicy,
+    verify_signatures_with_payload, DidWebVerifier, HashAlgorithm, IntegrityField, RekorClient,
+    SignatureEntry, SigstoreVerifier, TrustPolicy,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -211,6 +211,13 @@ mod manager;
 mod publisher;
 mod root;
 mod root_verify;
+mod trust_manifest;
 
 pub use manager::ConfigRegistryManager;
 pub use publisher::ConfigRegistryPublisher;
+pub use trust_manifest::{
+    load_llmix_trust_manifest, registry_root_options_from_trust_manifest,
+    registry_root_options_from_trust_manifest_with_hooks, LlmixTrustManifest,
+    LlmixTrustManifestRegistryRoot, LlmixTrustManifestReleasePlan, LLMIX_TRUST_MANIFEST_KIND,
+    LLMIX_TRUST_MANIFEST_VERSION,
+};
