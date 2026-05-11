@@ -1,4 +1,4 @@
-use super::fs_ops::{sha256_bytes, validate_manifest_entry_string};
+use super::fs_ops::{canonical_json_bytes, sha256_bytes, validate_manifest_entry_string};
 use super::*;
 
 pub(super) fn build_registry_root_payload(
@@ -191,7 +191,7 @@ pub(super) fn sort_registry_root_files(files: &mut [RegistryRootFileDigest]) {
 
 pub(super) fn current_pointer_bytes(pointer: &CurrentPointer) -> LlmixResult<Vec<u8>> {
     let value = serde_json::to_value(pointer).map_err(LlmixError::from)?;
-    Ok(canonical_json::to_string(&value)?.into_bytes())
+    canonical_json_bytes(&value)
 }
 
 pub(super) fn snapshot_registry_path(revision: &str, relative_path: &str) -> String {
@@ -213,12 +213,6 @@ pub(super) fn snapshot_relative_path(revision: &str, registry_path: &str) -> Llm
         })
 }
 
-pub(super) fn payload_digest(envelope: &RegistryRootEnvelope) -> LlmixResult<String> {
-    let digest = sha256_bytes(canonical_registry_root_payload(&envelope.payload)?.as_bytes());
-    validate_sha256(&digest, "registry root payload")?;
-    Ok(digest)
-}
-
 pub(super) fn validate_sha256(value: &str, label: &str) -> LlmixResult<()> {
     if value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Ok(());
@@ -227,6 +221,15 @@ pub(super) fn validate_sha256(value: &str, label: &str) -> LlmixResult<()> {
         message: format!("{label} has invalid sha256 digest"),
     }
     .into())
+}
+
+pub(super) fn normalize_sha256_digest(value: &str, label: &str) -> LlmixResult<String> {
+    let normalized = value
+        .strip_prefix("sha256:")
+        .unwrap_or(value)
+        .to_ascii_lowercase();
+    validate_sha256(&normalized, label)?;
+    Ok(normalized)
 }
 
 pub(super) fn required_signature_count(value: Option<usize>) -> LlmixResult<usize> {

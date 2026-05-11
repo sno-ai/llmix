@@ -184,11 +184,13 @@ def _validate_registry_root_payload_bindings(
         raise InvalidConfigError(
             f"Registry root current manifest digest does not match manifest binding: {source_path}"
         )
-    current = {
-        "revision": payload["revision"],
-        "manifest_sha256": payload["manifest"]["sha256"],
-    }
-    if payload["current"]["sha256"] != _current_pointer_sha256(current):
+    current_sha256 = _current_pointer_sha256(
+        {
+            "revision": payload["current"]["revision"],
+            "manifest_sha256": payload["current"]["manifest_sha256"],
+        }
+    )
+    if payload["current"]["sha256"] != current_sha256:
         raise InvalidConfigError(
             f"Registry root current binding digest mismatch: {source_path}"
         )

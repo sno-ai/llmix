@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -20,11 +21,31 @@ from llmix import (
     RegistryRootSigningInput,
     RegistryRootSigningOptions,
     RegistryRootVerificationOptions,
+    load_llmix_trust_manifest,
+    registry_root_options_from_trust_manifest,
 )
 from llmix.config_registry_types import REGISTRY_ROOT_PAYLOAD_TYPE
+from llmix.config_registry_root_parse import parse_registry_root_envelope
 from llmix.types import InvalidConfigError, SecurityError
 
 DOMAIN = "registry.example.com"
+
+
+def test_top_level_star_import_exports_trust_manifest_api() -> None:
+    namespace: dict[str, Any] = {}
+    exec("from llmix import *", namespace)
+
+    for name in [
+        "LLMIX_TRUST_MANIFEST_KIND",
+        "LLMIX_TRUST_MANIFEST_VERSION",
+        "LlmixTrustManifest",
+        "LlmixTrustManifestRegistryRoot",
+        "LlmixTrustManifestReleasePlan",
+        "load_llmix_trust_manifest",
+        "parse_llmix_trust_manifest",
+        "registry_root_options_from_trust_manifest",
+    ]:
+        assert name in namespace
 
 
 class RootDidWebVerifier:
@@ -60,6 +81,33 @@ def _root_signer(input_value: RegistryRootSigningInput) -> dict[str, Any]:
         "signature": "fixture-registry-root-signature",
         "payload-type": input_value.payload_type,
     }
+
+
+def _legacy_registry_root_payload_bytes(payload: dict[str, Any]) -> bytes:
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _resign_registry_root_legacy_pretty(
+    envelope: dict[str, Any],
+) -> dict[str, Any]:
+    updated = deepcopy(envelope)
+    payload_sha256 = hashlib.sha256(
+        _legacy_registry_root_payload_bytes(updated["payload"])
+    ).hexdigest()
+    digest = f"sha256:{payload_sha256}"
+    updated["payload_sha256"] = payload_sha256
+    updated["integrity"] = {"algorithm": "sha256", "digest": digest}
+    updated["signatures"] = [
+        {
+            "signer": f"did-web:{DOMAIN}",
+            "key-id": f"did:web:{DOMAIN}#root",
+            "payload-digest": digest,
+            "algorithm": "ed25519",
+            "signature": "fixture-registry-root-signature",
+            "payload-type": REGISTRY_ROOT_PAYLOAD_TYPE,
+        }
+    ]
+    return updated
 
 
 def _publish_options() -> ConfigRegistryPublishOptions:
@@ -202,6 +250,25 @@ def test_publish_writes_signed_registry_root_and_manager_opens_it(
     assert verifier.seen.payload_type == REGISTRY_ROOT_PAYLOAD_TYPE
 
 
+def test_signed_registry_root_opens_legacy_pretty_canonical_payload(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_authoring_preset(root)
+
+    published = ConfigRegistryPublisher(root).publish(
+        revision="rev-1", options=_publish_options()
+    )
+    assert published.registry_root_path is not None
+    envelope = _resign_registry_root_legacy_pretty(
+        _read_json(published.registry_root_path)
+    )
+    _write_json(published.registry_root_path, envelope)
+
+    manager = ConfigRegistryManager.open(root, _open_options())
+    assert manager.get_preset("search", "summary")["model"] == "gpt-4.1-mini"
+
+
 def test_publish_passes_trusted_runtime_options_to_mda_loader(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
     _write_signed_authoring_preset(root)
@@ -250,6 +317,19 @@ def test_signed_registry_root_rejects_current_manifest_digest_tampering(
 
     with pytest.raises(InvalidConfigError, match="manifest"):
         ConfigRegistryManager.open(root, _open_options())
+
+
+def test_registry_root_parser_rejects_current_binding_digest_mismatch(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _publish_signed_registry(root)
+    root_path = root / "snapshots" / "rev-1" / "registry-root.json"
+    envelope = _read_json(root_path)
+    envelope["payload"]["current"]["sha256"] = "0" * 64
+
+    with pytest.raises(InvalidConfigError, match="current binding digest"):
+        parse_registry_root_envelope(envelope, str(root_path))
 
 
 def test_unsigned_registry_rejects_manifest_digest_mismatch(tmp_path: Path) -> None:
@@ -319,6 +399,71 @@ def test_signed_registry_root_expected_digest_pins_published_artifact(
 
     with pytest.raises(SecurityError, match="expected_root_digest"):
         ConfigRegistryManager.open(root, _open_options(expected_root_digest="0" * 64))
+
+
+def test_signed_registry_root_opens_from_cli_trust_manifest_schema(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_authoring_preset(root)
+    published = ConfigRegistryPublisher(root).publish(
+        revision="rev-1", options=_publish_options()
+    )
+
+    assert published.registry_root_sha256 is not None
+    assert published.registry_root_path is not None
+    envelope = _read_json(published.registry_root_path)
+    manifest_path = tmp_path / "llmix-trust.json"
+    manifest = {
+        "version": 1,
+        "kind": "llmix-trust-manifest",
+        "expectedRootDigest": f"sha256:{published.registry_root_sha256}",
+        "sourceSetDigest": f"sha256:{'1' * 64}",
+        "releasePlanDigest": f"sha256:{'2' * 64}",
+        "registryRootTrustPolicy": _trust_policy(),
+        "rekorPolicy": None,
+        "minimumRevision": None,
+        "minimumPublishedAt": None,
+        "highWatermark": None,
+        "registryRootSignerIdentity": {"type": "did-web", "domain": DOMAIN},
+        "registryRoot": {
+            "path": str(published.registry_root_path),
+            "revision": published.revision,
+            "publishedAt": envelope["payload"]["published_at"],
+            "highWatermark": published.revision,
+        },
+        "releasePlan": {"path": "release-plan.json", "sourceCount": 1},
+    }
+    _write_json(manifest_path, manifest)
+
+    options = registry_root_options_from_trust_manifest(
+        load_llmix_trust_manifest(manifest_path),
+        did_web_verifier=RootDidWebVerifier(),
+    )
+    manager = ConfigRegistryManager.open(
+        root, ConfigRegistryOpenOptions(signed_root=options)
+    )
+
+    assert manager.get_preset("search", "summary")["model"] == "gpt-4.1-mini"
+
+    manifest_with_watermark = deepcopy(manifest)
+    manifest_with_watermark["highWatermark"] = published.revision
+    _write_json(manifest_path, manifest_with_watermark)
+    options_with_watermark = registry_root_options_from_trust_manifest(
+        load_llmix_trust_manifest(manifest_path),
+        did_web_verifier=RootDidWebVerifier(),
+    )
+    assert options_with_watermark.minimum_revision == published.revision
+    manager_with_watermark = ConfigRegistryManager.open(
+        root, ConfigRegistryOpenOptions(signed_root=options_with_watermark)
+    )
+    assert manager_with_watermark.get_preset("search", "summary")["model"] == "gpt-4.1-mini"
+
+    manifest_without_signer = deepcopy(manifest)
+    del manifest_without_signer["registryRootSignerIdentity"]
+    _write_json(manifest_path, manifest_without_signer)
+    with pytest.raises(InvalidConfigError, match="registryRootSignerIdentity"):
+        load_llmix_trust_manifest(manifest_path)
 
 
 def test_failed_registry_root_signing_does_not_activate_new_revision(

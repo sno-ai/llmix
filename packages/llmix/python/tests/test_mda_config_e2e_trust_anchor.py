@@ -93,7 +93,7 @@ def _write_signed_mda(root: Path, *, domain: str = TRUSTED_DOMAIN) -> Path:
     signature = _signature(
         SECRET_BY_DOMAIN[domain],
         key_id,
-        construct_dsse_pae(DEFAULT_PAYLOAD_TYPE, _canonical_json(integrity)),
+        construct_dsse_pae(DEFAULT_PAYLOAD_TYPE, _canonical_json({"integrity": integrity})),
     )
     signed = dict(unsigned)
     signed["integrity"] = integrity
@@ -117,7 +117,9 @@ def _root_signer_for(domain: str):
         signature = _signature(
             SECRET_BY_DOMAIN[domain],
             key_id,
-            construct_dsse_pae(input_value.payload_type, _canonical_json(input_value.integrity)),
+            construct_dsse_pae(
+                input_value.payload_type, input_value.canonical_payload.encode("utf-8")
+            ),
         )
         return {
             "signer": f"did-web:{domain}",

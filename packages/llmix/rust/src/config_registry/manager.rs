@@ -55,7 +55,12 @@ impl ConfigRegistryManager {
         let snapshots_dir = root.join("snapshots");
         let current_path = root.join("current.json");
         let pointer = read_current_pointer(&current_path, &snapshots_dir)?;
-        let configs = load_revision(&snapshots_dir, &pointer, open_options.signed_root.as_ref())?;
+        let configs = load_revision(
+            &current_path,
+            &snapshots_dir,
+            &pointer,
+            open_options.signed_root.as_ref(),
+        )?;
 
         Ok(Self {
             root,
@@ -154,6 +159,7 @@ impl ConfigRegistryManager {
         }
 
         match load_revision(
+            &self.current_path,
             &self.snapshots_dir,
             &current_pointer,
             self.open_options.signed_root.as_ref(),
@@ -175,6 +181,7 @@ impl ConfigRegistryManager {
 }
 
 fn load_revision(
+    current_path: &Path,
     snapshots_dir: &Path,
     pointer: &CurrentPointer,
     signed_root_options: Option<&RegistryRootVerificationOptions>,
@@ -236,7 +243,13 @@ fn load_revision(
         }
         .into());
     }
-    verify_signed_registry_root_if_needed(pointer, &manifest, &snapshot_path, signed_root_options)?;
+    verify_signed_registry_root_if_needed(
+        pointer,
+        &manifest,
+        current_path,
+        &snapshot_path,
+        signed_root_options,
+    )?;
 
     let mut configs = BTreeMap::new();
     for (preset_id, entry) in manifest.presets {

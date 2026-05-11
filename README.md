@@ -70,7 +70,7 @@ or trust-policy enforcement outside LLMix.
 - [TypeScript guide](docs/llmix/llmix-typescript.md)
 - [Python guide](docs/llmix/llmix-python.md)
 - [Rust guide](docs/llmix/llmix-rust.md)
-- [Secure LLMix configuration](docs/llmix/secure-llmix-configuration.md)
+- [Secure LLMix configuration](docs/llmix/secure-mda/secure-llmix-configuration.md) ([de](docs/llmix/secure-mda/secure-llmix-configuration.de.md), [es](docs/llmix/secure-mda/secure-llmix-configuration.es.md), [fr](docs/llmix/secure-mda/secure-llmix-configuration.fr.md), [hi](docs/llmix/secure-mda/secure-llmix-configuration.hi.md), [ja](docs/llmix/secure-mda/secure-llmix-configuration.ja.md), [ko](docs/llmix/secure-mda/secure-llmix-configuration.ko.md), [ru](docs/llmix/secure-mda/secure-llmix-configuration.ru.md), [中文](docs/llmix/secure-mda/secure-llmix-configuration.zh.md))
 - [Key pool operations](docs/llmix/key-pool-operations.md)
 - [Standalone MDA config loader docs](docs/mda-config/README.md)
 

@@ -2,16 +2,18 @@ use super::fs_ops::{
     read_json_object, safe_join_relative, sha256_bytes, sha256_file, validate_revision,
 };
 use super::root::{
-    current_pointer_bytes, payload_digest, registry_root_file_digests,
+    current_pointer_bytes, normalize_sha256_digest, registry_root_file_digests,
     registry_root_signature_to_mda, registry_root_signing_input, snapshot_registry_path,
     snapshot_relative_path, sort_registry_root_files, validate_registry_root_signature,
     validate_sha256,
 };
 use super::*;
+use chrono::DateTime;
 
 pub(super) fn verify_signed_registry_root_if_needed(
     pointer: &CurrentPointer,
     manifest: &RegistryManifest,
+    current_path: &Path,
     snapshot_path: &Path,
     options: Option<&RegistryRootVerificationOptions>,
 ) -> LlmixResult<()> {
@@ -19,10 +21,18 @@ pub(super) fn verify_signed_registry_root_if_needed(
         return Ok(());
     };
     let root_path = snapshot_path.join(REGISTRY_ROOT_FILENAME);
+    let root_digest = sha256_file(&root_path)?;
+    let current_digest = sha256_file(current_path)?;
     let envelope = parse_registry_root_envelope(&root_path)?;
     verify_registry_root_signatures(&envelope, options)?;
-    enforce_registry_root_freshness(&envelope, options)?;
-    verify_registry_root_payload(&envelope.payload, pointer, manifest, snapshot_path)
+    enforce_registry_root_freshness(&envelope, options, &root_digest)?;
+    verify_registry_root_payload(
+        &envelope.payload,
+        pointer,
+        manifest,
+        &current_digest,
+        snapshot_path,
+    )
 }
 
 fn parse_registry_root_envelope(path: &Path) -> LlmixResult<RegistryRootEnvelope> {
@@ -83,7 +93,7 @@ fn verify_registry_root_signatures(
         .iter()
         .map(registry_root_signature_to_mda)
         .collect();
-    verify_mda_signatures(
+    verify_signatures_with_payload(
         &signatures,
         &envelope.integrity,
         &options.trust_policy,
@@ -99,6 +109,7 @@ fn verify_registry_root_signatures(
             .did_web_verifier
             .as_deref()
             .map(|value| value as &dyn DidWebVerifier),
+        signing_input.canonical_payload.as_bytes(),
     )
     .map_err(|error| {
         SecurityError {
@@ -111,6 +122,7 @@ fn verify_registry_root_signatures(
 fn enforce_registry_root_freshness(
     envelope: &RegistryRootEnvelope,
     options: &RegistryRootVerificationOptions,
+    root_digest: &str,
 ) -> LlmixResult<()> {
     let payload = &envelope.payload;
     if let Some(expected_revision) = &options.expected_revision {
@@ -125,6 +137,7 @@ fn enforce_registry_root_freshness(
         }
     }
     if let Some(minimum_revision) = &options.minimum_revision {
+        validate_revision(minimum_revision)?;
         if compare_revision(&payload.revision, minimum_revision) < 0 {
             return Err(SecurityError {
                 message: format!(
@@ -147,9 +160,9 @@ fn enforce_registry_root_freshness(
         }
     }
     if let Some(expected_root_digest) = &options.expected_root_digest {
-        validate_sha256(expected_root_digest, "expected registry root digest")?;
-        let digest = payload_digest(envelope)?;
-        if digest != *expected_root_digest {
+        let expected_root_digest =
+            normalize_sha256_digest(expected_root_digest, "expected registry root digest")?;
+        if root_digest != expected_root_digest {
             return Err(SecurityError {
                 message: "Registry root digest does not match expected_root_digest".to_string(),
             }
@@ -172,9 +185,10 @@ fn verify_registry_root_payload(
     payload: &RegistryRootPayload,
     pointer: &CurrentPointer,
     manifest: &RegistryManifest,
+    current_digest: &str,
     snapshot_path: &Path,
 ) -> LlmixResult<()> {
-    verify_registry_root_bindings(payload, pointer, manifest)?;
+    verify_registry_root_bindings(payload, pointer, manifest, current_digest)?;
     let expected_files = registry_root_file_digests(manifest)?;
     let mut actual_files = payload.files.clone();
     sort_registry_root_files(&mut actual_files);
@@ -208,6 +222,7 @@ fn verify_registry_root_bindings(
     payload: &RegistryRootPayload,
     pointer: &CurrentPointer,
     manifest: &RegistryManifest,
+    current_digest: &str,
 ) -> LlmixResult<()> {
     let manifest_sha256 = pointer
         .manifest_sha256
@@ -229,7 +244,7 @@ fn verify_registry_root_bindings(
         }
         .into());
     }
-    if payload.current.sha256 != sha256_bytes(&current_pointer_bytes(pointer)?) {
+    if payload.current.sha256 != current_digest {
         return Err(SecurityError {
             message: "Registry root current binding digest mismatch".to_string(),
         }
@@ -276,6 +291,17 @@ fn validate_registry_root_payload(payload: &RegistryRootPayload, source: &str) -
         "registry root current manifest",
     )?;
     validate_sha256(&payload.current.sha256, "registry root current binding")?;
+    let current_pointer = CurrentPointer {
+        revision: payload.current.revision.clone(),
+        manifest_sha256: Some(payload.current.manifest_sha256.clone()),
+    };
+    let current_sha256 = sha256_bytes(&current_pointer_bytes(&current_pointer)?);
+    if payload.current.sha256 != current_sha256 {
+        return Err(InvalidConfigError {
+            message: format!("Registry root current binding digest mismatch: {source}"),
+        }
+        .into());
+    }
     validate_sha256(&payload.manifest.sha256, "registry root manifest")?;
     for file in &payload.files {
         if file.role != "authoring" && file.role != "resolved" {
@@ -315,16 +341,21 @@ fn compare_published_at(left: &str, right: &str) -> LlmixResult<i8> {
     })
 }
 
-fn parse_published_at(value: &str) -> LlmixResult<u128> {
-    value.parse::<u128>().map_err(|error| {
-        InvalidConfigError {
-            message: format!("Invalid registry root published_at value {value:?}: {error}"),
-        }
-        .into()
-    })
+fn parse_published_at(value: &str) -> LlmixResult<i64> {
+    if let Ok(millis) = value.parse::<i64>() {
+        return Ok(millis);
+    }
+    DateTime::parse_from_rfc3339(value)
+        .map(|timestamp| timestamp.timestamp_millis())
+        .map_err(|error| {
+            InvalidConfigError {
+                message: format!("Invalid registry root published_at value {value:?}: {error}"),
+            }
+            .into()
+        })
 }
 
-fn compare_revision(left: &str, right: &str) -> i8 {
+pub(super) fn compare_revision(left: &str, right: &str) -> i8 {
     let left_tokens = revision_tokens(left);
     let right_tokens = revision_tokens(right);
     for (left, right) in left_tokens.iter().zip(right_tokens.iter()) {

@@ -10,12 +10,17 @@ import type { DidWebVerifier, RekorClient, RekorEntry, SigstoreVerifier } from "
 import {
 	ConfigRegistryManager,
 	ConfigRegistryPublisher,
+	loadLlmixTrustManifest,
 	loadMdaConfig,
+	registryRootOptionsFromTrustManifest,
 	type ConfigRegistryPublishOptions,
+	type LlmixTrustManifest,
 	type MdaConfigLoadOptions,
 	type RegistryRootEnvelope,
 	type RegistryRootSigner,
+	type RegistryRootSignature,
 } from "../src/index.js"
+import { createRegistryRootEnvelope, parseRegistryRootEnvelope } from "../src/config-registry-root.js"
 
 let passed = 0
 let failed = 0
@@ -90,6 +95,10 @@ function canonicalJson(value: JsonValue): string {
 	return encoded
 }
 
+function canonicalPrettyJson(value: JsonValue): string {
+	return `${JSON.stringify(JSON.parse(canonicalJson(value)), null, 2)}\n`
+}
+
 function presetFrontmatter(presetName: string): JsonValue {
 	return {
 		name: presetName,
@@ -113,7 +122,7 @@ function integrityDigest(frontmatter: JsonValue): string {
 }
 
 function integrityPayloadBase64(digest: string): string {
-	return Buffer.from(canonicalJson({ algorithm: "sha256", digest })).toString("base64")
+	return Buffer.from(canonicalJson({ integrity: { algorithm: "sha256", digest } })).toString("base64")
 }
 
 function trustedDidWebMda(presetName: string): { source: string; digest: string } {
@@ -224,13 +233,13 @@ async function writeUnsignedAuthoringPreset(root: string, model = "gpt-4.1-mini"
 function didWebVerifier(trusted: boolean, expectedDigest: string): DidWebVerifier {
 	return {
 		async verify(input) {
-			const payload = JSON.parse(new TextDecoder().decode(input.payloadBytes)) as { digest?: unknown }
+			const payload = JSON.parse(new TextDecoder().decode(input.payloadBytes)) as { integrity?: { digest?: unknown } }
 			return (
 				trusted &&
 				input.domain === DID_WEB_DOMAIN &&
 				input.keyId === DID_WEB_KEY_ID &&
 				input.payloadType === PAYLOAD_TYPE &&
-				payload.digest === expectedDigest
+				payload.integrity?.digest === expectedDigest
 			)
 		},
 	}
@@ -297,9 +306,7 @@ function registryRootSigner(domain = REGISTRY_ROOT_DOMAIN, keyId = REGISTRY_ROOT
 function registryRootVerifier(trusted = true): DidWebVerifier {
 	return {
 		async verify(input) {
-			const payload = JSON.parse(new TextDecoder().decode(input.payloadBytes)) as { digest?: unknown }
-			const digest = typeof payload.digest === "string" ? payload.digest : ""
-			const payloadSha256 = digest.startsWith("sha256:") ? digest.slice("sha256:".length) : ""
+			const payloadSha256 = createHash("sha256").update(input.payloadBytes).digest("hex")
 			return (
 				trusted &&
 				input.domain === REGISTRY_ROOT_DOMAIN &&
@@ -318,6 +325,30 @@ async function readRegistryRoot(root: string, revision: string): Promise<Registr
 
 async function writeRegistryRoot(root: string, revision: string, envelope: RegistryRootEnvelope): Promise<void> {
 	await writeFile(path.join(root, "snapshots", revision, "registry-root.json"), `${JSON.stringify(envelope, null, 2)}\n`, "utf-8")
+}
+
+async function resignRegistryRoot(envelope: RegistryRootEnvelope): Promise<RegistryRootEnvelope> {
+	return createRegistryRootEnvelope(envelope.payload, { signer: registryRootSigner() })
+}
+
+function resignRegistryRootLegacyPretty(envelope: RegistryRootEnvelope): RegistryRootEnvelope {
+	const canonicalPayload = canonicalPrettyJson(envelope.payload as unknown as JsonValue)
+	const payloadSha256 = createHash("sha256").update(canonicalPayload).digest("hex")
+	const integrity = { algorithm: "sha256" as const, digest: `sha256:${payloadSha256}` }
+	const signature: RegistryRootSignature = {
+		algorithm: "ed25519",
+		signer: `did-web:${REGISTRY_ROOT_DOMAIN}`,
+		"key-id": REGISTRY_ROOT_KEY_ID,
+		"payload-digest": integrity.digest,
+		"payload-type": REGISTRY_ROOT_PAYLOAD_TYPE,
+		signature: registryRootSignature(payloadSha256),
+	}
+	return {
+		...envelope,
+		integrity,
+		payload_sha256: payloadSha256,
+		signatures: [signature],
+	}
 }
 
 await run("direct MDA loading accepts trustedRuntime did:web options", async () => {
@@ -478,6 +509,24 @@ await run("publisher writes signed registry root covering current binding, manif
 	})
 })
 
+await run("parser rejects registry root current binding digest mismatches", async () => {
+	await withTempRoot("signed-root-current-binding-parser", async (root) => {
+		await writeUnsignedAuthoringPreset(root)
+
+		const published = await new ConfigRegistryPublisher(root).publish({
+			revision: "2026-05-10T00:00:00.000Z",
+			registryRoot: { signer: registryRootSigner() },
+		})
+		const envelope = await readRegistryRoot(root, published.revision)
+		envelope.payload.current.sha256 = "0".repeat(64)
+
+		assert.throws(
+			() => parseRegistryRootEnvelope(envelope as unknown as Parameters<typeof parseRegistryRootEnvelope>[0], "registry-root.json"),
+			/current binding digest/,
+		)
+	})
+})
+
 await run("runtime rejects signed registry root payload binding mismatches", async () => {
 	await withTempRoot("signed-root-binding-mismatch", async (root) => {
 		await writeUnsignedAuthoringPreset(root)
@@ -570,7 +619,7 @@ await run("runtime rejects signed registry root payload binding mismatches", asy
 		for (const testCase of cases) {
 			const envelope = JSON.parse(JSON.stringify(original)) as RegistryRootEnvelope
 			testCase.mutate(envelope)
-			await writeRegistryRoot(root, published.revision, envelope)
+			await writeRegistryRoot(root, published.revision, await resignRegistryRoot(envelope))
 			await assert.rejects(
 				ConfigRegistryManager.open(root, {
 					signedRoot: {
@@ -626,7 +675,7 @@ await run("runtime fails closed on signed registry root refresh failure", async 
 		})
 		const envelope = await readRegistryRoot(root, second.revision)
 		envelope.payload.current.sha256 = "0".repeat(64)
-		await writeRegistryRoot(root, second.revision, envelope)
+		await writeRegistryRoot(root, second.revision, await resignRegistryRoot(envelope))
 
 		await assert.rejects(manager.getPreset("signed", "demo"), /current binding digest/)
 		assert.equal(manager.activeRevision, first.revision)
@@ -664,6 +713,93 @@ await run("runtime opens signed registry root with external verifier and rejects
 			}),
 			/no cryptographically verified signature/,
 		)
+	})
+})
+
+await run("runtime opens legacy pretty-canonical signed registry roots", async () => {
+	await withTempRoot("signed-root-legacy-pretty", async (root) => {
+		await writeUnsignedAuthoringPreset(root)
+
+		const published = await new ConfigRegistryPublisher(root).publish({
+			registryRoot: { signer: registryRootSigner() },
+		})
+		const envelope = resignRegistryRootLegacyPretty(await readRegistryRoot(root, published.revision))
+		await writeRegistryRoot(root, published.revision, envelope)
+
+		const manager = await ConfigRegistryManager.open(root, {
+			signedRoot: {
+				trustPolicy: REGISTRY_ROOT_POLICY,
+				didWebVerifier: registryRootVerifier(true),
+			},
+		})
+
+		assert.equal(manager.activeRevision, published.revision)
+		assert.equal((await manager.getPreset("search", "summary")).model, "gpt-4.1-mini")
+	})
+})
+
+await run("runtime opens signed registry from CLI trust manifest schema", async () => {
+	await withTempRoot("registry-root-trust-manifest", async (root) => {
+		await writeUnsignedAuthoringPreset(root)
+		const published = await new ConfigRegistryPublisher(root).publish({
+			revision: "2026-05-10T00:00:00.000Z",
+			registryRoot: { signer: registryRootSigner() },
+		})
+		assert.ok(published.registryRootSha256)
+		const envelope = await readRegistryRoot(root, published.revision)
+		const manifestPath = path.join(root, "..", "llmix-trust.json")
+		const manifest: LlmixTrustManifest = {
+			version: 1,
+			kind: "llmix-trust-manifest",
+			expectedRootDigest: `sha256:${published.registryRootSha256}`,
+			sourceSetDigest: `sha256:${"1".repeat(64)}`,
+			releasePlanDigest: `sha256:${"2".repeat(64)}`,
+			registryRootTrustPolicy: REGISTRY_ROOT_POLICY,
+			rekorPolicy: null,
+			minimumRevision: null,
+			minimumPublishedAt: null,
+			highWatermark: null,
+			registryRootSignerIdentity: { type: "did-web", domain: REGISTRY_ROOT_DOMAIN },
+			registryRoot: {
+				path: path.join(root, "snapshots", published.revision, "registry-root.json"),
+				revision: published.revision,
+				publishedAt: envelope.payload.published_at,
+				highWatermark: published.revision,
+			},
+			releasePlan: { path: "release-plan.json", sourceCount: 1 },
+		}
+		await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8")
+
+		const options = registryRootOptionsFromTrustManifest(await loadLlmixTrustManifest(manifestPath), {
+			didWebVerifier: registryRootVerifier(true),
+		})
+		const manager = await ConfigRegistryManager.open(root, { signedRoot: options })
+
+		assert.equal(manager.activeRevision, published.revision)
+		assert.equal((await manager.getPreset("search", "summary")).model, "gpt-4.1-mini")
+
+		const manifestWithWatermark: LlmixTrustManifest = {
+			...manifest,
+			highWatermark: published.revision,
+		}
+		const optionsWithWatermark = registryRootOptionsFromTrustManifest(manifestWithWatermark, {
+			didWebVerifier: registryRootVerifier(true),
+		})
+		assert.equal(optionsWithWatermark.minimumRevision, published.revision)
+		const managerWithWatermark = await ConfigRegistryManager.open(root, { signedRoot: optionsWithWatermark })
+		assert.equal((await managerWithWatermark.getPreset("search", "summary")).model, "gpt-4.1-mini")
+
+		const manifestWithoutNullableFields = { ...manifest } as Record<string, unknown>
+		delete manifestWithoutNullableFields["rekorPolicy"]
+		delete manifestWithoutNullableFields["minimumRevision"]
+		delete manifestWithoutNullableFields["minimumPublishedAt"]
+		delete manifestWithoutNullableFields["highWatermark"]
+		await writeFile(manifestPath, `${JSON.stringify(manifestWithoutNullableFields, null, 2)}\n`, "utf-8")
+		const parsedWithoutNullableFields = await loadLlmixTrustManifest(manifestPath)
+		assert.equal(parsedWithoutNullableFields.rekorPolicy, null)
+		assert.equal(parsedWithoutNullableFields.minimumRevision, null)
+		assert.equal(parsedWithoutNullableFields.minimumPublishedAt, null)
+		assert.equal(parsedWithoutNullableFields.highWatermark, null)
 	})
 })
 

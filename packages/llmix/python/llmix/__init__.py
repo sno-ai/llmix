@@ -49,6 +49,11 @@ _LAZY_IMPORTS: dict[str, str] = {
     "ConfigRegistryPublishOptions": "llmix.config_registry",
     "ConfigRegistryManager": "llmix.config_registry",
     "ConfigRegistryPublisher": "llmix.config_registry",
+    "LLMIX_TRUST_MANIFEST_KIND": "llmix.config_registry",
+    "LLMIX_TRUST_MANIFEST_VERSION": "llmix.config_registry",
+    "LlmixTrustManifest": "llmix.config_registry",
+    "LlmixTrustManifestRegistryRoot": "llmix.config_registry",
+    "LlmixTrustManifestReleasePlan": "llmix.config_registry",
     "PublishedRevision": "llmix.config_registry",
     "RegistryRootFreshnessInput": "llmix.config_registry",
     "RegistryRootHighWatermark": "llmix.config_registry",
@@ -56,6 +61,9 @@ _LAZY_IMPORTS: dict[str, str] = {
     "RegistryRootSigningInput": "llmix.config_registry",
     "RegistryRootSigningOptions": "llmix.config_registry",
     "RegistryRootVerificationOptions": "llmix.config_registry",
+    "load_llmix_trust_manifest": "llmix.config_registry",
+    "parse_llmix_trust_manifest": "llmix.config_registry",
+    "registry_root_options_from_trust_manifest": "llmix.config_registry",
     # resilience
     "CircuitBreaker": "llmix.resilience",
     "CircuitOpenError": "llmix.resilience",
@@ -100,6 +108,11 @@ if TYPE_CHECKING:
     from llmix.config_registry import ConfigRegistryPublishOptions as ConfigRegistryPublishOptions
     from llmix.config_registry import ConfigRegistryManager as ConfigRegistryManager
     from llmix.config_registry import ConfigRegistryPublisher as ConfigRegistryPublisher
+    from llmix.config_registry import LLMIX_TRUST_MANIFEST_KIND as LLMIX_TRUST_MANIFEST_KIND
+    from llmix.config_registry import LLMIX_TRUST_MANIFEST_VERSION as LLMIX_TRUST_MANIFEST_VERSION
+    from llmix.config_registry import LlmixTrustManifest as LlmixTrustManifest
+    from llmix.config_registry import LlmixTrustManifestRegistryRoot as LlmixTrustManifestRegistryRoot
+    from llmix.config_registry import LlmixTrustManifestReleasePlan as LlmixTrustManifestReleasePlan
     from llmix.config_registry import PublishedRevision as PublishedRevision
     from llmix.config_registry import RegistryRootFreshnessInput as RegistryRootFreshnessInput
     from llmix.config_registry import RegistryRootHighWatermark as RegistryRootHighWatermark
@@ -107,6 +120,9 @@ if TYPE_CHECKING:
     from llmix.config_registry import RegistryRootSigningInput as RegistryRootSigningInput
     from llmix.config_registry import RegistryRootSigningOptions as RegistryRootSigningOptions
     from llmix.config_registry import RegistryRootVerificationOptions as RegistryRootVerificationOptions
+    from llmix.config_registry import load_llmix_trust_manifest as load_llmix_trust_manifest
+    from llmix.config_registry import parse_llmix_trust_manifest as parse_llmix_trust_manifest
+    from llmix.config_registry import registry_root_options_from_trust_manifest as registry_root_options_from_trust_manifest
     from llmix.mda_loader import MdaConfigLoadOptions as MdaConfigLoadOptions
     from llmix.mda_loader import build_mda_config_file_path as build_mda_config_file_path
     from llmix.mda_loader import load_mda_config as load_mda_config
@@ -189,6 +205,11 @@ __all__ = [
     "ConfigRegistryPublishOptions",
     "ConfigRegistryManager",
     "ConfigRegistryPublisher",
+    "LLMIX_TRUST_MANIFEST_KIND",
+    "LLMIX_TRUST_MANIFEST_VERSION",
+    "LlmixTrustManifest",
+    "LlmixTrustManifestRegistryRoot",
+    "LlmixTrustManifestReleasePlan",
     "PublishedRevision",
     "RegistryRootFreshnessInput",
     "RegistryRootHighWatermark",
@@ -196,6 +217,9 @@ __all__ = [
     "RegistryRootSigningInput",
     "RegistryRootSigningOptions",
     "RegistryRootVerificationOptions",
+    "load_llmix_trust_manifest",
+    "parse_llmix_trust_manifest",
+    "registry_root_options_from_trust_manifest",
     "CircuitBreaker",
     "CircuitOpenError",
     "CircuitState",

@@ -7,6 +7,7 @@ use super::fs_ops::{
 };
 use super::root::{build_registry_root_payload, create_registry_root_envelope};
 use super::*;
+use chrono::{DateTime, SecondsFormat, Utc};
 
 #[derive(Debug)]
 pub struct ConfigRegistryPublisher {
@@ -75,7 +76,7 @@ impl ConfigRegistryPublisher {
         }
 
         let published_at = current_unix_millis()?;
-        let published_at_text = published_at.to_string();
+        let published_at_text = unix_millis_to_rfc3339(published_at)?;
 
         let revision_id = match options.revision {
             Some(value) => value.to_string(),
@@ -164,12 +165,12 @@ impl ConfigRegistryPublisher {
         };
         let payload = build_registry_root_payload(manifest, manifest_sha256)?;
         let envelope = create_registry_root_envelope(payload, options)?;
-        let payload_sha256 = envelope.payload_sha256.clone();
+        let root_path = stage_path.join(REGISTRY_ROOT_FILENAME);
         write_json(
-            &stage_path.join(REGISTRY_ROOT_FILENAME),
+            &root_path,
             &serde_json::to_value(envelope).map_err(LlmixError::from)?,
         )?;
-        Ok(Some(payload_sha256))
+        Ok(Some(sha256_file(&root_path)?))
     }
 
     fn discover_presets(&self) -> LlmixResult<Vec<PresetSource>> {
@@ -357,4 +358,15 @@ impl ConfigRegistryPublisher {
 
         Ok(())
     }
+}
+
+fn unix_millis_to_rfc3339(value: u128) -> LlmixResult<String> {
+    let millis = i64::try_from(value).map_err(|_| InvalidConfigError {
+        message: format!("Registry published_at value is too large: {value}"),
+    })?;
+    let timestamp =
+        DateTime::<Utc>::from_timestamp_millis(millis).ok_or_else(|| InvalidConfigError {
+            message: format!("Registry published_at value is out of range: {value}"),
+        })?;
+    Ok(timestamp.to_rfc3339_opts(SecondsFormat::Millis, true))
 }

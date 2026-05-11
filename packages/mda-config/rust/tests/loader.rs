@@ -184,6 +184,8 @@ impl DidWebVerifier for PanicDidWebVerifier {
 
 const FIXTURE_PAYLOAD_TYPE: &str = "application/vnd.snoai-llmix.preset+json";
 const FIXTURE_PAYLOAD_B64: &str =
+    "eyJpbnRlZ3JpdHkiOnsiYWxnb3JpdGhtIjoic2hhMjU2IiwiZGlnZXN0Ijoic2hhMjU2Ojk2OTc0NDhiNmYzZjg4YjcxODcwZGQ1YjYwODk5OWFkZTcxN2Y3M2Q0ZWViZjY3ZjAyYWMwM2RmZTE3N2EzN2UifX0=";
+const LEGACY_FIXTURE_PAYLOAD_B64: &str =
     "eyJhbGdvcml0aG0iOiJzaGEyNTYiLCJkaWdlc3QiOiJzaGEyNTY6OTY5NzQ0OGI2ZjNmODhiNzE4NzBkZDViNjA4OTk5YWRlNzE3ZjczZDRlZWJmNjdmMDJhYzAzZGZlMTc3YTM3ZSJ9";
 const FIXTURE_SIGNATURE: &str = "MEUCIQDkXFIXTUREONLYBASE64==";
 const FIXTURE_KEY_ID: &str =
@@ -215,6 +217,12 @@ fn dsse_entry(kind: &str) -> RekorEntry {
 fn wrong_payload_dsse_entry() -> RekorEntry {
     let mut entry = dsse_entry("dsse-v0.0.1");
     entry.dsse_envelope.payload = "e30=".to_string();
+    entry
+}
+
+fn legacy_payload_dsse_entry() -> RekorEntry {
+    let mut entry = dsse_entry("dsse-v0.0.1");
+    entry.dsse_envelope.payload = LEGACY_FIXTURE_PAYLOAD_B64.to_string();
     entry
 }
 
@@ -495,6 +503,32 @@ fn accepts_sigstore_signed_fixture_with_injected_verifier() {
     )
     .expect("mock Sigstore verification should pass");
     assert!(cfg.signatures.expect("signatures").len() == 1);
+}
+
+#[test]
+fn accepts_legacy_integrity_payload_bytes_for_default_signature_verification() {
+    let rekor = MockRekor {
+        entry: Some(legacy_payload_dsse_entry()),
+        url: "https://rekor.sigstore.dev",
+    };
+    let verifier = MockVerifier {
+        issuer: "https://accounts.google.com",
+        identity: "releases@snoai.com",
+    };
+    let src = sigstore_signed_fixture_with_bound_identity();
+    let cfg: MinimalConfig = load_mda_source_from_bytes(
+        src.as_bytes(),
+        LoadMdaSourceOptions {
+            verify_integrity: true,
+            verify_signatures: true,
+            trust_policy: Some(trust_policy("releases@snoai.com")),
+            rekor_client: Some(&rekor),
+            sigstore_verifier: Some(&verifier),
+            ..LoadMdaSourceOptions::default()
+        },
+    )
+    .expect("legacy integrity payload bytes should remain accepted");
+    assert_eq!(cfg.signatures.expect("signatures").len(), 1);
 }
 
 #[test]

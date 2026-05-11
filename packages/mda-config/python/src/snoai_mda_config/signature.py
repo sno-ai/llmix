@@ -63,6 +63,7 @@ def verify_signatures(
     rekor_client: RekorClient | None = None,
     sigstore_verifier: SigstoreVerifier | None = None,
     did_web_verifier: DidWebVerifier | None = None,
+    payload_bytes: bytes | None = None,
 ) -> None:
     """Evaluate signatures against a trust policy threshold."""
 
@@ -78,44 +79,77 @@ def verify_signatures(
             "trusted-runtime requires a non-empty signatures[] field",
         )
 
-    payload_bytes = _canonical_json(integrity)
-    trusted: set[str] = set()
-    candidate_errors: list[MdaConfigError] = []
-    for sig in signatures:
-        _validate_signature_shape(sig)
-        _assert_payload_digest(sig, integrity)
-        try:
-            identity = _verify_candidate(
-                sig,
-                payload_bytes,
-                policy,
-                rekor_client=rekor_client,
-                sigstore_verifier=sigstore_verifier,
-                did_web_verifier=did_web_verifier,
-            )
-            if identity is not None:
-                trusted.add(identity)
-        except MdaConfigError as cause:
-            candidate_errors.append(cause)
-        except Exception as cause:
-            candidate_errors.append(
-                MdaConfigError(
-                    ErrorCategory.SignatureVerificationFailure,
-                    "signature candidate verification failed",
-                    {"cause": str(cause)},
+    payload_candidates = (
+        [payload_bytes]
+        if payload_bytes is not None
+        else [
+            _canonical_json(
+                {
+                    "integrity": {
+                        "algorithm": integrity["algorithm"],
+                        "digest": integrity["digest"],
+                    }
+                }
+            ),
+            _legacy_payload_bytes(integrity),
+        ]
+    )
+    max_trusted = 0
+    best_candidate_errors: list[MdaConfigError] = []
+    best_candidate_score = -1
+    saw_no_trusted_candidate = False
+    for effective_payload_bytes in payload_candidates:
+        trusted: set[str] = set()
+        payload_errors: list[MdaConfigError] = []
+        for sig in signatures:
+            _validate_signature_shape(sig)
+            _assert_payload_digest(sig, integrity)
+            try:
+                identity = _verify_candidate(
+                    sig,
+                    effective_payload_bytes,
+                    policy,
+                    rekor_client=rekor_client,
+                    sigstore_verifier=sigstore_verifier,
+                    did_web_verifier=did_web_verifier,
                 )
-            )
+                if identity is not None:
+                    trusted.add(identity)
+            except MdaConfigError as cause:
+                payload_errors.append(cause)
+            except Exception as cause:
+                payload_errors.append(
+                    MdaConfigError(
+                        ErrorCategory.SignatureVerificationFailure,
+                        "signature candidate verification failed",
+                        {"cause": str(cause)},
+                    )
+                )
 
-    required = policy.min_signatures
-    if len(trusted) >= required:
-        return
-    if trusted:
+        required = policy.min_signatures
+        if len(trusted) >= required:
+            return
+        max_trusted = max(max_trusted, len(trusted))
+        if not payload_errors:
+            saw_no_trusted_candidate = True
+        else:
+            score = _candidate_error_score(payload_errors)
+            if score > best_candidate_score:
+                best_candidate_score = score
+                best_candidate_errors = payload_errors
+    if max_trusted > 0:
         raise MdaConfigError(
             ErrorCategory.InsufficientTrustedSignatures,
             "trusted signatures did not satisfy minSignatures",
-            {"trusted": len(trusted), "required": required},
+            {"trusted": max_trusted, "required": policy.min_signatures},
         )
-    raise _most_specific_candidate_error(candidate_errors)
+    if saw_no_trusted_candidate:
+        raise _no_trusted_signature_error()
+    raise _most_specific_candidate_error(best_candidate_errors)
+
+
+def _legacy_payload_bytes(integrity: IntegrityField) -> bytes:
+    return _canonical_json({"algorithm": integrity["algorithm"], "digest": integrity["digest"]})
 
 
 def _assert_verifier_hooks(
@@ -339,6 +373,24 @@ def _most_specific_candidate_error(errors: list[MdaConfigError]) -> MdaConfigErr
         for error in errors:
             if error.category is category:
                 return error
+    return _no_trusted_signature_error()
+
+
+def _candidate_error_score(errors: list[MdaConfigError]) -> int:
+    if any(
+        error.category
+        in (ErrorCategory.SignatureVerificationFailure, ErrorCategory.FulcioChainFailure)
+        for error in errors
+    ):
+        return 3
+    if any(error.category is ErrorCategory.RekorEntryTypeMismatch for error in errors):
+        return 2
+    if any(error.category is ErrorCategory.RekorInclusionFailure for error in errors):
+        return 1
+    return 0
+
+
+def _no_trusted_signature_error() -> MdaConfigError:
     return MdaConfigError(
         ErrorCategory.NoTrustedSignature,
         "no cryptographically verified signature matched the trust policy",

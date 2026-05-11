@@ -127,12 +127,7 @@ def create_registry_root_envelope(
 def verify_registry_root_signatures(
     envelope: dict[str, Any], options: RegistryRootVerificationOptions
 ) -> None:
-    signing_input = _registry_root_signing_input(envelope["payload"])
-    if (
-        signing_input.payload_sha256 != envelope["payload_sha256"]
-        or signing_input.integrity["digest"] != envelope["integrity"]["digest"]
-    ):
-        raise InvalidConfigError("Registry root payload digest mismatch")
+    signing_input = _registry_root_signing_input_for_envelope(envelope)
     try:
         verify_signatures(
             cast("list[Any]", envelope["signatures"]),
@@ -141,6 +136,7 @@ def verify_registry_root_signatures(
             rekor_client=options.rekor_client,
             sigstore_verifier=options.sigstore_verifier,
             did_web_verifier=options.did_web_verifier,
+            payload_bytes=signing_input.canonical_payload.encode("utf-8"),
         )
     except MdaConfigError as exc:
         raise SecurityError(f"Registry root signature verification failed: {exc}") from exc
@@ -165,7 +161,7 @@ def enforce_registry_root_freshness(
             payload["published_at"], options.minimum_published_at
         )
     if options.high_watermark is not None:
-        signing_input = _registry_root_signing_input(payload)
+        signing_input = _registry_root_signing_input_for_envelope(envelope)
         approved = options.high_watermark(
             RegistryRootFreshnessInput(
                 payload=signing_input.payload,
@@ -183,8 +179,32 @@ def enforce_registry_root_freshness(
 
 
 def _registry_root_signing_input(payload: dict[str, Any]) -> RegistryRootSigningInput:
-    canonical_payload = _canonical_json_bytes(payload).decode("utf-8")
-    payload_sha256 = _sha256_bytes(canonical_payload.encode("utf-8"))
+    return _registry_root_signing_input_with_bytes(
+        payload, _canonical_compact_json_bytes(payload)
+    )
+
+
+def _registry_root_signing_input_for_envelope(
+    envelope: dict[str, Any],
+) -> RegistryRootSigningInput:
+    current = _registry_root_signing_input(envelope["payload"])
+    if _registry_root_digest_matches_envelope(current, envelope):
+        return current
+
+    legacy = _registry_root_signing_input_with_bytes(
+        envelope["payload"], _canonical_json_bytes(envelope["payload"])
+    )
+    if _registry_root_digest_matches_envelope(legacy, envelope):
+        return legacy
+
+    raise InvalidConfigError("Registry root payload digest mismatch")
+
+
+def _registry_root_signing_input_with_bytes(
+    payload: dict[str, Any], canonical_payload_bytes: bytes
+) -> RegistryRootSigningInput:
+    canonical_payload = canonical_payload_bytes.decode("utf-8")
+    payload_sha256 = _sha256_bytes(canonical_payload_bytes)
     return RegistryRootSigningInput(
         payload=payload,
         canonical_payload=canonical_payload,
@@ -192,6 +212,24 @@ def _registry_root_signing_input(payload: dict[str, Any]) -> RegistryRootSigning
         payload_type=REGISTRY_ROOT_PAYLOAD_TYPE,
         payload_sha256=payload_sha256,
     )
+
+
+def _registry_root_digest_matches_envelope(
+    signing_input: RegistryRootSigningInput, envelope: dict[str, Any]
+) -> bool:
+    return (
+        signing_input.payload_sha256 == envelope["payload_sha256"]
+        and signing_input.integrity["digest"] == envelope["integrity"]["digest"]
+    )
+
+
+def _canonical_compact_json_bytes(value: dict[str, Any]) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
 
 
 def _normalize_registry_root_signature(value: dict[str, Any]) -> dict[str, Any]:

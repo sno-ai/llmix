@@ -17,8 +17,8 @@ pub use integrity::{
 pub use loader::{load_mda_source, load_mda_source_from_bytes, LoadMdaSourceOptions};
 pub use requires::{enforce_requires, RequiresEnvironment};
 pub use signature::{
-    construct_dsse_pae, verify_signatures, DidWebVerificationInput, DidWebVerifier, DsseEnvelope,
-    DsseSignature, RekorClient, RekorEntry, SignatureEntry, SigstoreVerificationResult,
-    SigstoreVerifier, DEFAULT_PAYLOAD_TYPE,
+    construct_dsse_pae, verify_signatures, verify_signatures_with_payload, DidWebVerificationInput,
+    DidWebVerifier, DsseEnvelope, DsseSignature, RekorClient, RekorEntry, SignatureEntry,
+    SigstoreVerificationResult, SigstoreVerifier, DEFAULT_PAYLOAD_TYPE,
 };
 pub use trust_policy::{validate_trust_policy, RekorPolicy, TrustPolicy, TrustedSigner};

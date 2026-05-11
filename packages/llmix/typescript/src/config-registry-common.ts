@@ -29,6 +29,10 @@ export function canonicalJsonString(value: JsonValue | JsonObject): string {
 	return `${JSON.stringify(sortJsonValue(value), null, 2)}\n`
 }
 
+export function canonicalCompactJsonString(value: JsonValue | JsonObject): string {
+	return JSON.stringify(sortJsonValue(value))
+}
+
 function sortJsonValue(value: JsonValue | JsonObject): JsonValue | JsonObject {
 	if (Array.isArray(value)) {
 		return value.map((item) => sortJsonValue(item as JsonValue))
@@ -58,6 +62,12 @@ export function validateSha256(sha256: string, label: string): void {
 	if (!SHA256_PATTERN.test(sha256)) {
 		throw new InvalidConfigError(`Invalid SHA-256 digest for ${label}`)
 	}
+}
+
+export function normalizeSha256Digest(digest: string, label: string): string {
+	const normalized = digest.startsWith("sha256:") ? digest.slice("sha256:".length) : digest
+	validateSha256(normalized, label)
+	return normalized
 }
 
 function currentPointerToJson(pointer: CurrentPointer): JsonObject {

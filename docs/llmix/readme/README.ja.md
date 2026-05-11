@@ -66,7 +66,7 @@ cargo add llmix-rs --features providers-openai,redis
 - [TypeScript guide](../llmix-typescript.md)
 - [Python guide](../llmix-python.md)
 - [Rust guide](../llmix-rust.md)
-- [Secure LLMix configuration](../secure-llmix-configuration.md)
+- [LLMix MDA 設定を安全に使う](../secure-mda/secure-llmix-configuration.ja.md)
 - [Key pool operations](../key-pool-operations.md)
 
 ---

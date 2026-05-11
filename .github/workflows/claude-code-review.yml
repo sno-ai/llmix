@@ -1,7 +1,7 @@
 name: Claude Code Review
 
-# Runs on self-hosted runner (LAN only).
-# No GitHub Actions minutes consumed — runner polls GitHub via outbound HTTPS.
+# Runs on the shared self-hosted runner so Claude OAuth review matches the
+# working sno-nodix/sno-nexus setup.
 on:
   pull_request:
     types: [opened, synchronize, reopened]

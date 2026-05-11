@@ -2,6 +2,7 @@ import { verifySignatures, type DidWebVerifier, type RekorClient, type Signature
 
 import { InvalidConfigError, SecurityError } from "./types.js"
 import {
+	canonicalCompactJsonString,
 	canonicalJsonString,
 	compareRevision,
 	currentPointerSha256,
@@ -9,6 +10,7 @@ import {
 	ensureObjectField,
 	ensureStringField,
 	isJsonObject,
+	normalizeSha256Digest,
 	sha256Bytes,
 	snapshotRegistryPath,
 	snapshotRelativePath,
@@ -95,7 +97,7 @@ export function buildRegistryRootPayload(manifest: RegistryManifest, manifestSha
 }
 
 function canonicalRegistryRootPayload(payload: RegistryRootPayload): string {
-	return canonicalJsonString(payload)
+	return canonicalCompactJsonString(payload)
 }
 
 function registryRootIntegrity(payloadSha256: string): RegistryRootIntegrity {
@@ -113,6 +115,27 @@ function registryRootSigningInput(payload: RegistryRootPayload): RegistryRootSig
 		payload,
 		canonicalPayload,
 		integrity: registryRootIntegrity(payloadSha256),
+		payloadType: REGISTRY_ROOT_PAYLOAD_TYPE,
+		payloadSha256,
+	}
+}
+
+function registryRootSigningInputForEnvelope(envelope: RegistryRootEnvelope): RegistryRootSigningInput {
+	const signingInput = registryRootSigningInput(envelope.payload)
+	if (signingInput.payloadSha256 === envelope.payload_sha256 && signingInput.integrity.digest === envelope.integrity.digest) {
+		return signingInput
+	}
+
+	const canonicalPayload = canonicalJsonString(envelope.payload)
+	const payloadSha256 = sha256Bytes(canonicalPayload)
+	const integrity = registryRootIntegrity(payloadSha256)
+	if (payloadSha256 !== envelope.payload_sha256 || integrity.digest !== envelope.integrity.digest) {
+		throw new InvalidConfigError("Registry root payload digest mismatch")
+	}
+	return {
+		payload: envelope.payload,
+		canonicalPayload,
+		integrity,
 		payloadType: REGISTRY_ROOT_PAYLOAD_TYPE,
 		payloadSha256,
 	}
@@ -189,7 +212,11 @@ function validateRegistryRootPayloadBindings(payload: RegistryRootPayload, sourc
 	if (payload.current.manifest_sha256 !== payload.manifest.sha256) {
 		throw new InvalidConfigError(`Registry root current manifest digest does not match manifest binding: ${sourcePath}`)
 	}
-	if (payload.current.sha256 !== currentPointerSha256({ revision: payload.revision, manifestSha256: payload.manifest.sha256 })) {
+	const currentSha256 = currentPointerSha256({
+		revision: payload.current.revision,
+		manifestSha256: payload.current.manifest_sha256,
+	})
+	if (payload.current.sha256 !== currentSha256) {
 		throw new InvalidConfigError(`Registry root current binding digest mismatch: ${sourcePath}`)
 	}
 	if (payload.manifest.path !== snapshotRegistryPath(payload.revision, "manifest.json")) {
@@ -332,14 +359,12 @@ export async function verifyRegistryRootSignatures(
 	envelope: RegistryRootEnvelope,
 	options: RegistryRootVerificationOptions,
 ): Promise<void> {
-	const signingInput = registryRootSigningInput(envelope.payload)
-	if (signingInput.payloadSha256 !== envelope.payload_sha256 || signingInput.integrity.digest !== envelope.integrity.digest) {
-		throw new InvalidConfigError("Registry root payload digest mismatch")
-	}
+	const signingInput = registryRootSigningInputForEnvelope(envelope)
 	const verificationHooks: {
 		rekorClient?: RekorClient
 		sigstoreVerifier?: SigstoreVerifier
 		didWebVerifier?: DidWebVerifier
+		payloadBytes?: Uint8Array
 	} = {}
 	if (options.rekorClient !== undefined) {
 		verificationHooks.rekorClient = options.rekorClient
@@ -350,6 +375,7 @@ export async function verifyRegistryRootSignatures(
 	if (options.didWebVerifier !== undefined) {
 		verificationHooks.didWebVerifier = options.didWebVerifier
 	}
+	verificationHooks.payloadBytes = new TextEncoder().encode(signingInput.canonicalPayload)
 	await verifySignatures(envelope.signatures, envelope.integrity, options.trustPolicy, verificationHooks)
 }
 
@@ -369,8 +395,8 @@ export async function enforceRegistryRootFreshness(
 		enforceMinimumPublishedAt(payload.published_at, options.minimumPublishedAt)
 	}
 	if (options.expectedRootDigest !== undefined) {
-		validateSha256(options.expectedRootDigest, "expected registry root digest")
-		if (rootDigest !== options.expectedRootDigest) {
+		const expectedRootDigest = normalizeSha256Digest(options.expectedRootDigest, "expected registry root digest")
+		if (rootDigest !== expectedRootDigest) {
 			throw new SecurityError("Registry root digest does not match expectedRootDigest")
 		}
 	}
@@ -394,7 +420,7 @@ async function enforceHighWatermark(
 	envelope: RegistryRootEnvelope,
 	highWatermark: RegistryRootHighWatermark,
 ): Promise<void> {
-	const signingInput = registryRootSigningInput(envelope.payload)
+	const signingInput = registryRootSigningInputForEnvelope(envelope)
 	if (!(await highWatermark({ envelope, ...signingInput }))) {
 		throw new SecurityError("Registry root rejected by high-watermark policy")
 	}

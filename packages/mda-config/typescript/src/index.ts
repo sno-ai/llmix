@@ -27,6 +27,7 @@ export {
   type SigstoreVerifier,
   type DidWebVerifier,
   type DidWebVerificationInput,
+  type SignatureVerificationOptions,
   type SigstoreVerificationResult,
 } from "./signature.js";
 export {

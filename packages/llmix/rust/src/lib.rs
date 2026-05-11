@@ -47,11 +47,15 @@ pub use config::{
     LlmixPathConfig, MdaConfigLoadOptions, ResolvedConfigDir,
 };
 pub use config_registry::{
-    ConfigRegistryManager, ConfigRegistryOpenOptions, ConfigRegistryPublishOptions,
-    ConfigRegistryPublisher, PublishedRevision, RegistryRootCurrentBinding, RegistryRootEnvelope,
-    RegistryRootFileDigest, RegistryRootHighWatermark, RegistryRootManifestBinding,
-    RegistryRootPayload, RegistryRootSignature, RegistryRootSigner, RegistryRootSigningInput,
-    RegistryRootSigningOptions, RegistryRootVerificationOptions,
+    load_llmix_trust_manifest, registry_root_options_from_trust_manifest,
+    registry_root_options_from_trust_manifest_with_hooks, ConfigRegistryManager,
+    ConfigRegistryOpenOptions, ConfigRegistryPublishOptions, ConfigRegistryPublisher,
+    LlmixTrustManifest, LlmixTrustManifestRegistryRoot, LlmixTrustManifestReleasePlan,
+    PublishedRevision, RegistryRootCurrentBinding, RegistryRootEnvelope, RegistryRootFileDigest,
+    RegistryRootHighWatermark, RegistryRootManifestBinding, RegistryRootPayload,
+    RegistryRootSignature, RegistryRootSigner, RegistryRootSigningInput,
+    RegistryRootSigningOptions, RegistryRootVerificationOptions, LLMIX_TRUST_MANIFEST_KIND,
+    LLMIX_TRUST_MANIFEST_VERSION,
 };
 pub use dispatch::DispatchFn;
 pub use error::{
