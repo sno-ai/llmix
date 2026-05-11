@@ -13,7 +13,7 @@ This page is the map. Start with the language guide for the runtime you ship:
 - [Python guide](llmix-python.md)
 - [Rust guide](llmix-rust.md)
 - [Key pool operations](key-pool-operations.md)
-- [Secure LLMix configuration](secure-llmix-configuration.md)
+- [Secure LLMix configuration](secure-mda/secure-llmix-configuration.md)
 
 ## Packages
 

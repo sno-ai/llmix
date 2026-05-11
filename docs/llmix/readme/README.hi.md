@@ -66,7 +66,7 @@ cargo add llmix-rs --features providers-openai,redis
 - [TypeScript guide](../llmix-typescript.md)
 - [Python guide](../llmix-python.md)
 - [Rust guide](../llmix-rust.md)
-- [Secure LLMix configuration](../secure-llmix-configuration.md)
+- [MDA के साथ सुरक्षित LLMix configuration](../secure-mda/secure-llmix-configuration.hi.md)
 - [Key pool operations](../key-pool-operations.md)
 
 ---

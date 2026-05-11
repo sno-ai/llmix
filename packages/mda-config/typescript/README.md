@@ -39,16 +39,19 @@ const cfg = await loadMdaSource("./presets/gpt5-mini-fast.mda", MyConfigSchema, 
   enforceRequires: true,
   allowedNetworks: ["api.openai.com"],
 });
+```
 
 `loadMdaSource` accepts any schema object with a Zod-compatible `safeParse`
 method. This keeps the loader usable with both Zod v3 and v4, and with small
 schema adapters that return `{ success, data }` or `{ success, error }`.
 
-// For production signed release presets, pass trustedRuntime: true with an
-//  trust policy, Rekor client, and verifier hooks.
-```
+For production signed release presets, pass `trustedRuntime: true` with a trust
+policy, Rekor client, and verifier hooks.
 
-See [`../../../docs/mda-config/design-project-config-frontmatter.md`](../../../docs/mda-config/design-project-config-frontmatter.md), [`../../../docs/mda-config/trusted-runtime-policy.md`](../../../docs/mda-config/trusted-runtime-policy.md), and [`../../../docs/mda-config/migrate-llmix-presets-to-mda.md`](../../../docs/mda-config/migrate-llmix-presets-to-mda.md).
+See [`../../../docs/mda-config/README.md`](../../../docs/mda-config/README.md)
+for the full runtime loader guide. For the LLMix signed registry release flow,
+see
+[`../../../docs/llmix/secure-mda/secure-llmix-configuration.md`](../../../docs/llmix/secure-mda/secure-llmix-configuration.md).
 
 ## Trusted Runtime
 
