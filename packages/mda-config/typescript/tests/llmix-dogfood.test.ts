@@ -67,7 +67,7 @@ describe("LLMix dogfood — sample_preset.mda", () => {
           dsseEnvelope: {
             payloadType: DEFAULT_PAYLOAD_TYPE,
             payload: Buffer.from(
-              JSON.stringify({ algorithm: "sha256", digest }),
+              JSON.stringify({ integrity: { algorithm: "sha256", digest } }),
             ).toString("base64"),
             signatures: [{ sig: signature, keyid }],
           },

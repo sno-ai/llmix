@@ -138,7 +138,7 @@ signatures:
 
 
 def _payload_b64(integrity: dict[str, str]) -> str:
-    payload = json.dumps(integrity, separators=(",", ":"), sort_keys=True).encode()
+    payload = json.dumps({"integrity": integrity}, separators=(",", ":"), sort_keys=True).encode()
     return base64.b64encode(payload).decode()
 
 

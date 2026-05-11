@@ -293,7 +293,7 @@ async function fixtureRekorEntry(
   const digest = quotedField(source, "digest");
   const payloadType = optionalQuotedField(source, "payload-type") ?? DEFAULT_PAYLOAD_TYPE;
   const payload = Buffer.from(
-    JSON.stringify({ algorithm: "sha256", digest }),
+    JSON.stringify({ integrity: { algorithm: "sha256", digest } }),
   ).toString("base64");
   const entry: RekorEntry = {
     kind: "dsse-v0.0.1",

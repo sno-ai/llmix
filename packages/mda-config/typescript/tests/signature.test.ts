@@ -11,6 +11,7 @@ import {
   constructDssePae,
   DEFAULT_PAYLOAD_TYPE,
   officialSigstoreVerifier,
+  type DidWebVerifier,
   type RekorClient,
   type SigstoreVerifier,
   verifySignatures,
@@ -56,7 +57,7 @@ describe("§09-3.1 DSSE PAE envelope", () => {
       digest:
         "sha256:a4f9c0d2e8b3a16e9c01b8f3d2a5c7b14e9f8a3d6c2b1e7f0a8d4c3b9e2f1a05",
     };
-    const expectedPayload = Buffer.from(JSON.stringify(integrity)).toString("base64");
+    const expectedPayload = Buffer.from(JSON.stringify({ integrity })).toString("base64");
     const rekorClient: RekorClient = {
       async fetchEntry(rekorUrl) {
         expect(rekorUrl).toBe("https://rekor.sigstore.dev");
@@ -98,6 +99,44 @@ describe("§09-3.1 DSSE PAE envelope", () => {
       .toBe(true);
   });
 
+  it("can verify signatures over caller-supplied payload bytes", async () => {
+    const integrity = {
+      algorithm: "sha256" as const,
+      digest:
+        "sha256:a4f9c0d2e8b3a16e9c01b8f3d2a5c7b14e9f8a3d6c2b1e7f0a8d4c3b9e2f1a05",
+    };
+    const payloadType = "application/vnd.snoai.llmix.registry-root+json";
+    const payloadBytes = new TextEncoder().encode('{"payload":"registry-root"}');
+    let captured: Uint8Array | undefined;
+    const didWebVerifier: DidWebVerifier = {
+      async verify(input) {
+        captured = input.payloadBytes;
+        return input.domain === "tools.example.com" && input.payloadType === payloadType;
+      },
+    };
+
+    await verifySignatures(
+      [
+        {
+          signer: "did-web:tools.example.com",
+          "key-id": "did:web:tools.example.com#release-2026",
+          "payload-digest": integrity.digest,
+          algorithm: "ed25519",
+          signature: "MEUC=",
+          "payload-type": payloadType,
+        },
+      ],
+      integrity,
+      {
+        version: 1,
+        trustedSigners: [{ type: "did-web", domain: "tools.example.com" }],
+      },
+      { didWebVerifier, payloadBytes },
+    );
+
+    expect(new TextDecoder().decode(captured!)).toBe('{"payload":"registry-root"}');
+  });
+
   it("rejects an empty signatures array", async () => {
     const rekorClient: RekorClient = {
       async fetchEntry() {
@@ -129,7 +168,7 @@ describe("§09-3.1 DSSE PAE envelope", () => {
       digest:
         "sha256:a4f9c0d2e8b3a16e9c01b8f3d2a5c7b14e9f8a3d6c2b1e7f0a8d4c3b9e2f1a05",
     };
-    const expectedPayload = Buffer.from(JSON.stringify(integrity)).toString("base64");
+    const expectedPayload = Buffer.from(JSON.stringify({ integrity })).toString("base64");
     const rekorClient: RekorClient = {
       async fetchEntry() {
         return {

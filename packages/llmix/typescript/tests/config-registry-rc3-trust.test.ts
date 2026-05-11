@@ -10,8 +10,11 @@ import type { DidWebVerifier, RekorClient, RekorEntry, SigstoreVerifier } from "
 import {
 	ConfigRegistryManager,
 	ConfigRegistryPublisher,
+	loadLlmixTrustManifest,
 	loadMdaConfig,
+	registryRootOptionsFromTrustManifest,
 	type ConfigRegistryPublishOptions,
+	type LlmixTrustManifest,
 	type MdaConfigLoadOptions,
 	type RegistryRootEnvelope,
 	type RegistryRootSigner,
@@ -113,7 +116,7 @@ function integrityDigest(frontmatter: JsonValue): string {
 }
 
 function integrityPayloadBase64(digest: string): string {
-	return Buffer.from(canonicalJson({ algorithm: "sha256", digest })).toString("base64")
+	return Buffer.from(canonicalJson({ integrity: { algorithm: "sha256", digest } })).toString("base64")
 }
 
 function trustedDidWebMda(presetName: string): { source: string; digest: string } {
@@ -224,13 +227,13 @@ async function writeUnsignedAuthoringPreset(root: string, model = "gpt-4.1-mini"
 function didWebVerifier(trusted: boolean, expectedDigest: string): DidWebVerifier {
 	return {
 		async verify(input) {
-			const payload = JSON.parse(new TextDecoder().decode(input.payloadBytes)) as { digest?: unknown }
+			const payload = JSON.parse(new TextDecoder().decode(input.payloadBytes)) as { integrity?: { digest?: unknown } }
 			return (
 				trusted &&
 				input.domain === DID_WEB_DOMAIN &&
 				input.keyId === DID_WEB_KEY_ID &&
 				input.payloadType === PAYLOAD_TYPE &&
-				payload.digest === expectedDigest
+				payload.integrity?.digest === expectedDigest
 			)
 		},
 	}
@@ -297,9 +300,7 @@ function registryRootSigner(domain = REGISTRY_ROOT_DOMAIN, keyId = REGISTRY_ROOT
 function registryRootVerifier(trusted = true): DidWebVerifier {
 	return {
 		async verify(input) {
-			const payload = JSON.parse(new TextDecoder().decode(input.payloadBytes)) as { digest?: unknown }
-			const digest = typeof payload.digest === "string" ? payload.digest : ""
-			const payloadSha256 = digest.startsWith("sha256:") ? digest.slice("sha256:".length) : ""
+			const payloadSha256 = createHash("sha256").update(input.payloadBytes).digest("hex")
 			return (
 				trusted &&
 				input.domain === REGISTRY_ROOT_DOMAIN &&
@@ -664,6 +665,48 @@ await run("runtime opens signed registry root with external verifier and rejects
 			}),
 			/no cryptographically verified signature/,
 		)
+	})
+})
+
+await run("runtime opens signed registry from CLI trust manifest schema", async () => {
+	await withTempRoot("registry-root-trust-manifest", async (root) => {
+		await writeUnsignedAuthoringPreset(root)
+		const published = await new ConfigRegistryPublisher(root).publish({
+			revision: "2026-05-10T00:00:00.000Z",
+			registryRoot: { signer: registryRootSigner() },
+		})
+		assert.ok(published.registryRootSha256)
+		const envelope = await readRegistryRoot(root, published.revision)
+		const manifestPath = path.join(root, "..", "llmix-trust.json")
+		const manifest: LlmixTrustManifest = {
+			version: 1,
+			kind: "llmix-trust-manifest",
+			expectedRootDigest: `sha256:${published.registryRootSha256}`,
+			sourceSetDigest: `sha256:${"1".repeat(64)}`,
+			releasePlanDigest: `sha256:${"2".repeat(64)}`,
+			registryRootTrustPolicy: REGISTRY_ROOT_POLICY,
+			rekorPolicy: null,
+			minimumRevision: null,
+			minimumPublishedAt: null,
+			highWatermark: null,
+			registryRootSignerIdentity: { type: "did-web", domain: REGISTRY_ROOT_DOMAIN },
+			registryRoot: {
+				path: path.join(root, "snapshots", published.revision, "registry-root.json"),
+				revision: published.revision,
+				publishedAt: envelope.payload.published_at,
+				highWatermark: published.revision,
+			},
+			releasePlan: { path: "release-plan.json", sourceCount: 1 },
+		}
+		await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8")
+
+		const options = registryRootOptionsFromTrustManifest(await loadLlmixTrustManifest(manifestPath), {
+			didWebVerifier: registryRootVerifier(true),
+		})
+		const manager = await ConfigRegistryManager.open(root, { signedRoot: options })
+
+		assert.equal(manager.activeRevision, published.revision)
+		assert.equal((await manager.getPreset("search", "summary")).model, "gpt-4.1-mini")
 	})
 })
 
