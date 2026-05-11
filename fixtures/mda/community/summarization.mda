@@ -1,0 +1,41 @@
+---
+name: summarization
+version: "1.0"
+provider: openai
+model: gpt-4.1-mini
+temperature: 0.2
+max_output_tokens: 512
+description: "General-purpose document summarization with concise output"
+---
+
+# Summarization Preset
+
+A low-temperature, constrained-output preset for producing concise summaries
+of documents, articles, and long-form text.
+
+## Configuration Notes
+
+- **Temperature 0.2**: Low randomness ensures factual, consistent summaries.
+  Increase to 0.4 if you want slightly more varied phrasing.
+- **Max output 512 tokens**: Enforces brevity. For executive summaries of
+  very long documents, consider raising to 1024.
+- **Model choice**: `gpt-4.1-mini` balances cost and quality for
+  extraction-style tasks. Swap to `claude-sonnet-4-5-20250514` for
+  documents requiring nuanced reasoning.
+
+## Recommended System Prompt
+
+When using this preset, pair with a system prompt like:
+
+```
+You are a document summarizer. Extract the key points and present them
+as a concise summary. Preserve factual accuracy. Do not add information
+not present in the source text.
+```
+
+## Use Cases
+
+- Summarizing meeting transcripts
+- Condensing research papers into abstracts
+- Generating TL;DR for long Slack threads
+- Reducing support tickets to actionable bullet points
