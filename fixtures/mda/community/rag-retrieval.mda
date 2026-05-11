@@ -1,0 +1,50 @@
+---
+name: rag-retrieval
+version: "1.0"
+provider: openai
+model: gpt-4.1
+temperature: 0.1
+max_output_tokens: 1024
+description: "RAG answer synthesis grounded in retrieved context"
+---
+
+# RAG Retrieval Preset
+
+A low-temperature preset for generating answers grounded in retrieved
+document context. Designed for use as the synthesis step in RAG pipelines.
+
+## Configuration Notes
+
+- **Temperature 0.1**: Near-deterministic to maximize factual grounding.
+  The model should synthesize from provided context, not hallucinate.
+- **Max output 1024 tokens**: Sufficient for detailed answers with
+  inline citations. Increase for complex multi-document synthesis.
+- **Model**: `gpt-4.1` for strong instruction following and
+  reliable citation of source material.
+
+## Expected Input Format
+
+Structure the user message with retrieved context clearly delineated:
+
+```
+Answer the question using ONLY the provided context.
+Cite sources using [1], [2], etc.
+
+Context:
+[1] doc_title: "..." content: "..."
+[2] doc_title: "..." content: "..."
+
+Question: How does the circuit breaker recover?
+```
+
+## Grounding Validation
+
+Pair this preset with a classification call to verify the answer
+is grounded (no hallucinated facts). Use the `classification` preset
+with prompt: "Is this answer fully supported by the provided context?"
+
+## Caching Strategy
+
+RAG answers are context-dependent and rarely repeat exactly.
+Use short TTL caching (60s) to deduplicate concurrent identical queries
+without stale answers.
