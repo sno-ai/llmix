@@ -1,0 +1,44 @@
+---
+name: translation
+version: "1.0"
+provider: openai
+model: gpt-4.1
+temperature: 0.3
+max_output_tokens: 2048
+description: "Multilingual text translation with natural phrasing"
+---
+
+# Translation Preset
+
+A moderate-temperature preset optimized for natural-sounding translations
+across 50+ language pairs.
+
+## Configuration Notes
+
+- **Temperature 0.3**: Balances faithfulness to source with natural
+  target-language phrasing. Lower (0.1) for legal/medical text where
+  precision is critical; higher (0.5) for marketing copy.
+- **Max output 2048 tokens**: Some language pairs expand significantly
+  (e.g., English→German can be 1.3x longer). Budget accordingly.
+- **Model**: `gpt-4.1` provides the broadest language coverage.
+  For CJK languages specifically, `claude-sonnet-4-5-20250514` may
+  produce more idiomatic output.
+
+## Usage Pattern
+
+Specify source and target languages explicitly in the prompt:
+
+```
+Translate the following from English to Japanese.
+Preserve technical terminology without transliteration.
+
+Source text:
+The circuit breaker pattern prevents cascading failures...
+```
+
+## Supported Workflows
+
+- UI string localization
+- Documentation translation
+- Customer support message translation
+- API response localization
