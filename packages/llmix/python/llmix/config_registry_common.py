@@ -64,6 +64,12 @@ def _validate_sha256(sha256: str, label: str) -> None:
         raise InvalidConfigError(f"Invalid SHA-256 digest for {label}")
 
 
+def _normalize_sha256_digest(digest: str, label: str) -> str:
+    normalized = digest.removeprefix("sha256:")
+    _validate_sha256(normalized, label)
+    return normalized
+
+
 def _current_pointer_sha256(pointer: dict[str, str]) -> str:
     return _sha256_bytes(
         _canonical_json_bytes(

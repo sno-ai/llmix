@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, cast
 
 from llmix.config_registry_common import (
-    _current_pointer_sha256,
     _snapshot_registry_path,
     _validate_revision,
     _validate_sha256,
@@ -183,14 +182,6 @@ def _validate_registry_root_payload_bindings(
     if payload["current"]["manifest_sha256"] != payload["manifest"]["sha256"]:
         raise InvalidConfigError(
             f"Registry root current manifest digest does not match manifest binding: {source_path}"
-        )
-    current = {
-        "revision": payload["revision"],
-        "manifest_sha256": payload["manifest"]["sha256"],
-    }
-    if payload["current"]["sha256"] != _current_pointer_sha256(current):
-        raise InvalidConfigError(
-            f"Registry root current binding digest mismatch: {source_path}"
         )
     if payload["manifest"]["path"] != _snapshot_registry_path(
         payload["revision"], "manifest.json"

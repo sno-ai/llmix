@@ -336,29 +336,27 @@ def test_signed_registry_root_opens_from_cli_trust_manifest_schema(
     assert published.registry_root_path is not None
     envelope = _read_json(published.registry_root_path)
     manifest_path = tmp_path / "llmix-trust.json"
-    _write_json(
-        manifest_path,
-        {
-            "version": 1,
-            "kind": "llmix-trust-manifest",
-            "expectedRootDigest": f"sha256:{published.registry_root_sha256}",
-            "sourceSetDigest": f"sha256:{'1' * 64}",
-            "releasePlanDigest": f"sha256:{'2' * 64}",
-            "registryRootTrustPolicy": _trust_policy(),
-            "rekorPolicy": None,
-            "minimumRevision": None,
-            "minimumPublishedAt": None,
-            "highWatermark": None,
-            "registryRootSignerIdentity": {"type": "did-web", "domain": DOMAIN},
-            "registryRoot": {
-                "path": str(published.registry_root_path),
-                "revision": published.revision,
-                "publishedAt": envelope["payload"]["published_at"],
-                "highWatermark": published.revision,
-            },
-            "releasePlan": {"path": "release-plan.json", "sourceCount": 1},
+    manifest = {
+        "version": 1,
+        "kind": "llmix-trust-manifest",
+        "expectedRootDigest": f"sha256:{published.registry_root_sha256}",
+        "sourceSetDigest": f"sha256:{'1' * 64}",
+        "releasePlanDigest": f"sha256:{'2' * 64}",
+        "registryRootTrustPolicy": _trust_policy(),
+        "rekorPolicy": None,
+        "minimumRevision": None,
+        "minimumPublishedAt": None,
+        "highWatermark": None,
+        "registryRootSignerIdentity": {"type": "did-web", "domain": DOMAIN},
+        "registryRoot": {
+            "path": str(published.registry_root_path),
+            "revision": published.revision,
+            "publishedAt": envelope["payload"]["published_at"],
+            "highWatermark": published.revision,
         },
-    )
+        "releasePlan": {"path": "release-plan.json", "sourceCount": 1},
+    }
+    _write_json(manifest_path, manifest)
 
     options = registry_root_options_from_trust_manifest(
         load_llmix_trust_manifest(manifest_path),
@@ -369,6 +367,25 @@ def test_signed_registry_root_opens_from_cli_trust_manifest_schema(
     )
 
     assert manager.get_preset("search", "summary")["model"] == "gpt-4.1-mini"
+
+    manifest_with_watermark = deepcopy(manifest)
+    manifest_with_watermark["highWatermark"] = published.revision
+    _write_json(manifest_path, manifest_with_watermark)
+    options_with_watermark = registry_root_options_from_trust_manifest(
+        load_llmix_trust_manifest(manifest_path),
+        did_web_verifier=RootDidWebVerifier(),
+    )
+    assert options_with_watermark.minimum_revision == published.revision
+    manager_with_watermark = ConfigRegistryManager.open(
+        root, ConfigRegistryOpenOptions(signed_root=options_with_watermark)
+    )
+    assert manager_with_watermark.get_preset("search", "summary")["model"] == "gpt-4.1-mini"
+
+    manifest_without_signer = deepcopy(manifest)
+    del manifest_without_signer["registryRootSignerIdentity"]
+    _write_json(manifest_path, manifest_without_signer)
+    with pytest.raises(InvalidConfigError, match="registryRootSignerIdentity"):
+        load_llmix_trust_manifest(manifest_path)
 
 
 def test_failed_registry_root_signing_does_not_activate_new_revision(

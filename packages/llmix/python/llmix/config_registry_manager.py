@@ -11,7 +11,7 @@ from typing import Any
 
 from llmix.config_registry_common import (
     _MANIFEST_SCHEMA_VERSION,
-    _current_pointer_sha256,
+    _normalize_sha256_digest,
     _read_json_file,
     _require_manifest_string,
     _sha256_file,
@@ -252,11 +252,11 @@ class ConfigRegistryManager:
 
         root_path = snapshot_dir / REGISTRY_ROOT_FILENAME
         if self.signed_root_options.expected_root_digest is not None:
-            _validate_sha256(
+            expected_root_digest = _normalize_sha256_digest(
                 self.signed_root_options.expected_root_digest,
                 "Config Registry expected_root_digest",
             )
-            if _sha256_file(root_path) != self.signed_root_options.expected_root_digest:
+            if _sha256_file(root_path) != expected_root_digest:
                 raise SecurityError(
                     "Registry root digest does not match expected_root_digest"
                 )
@@ -300,7 +300,7 @@ class ConfigRegistryManager:
             or payload["current"]["manifest_sha256"] != pointer["manifest_sha256"]
         ):
             raise SecurityError("Registry root current binding does not match current.json")
-        if payload["current"]["sha256"] != _current_pointer_sha256(pointer):
+        if payload["current"]["sha256"] != _sha256_file(self.current_path):
             raise SecurityError("Registry root current binding digest mismatch")
         if payload["manifest"]["path"] != _snapshot_registry_path(
             revision, "manifest.json"

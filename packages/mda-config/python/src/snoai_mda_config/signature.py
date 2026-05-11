@@ -63,6 +63,7 @@ def verify_signatures(
     rekor_client: RekorClient | None = None,
     sigstore_verifier: SigstoreVerifier | None = None,
     did_web_verifier: DidWebVerifier | None = None,
+    payload_bytes: bytes | None = None,
 ) -> None:
     """Evaluate signatures against a trust policy threshold."""
 
@@ -78,7 +79,9 @@ def verify_signatures(
             "trusted-runtime requires a non-empty signatures[] field",
         )
 
-    payload_bytes = _canonical_json(integrity)
+    effective_payload_bytes = payload_bytes or _canonical_json(
+        {"integrity": {"algorithm": integrity["algorithm"], "digest": integrity["digest"]}}
+    )
     trusted: set[str] = set()
     candidate_errors: list[MdaConfigError] = []
     for sig in signatures:
@@ -87,7 +90,7 @@ def verify_signatures(
         try:
             identity = _verify_candidate(
                 sig,
-                payload_bytes,
+                effective_payload_bytes,
                 policy,
                 rekor_client=rekor_client,
                 sigstore_verifier=sigstore_verifier,

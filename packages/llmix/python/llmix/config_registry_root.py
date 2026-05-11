@@ -10,7 +10,6 @@ from typing import Any, cast
 from snoai_mda_config import IntegrityField, MdaConfigError, verify_signatures
 
 from llmix.config_registry_common import (
-    _canonical_json_bytes,
     _compare_revision,
     _current_pointer_sha256,
     _sha256_bytes,
@@ -141,6 +140,7 @@ def verify_registry_root_signatures(
             rekor_client=options.rekor_client,
             sigstore_verifier=options.sigstore_verifier,
             did_web_verifier=options.did_web_verifier,
+            payload_bytes=signing_input.canonical_payload.encode("utf-8"),
         )
     except MdaConfigError as exc:
         raise SecurityError(f"Registry root signature verification failed: {exc}") from exc
@@ -183,8 +183,9 @@ def enforce_registry_root_freshness(
 
 
 def _registry_root_signing_input(payload: dict[str, Any]) -> RegistryRootSigningInput:
-    canonical_payload = _canonical_json_bytes(payload).decode("utf-8")
-    payload_sha256 = _sha256_bytes(canonical_payload.encode("utf-8"))
+    canonical_payload_bytes = _canonical_compact_json_bytes(payload)
+    canonical_payload = canonical_payload_bytes.decode("utf-8")
+    payload_sha256 = _sha256_bytes(canonical_payload_bytes)
     return RegistryRootSigningInput(
         payload=payload,
         canonical_payload=canonical_payload,
@@ -192,6 +193,15 @@ def _registry_root_signing_input(payload: dict[str, Any]) -> RegistryRootSigning
         payload_type=REGISTRY_ROOT_PAYLOAD_TYPE,
         payload_sha256=payload_sha256,
     )
+
+
+def _canonical_compact_json_bytes(value: dict[str, Any]) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
 
 
 def _normalize_registry_root_signature(value: dict[str, Any]) -> dict[str, Any]:
