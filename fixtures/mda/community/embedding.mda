@@ -1,0 +1,42 @@
+---
+name: embedding
+version: "1.0"
+provider: openai
+model: text-embedding-3-small
+temperature: 0.0
+max_output_tokens: 0
+description: "Text embedding generation for semantic search and RAG"
+---
+
+# Embedding Preset
+
+A preset for generating text embeddings using OpenAI's embedding models.
+Used for semantic search, RAG retrieval, clustering, and similarity scoring.
+
+## Configuration Notes
+
+- **Temperature 0.0**: Embeddings are deterministic — temperature has no
+  effect but is set to 0 for clarity.
+- **Max output 0**: Embedding endpoints return vectors, not text tokens.
+  This field is ignored by the embedding dispatch path.
+- **Model**: `text-embedding-3-small` (1536 dimensions) is the best
+  cost/performance ratio. Use `text-embedding-3-large` (3072 dim) when
+  retrieval accuracy is critical and storage cost is acceptable.
+
+## Dimensions Parameter
+
+LLMix passes a `dimensions` kwarg when specified in the call config:
+
+```python
+config = registry.load_preset("embedding")
+config["kwargs"] = {"dimensions": 512}  # Matryoshka truncation
+```
+
+Reducing dimensions saves storage with minimal quality loss for
+most retrieval tasks (512 dim retains ~95% of full-dim quality).
+
+## Batching
+
+For bulk embedding, use `pipeline.call_batch()` which automatically
+chunks inputs to respect the provider's batch size limits (2048 inputs
+per request for OpenAI).
