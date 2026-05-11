@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,33 @@ def _root_signer(input_value: RegistryRootSigningInput) -> dict[str, Any]:
         "signature": "fixture-registry-root-signature",
         "payload-type": input_value.payload_type,
     }
+
+
+def _legacy_registry_root_payload_bytes(payload: dict[str, Any]) -> bytes:
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _resign_registry_root_legacy_pretty(
+    envelope: dict[str, Any],
+) -> dict[str, Any]:
+    updated = deepcopy(envelope)
+    payload_sha256 = hashlib.sha256(
+        _legacy_registry_root_payload_bytes(updated["payload"])
+    ).hexdigest()
+    digest = f"sha256:{payload_sha256}"
+    updated["payload_sha256"] = payload_sha256
+    updated["integrity"] = {"algorithm": "sha256", "digest": digest}
+    updated["signatures"] = [
+        {
+            "signer": f"did-web:{DOMAIN}",
+            "key-id": f"did:web:{DOMAIN}#root",
+            "payload-digest": digest,
+            "algorithm": "ed25519",
+            "signature": "fixture-registry-root-signature",
+            "payload-type": REGISTRY_ROOT_PAYLOAD_TYPE,
+        }
+    ]
+    return updated
 
 
 def _publish_options() -> ConfigRegistryPublishOptions:
@@ -202,6 +230,25 @@ def test_publish_writes_signed_registry_root_and_manager_opens_it(
     assert config["model"] == "gpt-5-mini"
     assert verifier.seen is not None
     assert verifier.seen.payload_type == REGISTRY_ROOT_PAYLOAD_TYPE
+
+
+def test_signed_registry_root_opens_legacy_pretty_canonical_payload(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_authoring_preset(root)
+
+    published = ConfigRegistryPublisher(root).publish(
+        revision="rev-1", options=_publish_options()
+    )
+    assert published.registry_root_path is not None
+    envelope = _resign_registry_root_legacy_pretty(
+        _read_json(published.registry_root_path)
+    )
+    _write_json(published.registry_root_path, envelope)
+
+    manager = ConfigRegistryManager.open(root, _open_options())
+    assert manager.get_preset("search", "summary")["model"] == "gpt-4.1-mini"
 
 
 def test_publish_passes_trusted_runtime_options_to_mda_loader(tmp_path: Path) -> None:
