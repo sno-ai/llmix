@@ -35,16 +35,22 @@ Meanings are fixed:
 ## Tools
 
 Use only the MDA CLI and LLMix. Do not write an app-local compiler, registry generator, or custom directory structure.
+This did:web example assumes `release/did-web-private-key.pem` and `release/did.json` already exist outside `config/llm`.
 
 ```bash
+mkdir -p config/llm/source/search_summary release deploy
+mda init --template llmix-preset --module search_summary --preset openai_fast --provider openai --model gpt-5-mini --out config/llm/source/search_summary/openai_fast.mda
 mda validate config/llm/source/search_summary/openai_fast.mda --target source --json
 mda integrity compute config/llm/source/search_summary/openai_fast.mda --target source --write --json
-mda sign config/llm/source/search_summary/openai_fast.mda ... --in-place --json
-mda verify config/llm/source/search_summary/openai_fast.mda --target source ... --json
-mda release prepare --target llmix-registry --source config/llm/source --registry-dir config/llm ... --json
+mda release trust policy --target llmix-registry --profile did-web --domain config.example.com --out release/trust-policy.json --json
+mda sign config/llm/source/search_summary/openai_fast.mda --profile did-web --did did:web:config.example.com --key-id did:web:config.example.com#release --key-file release/did-web-private-key.pem --in-place --json
+mda verify config/llm/source/search_summary/openai_fast.mda --target source --policy release/trust-policy.json --did-document release/did.json --json
+mda release prepare --target llmix-registry --source config/llm/source --registry-dir config/llm --policy release/trust-policy.json --did-document release/did.json --out release/plan.json --json
+llmix publish-registry --root config/llm --release-plan release/plan.json --revision 2026-05-14T000000Z --policy release/trust-policy.json --did-document release/did.json --root-did did:web:config.example.com --root-key-id did:web:config.example.com#release --root-key-file release/did-web-private-key.pem --json
+mda release finalize --target llmix-registry --registry-dir config/llm --registry-root config/llm/compiled/2026-05-14T000000Z/registry-root.json --release-plan release/plan.json --policy release/trust-policy.json --derive-root-digest --minimum-revision 2026-05-14T000000Z --out deploy/llmix-trust.json --did-document release/did.json --json
+mda doctor release --target llmix-registry --source config/llm/source --registry-dir config/llm --release-plan release/plan.json --manifest deploy/llmix-trust.json --did-document release/did.json --json
+llmix check-registry --root config/llm --trust deploy/llmix-trust.json --preset search_summary/openai_fast --did-document release/did.json --tamper-proof --json
 ```
-
-Then run the LLMix publisher against `config/llm`, finalize the release with the MDA CLI, and run MDA CLI doctor checks.
 
 ## Runtime Proof
 

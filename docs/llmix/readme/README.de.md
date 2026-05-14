@@ -62,7 +62,6 @@ cargo add llmix-rs --features providers-openai,redis
 
 ## Dokumentation
 
-- [Usage reference](../llmix-usage-ref.md)
 - [TypeScript guide](../llmix-typescript.md)
 - [Python guide](../llmix-python.md)
 - [Rust guide](../llmix-rust.md)
@@ -245,13 +244,13 @@ A preset is still a normal MDA file:
 
 ```mda
 ---
-name: extraction
-description: Entity extraction preset.
+name: openai_fast
+description: Fast OpenAI preset for search summaries.
 metadata:
   snoai-llmix:
     common:
       provider: openai
-      model: gpt-4o-mini
+      model: gpt-5-mini
       temperature: 0.2
       maxOutputTokens: 512
     caching:
@@ -260,9 +259,9 @@ metadata:
       openai:
         reasoningEffort: medium
 ---
-# extraction
+# openai_fast
 
-Extract named entities. Return compact JSON.
+Summarize search results for a research workflow.
 ```
 
 For editing or tests, direct loaders can read source presets:
@@ -270,19 +269,19 @@ For editing or tests, direct loaders can read source presets:
 ```typescript
 import { loadMdaConfig } from "@snoai/llmix";
 
-const config = await loadMdaConfig("./config/llm/source/search/extraction.mda");
+const config = await loadMdaConfig("./config/llm/source/search_summary/openai_fast.mda");
 ```
 
 ```python
 from llmix import load_mda_config
 
-config = load_mda_config("./config/llm/source/search/extraction.mda")
+config = load_mda_config("./config/llm/source/search_summary/openai_fast.mda")
 ```
 
 ```rust
 use llmix_rs::load_config;
 
-let config = load_config("./config/llm/source/search/extraction.mda")?;
+let config = load_config("./config/llm/source/search_summary/openai_fast.mda")?;
 ```
 
 Production services should use the registry flow below.
@@ -303,38 +302,113 @@ Required flow:
 6. Deliver the trust anchor from outside `config/llm`.
 7. Open `config/llm` at runtime through LLMix with that external trust anchor.
 
+The did:web example assumes `release/did-web-private-key.pem` and `release/did.json` already exist outside `config/llm`.
+
 ```bash
-mda validate config/llm/source/search/extraction.mda --target source --json
-mda integrity compute config/llm/source/search/extraction.mda --target source --write --json
-mda sign config/llm/source/search/extraction.mda ... --in-place --json
-mda verify config/llm/source/search/extraction.mda --target source ... --json
-mda release prepare --target llmix-registry --source config/llm/source --registry-dir config/llm ... --json
+mkdir -p config/llm/source/search_summary release deploy
+
+mda init --template llmix-preset \
+  --module search_summary \
+  --preset openai_fast \
+  --provider openai \
+  --model gpt-5-mini \
+  --out config/llm/source/search_summary/openai_fast.mda
+
+mda validate config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --json
+
+mda integrity compute config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --write \
+  --json
+
+mda release trust policy \
+  --target llmix-registry \
+  --profile did-web \
+  --domain config.example.com \
+  --out release/trust-policy.json \
+  --json
+
+mda sign config/llm/source/search_summary/openai_fast.mda \
+  --profile did-web \
+  --did did:web:config.example.com \
+  --key-id did:web:config.example.com#release \
+  --key-file release/did-web-private-key.pem \
+  --in-place \
+  --json
+
+mda verify config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --json
+
+mda release prepare \
+  --target llmix-registry \
+  --source config/llm/source \
+  --registry-dir config/llm \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --out release/plan.json \
+  --json
+
+llmix publish-registry \
+  --root config/llm \
+  --release-plan release/plan.json \
+  --revision 2026-05-14T000000Z \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --root-did did:web:config.example.com \
+  --root-key-id did:web:config.example.com#release \
+  --root-key-file release/did-web-private-key.pem \
+  --json
+
+mda release finalize \
+  --target llmix-registry \
+  --registry-dir config/llm \
+  --registry-root config/llm/compiled/2026-05-14T000000Z/registry-root.json \
+  --release-plan release/plan.json \
+  --policy release/trust-policy.json \
+  --derive-root-digest \
+  --minimum-revision 2026-05-14T000000Z \
+  --out deploy/llmix-trust.json \
+  --did-document release/did.json \
+  --json
+
+mda doctor release \
+  --target llmix-registry \
+  --source config/llm/source \
+  --registry-dir config/llm \
+  --release-plan release/plan.json \
+  --manifest deploy/llmix-trust.json \
+  --did-document release/did.json \
+  --json
+
+llmix check-registry \
+  --root config/llm \
+  --trust deploy/llmix-trust.json \
+  --preset search_summary/openai_fast \
+  --did-document release/did.json \
+  --tamper-proof \
+  --json
 ```
 
 ```typescript
 import {
   ConfigRegistryManager,
-  ConfigRegistryPublisher,
-  RegistryRootVerificationOptions,
+  loadLlmixTrustManifest,
+  registryRootOptionsFromTrustManifest,
 } from "@snoai/llmix";
 
-await new ConfigRegistryPublisher("config/llm").publish({
-  trustedRuntime: true,
-  trustPolicy: sourceTrustPolicy,
-  didWebVerifier,
-  registryRoot: { signer: registryRootSigner },
+const trust = await loadLlmixTrustManifest(process.env.LLMIX_TRUST_ANCHOR!);
+const manager = await ConfigRegistryManager.open("config/llm", {
+  signedRoot: registryRootOptionsFromTrustManifest(trust, { didWebVerifier }),
 });
-
-const signedRoot: RegistryRootVerificationOptions = {
-  trustPolicy: registryRootTrustPolicy,
-  didWebVerifier,
-  expectedRootDigest: externalTrust.expectedRootDigest,
-  minimumRevision: externalTrust.minimumRevision,
-};
-
-const manager = await ConfigRegistryManager.open("config/llm", { signedRoot });
-const config = await manager.getPreset("search", "extraction");
+const config = await manager.getPreset("search_summary", "openai_fast");
 ```
+
+`didWebVerifier` is the app verifier hook required by this did:web policy. For a command-line runtime proof, use `llmix check-registry --did-document release/did.json`; in app code, pass the verifier hooks required by your trust policy.
 
 The external trust anchor can come from an environment variable, application config, build-time constant, secret/config manager, Kubernetes or cloud config, or release attestation.
 

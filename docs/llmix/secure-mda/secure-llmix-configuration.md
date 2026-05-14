@@ -2,9 +2,9 @@
 
 Languages: [English](./secure-llmix-configuration.md) | [Deutsch](./secure-llmix-configuration.de.md) | [Español](./secure-llmix-configuration.es.md) | [Français](./secure-llmix-configuration.fr.md) | [हिन्दी](./secure-llmix-configuration.hi.md) | [日本語](./secure-llmix-configuration.ja.md) | [한국어](./secure-llmix-configuration.ko.md) | [Русский](./secure-llmix-configuration.ru.md) | [中文](./secure-llmix-configuration.zh.md)
 
-This is the official secure LLMix registry flow. Read it after the README, the
-TypeScript guide, and the usage reference. This page is the production runbook,
-not a second registry design.
+This is the official secure LLMix registry flow. Read it after the README and
+the guide for the runtime you ship. This page is the production runbook, not a
+second registry design.
 
 Roles are fixed:
 
@@ -306,6 +306,12 @@ console.log({
 });
 ```
 
+The verifier variables are app hooks, not extra registry files. For this did:web
+example, `didWebVerifier` is enough when the policy only requires did:web; add
+`rekorClient` and `sigstoreVerifier` only when your policy requires
+Sigstore/Rekor. For a command-line runtime proof, use `llmix check-registry
+--did-document release/did.json`.
+
 For production services, always pass `signedRoot`. Opening without `signedRoot`
 only parses the registry and is not a secure runtime check.
 
@@ -393,5 +399,6 @@ is the behavior: a valid registry loads; a modified registry does not.
 
 - [LLMix README](../../../README.md)
 - [LLMix TypeScript guide](../llmix-typescript.md)
-- [LLMix usage reference](../llmix-usage-ref.md)
+- [LLMix Python guide](../llmix-python.md)
+- [LLMix Rust guide](../llmix-rust.md)
 - [MDA Config Runtime Guide](../../mda-config/README.md)

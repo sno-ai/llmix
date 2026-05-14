@@ -1,9 +1,9 @@
 # LLMix TypeScript Guide
 
 Read this after the README. This page is the application-code guide: it shows
-how to install LLMix, run calls, and open the generated registry from a
-TypeScript service. Use the usage reference for tables and the secure MDA guide
-for the full release runbook.
+how to install LLMix, run calls, publish the official registry, and open the
+generated registry from a TypeScript service. Use the secure MDA guide for the
+full production release runbook.
 
 Install the package from npm:
 
@@ -85,6 +85,56 @@ With TypeScript directly:
 OPENAI_API_KEY=sk-... bun run quickstart.ts
 ```
 
+## Mental Model
+
+LLMix has five pieces:
+
+| Piece | What it does |
+| --- | --- |
+| `CallPipeline` | Runs one LLM call through cache, retries, key rotation, circuit breaker, singleflight, and dispatch. |
+| `PipelineConfig` | Wires the dispatch function and runtime knobs. |
+| `CallInput` | Carries the resolved model config and chat messages. |
+| `KeyPool` | Rotates API keys per provider and marks dead keys on auth failures. |
+| `TwoTierCache` | Uses in-process memory as L1 and optional Redis as L2. |
+
+LLMix is not a replacement for OpenAI, Anthropic, AI SDK, LiteLLM, or your own
+provider client. It wraps the call site where those SDKs are used.
+
+## Config Shape
+
+TypeScript uses camelCase in code:
+
+```typescript
+{
+  provider: "openai",
+  model: "gpt-4o-mini",
+  common: { temperature: 0.2, maxOutputTokens: 512 },
+  caching: { strategy: "memory", ttl: 3600 },
+  providerOptions: {
+    openai: { reasoningEffort: "medium" },
+  },
+}
+```
+
+The same preset in an `.mda` source also uses camelCase under
+`metadata.snoai-llmix`. Python and Rust normalize known fields into their
+snake_case runtime shape after loading.
+
+## Provider Coverage
+
+| Provider family | TypeScript helper |
+| --- | --- |
+| OpenAI-compatible | `openaiDispatch()` |
+| Anthropic | `anthropicDispatch()` |
+| Gemini | `geminiDispatch()` |
+| OpenRouter | `openrouterDispatch()` |
+| DeepInfra | `deepinfraDispatch()` |
+| Novita | `novitaDispatch()` |
+| Together | `togetherDispatch()` |
+| SNO GPU | `snoGpuDispatch()` |
+
+Provider helpers use optional SDKs. Install only the provider SDKs you call.
+
 ## Redis Cache
 
 ```typescript
@@ -116,6 +166,24 @@ pipeline.setKeyPool("openai", new KeyPool(["sk-live-1", "sk-live-2"]));
 
 `loadKeysFromEnv("openai")` checks `OPENAI_KEYS` first, then
 `OPENAI_API_KEY`. `OPENAI_KEYS` is comma-separated.
+
+## Environment Variables
+
+Key pools can be loaded from environment variables. Provider names normalize
+hyphens to underscores and uppercase.
+
+| Provider | Multi-key variable | Single-key fallback |
+| --- | --- | --- |
+| OpenAI | `OPENAI_KEYS` | `OPENAI_API_KEY` |
+| Anthropic | `ANTHROPIC_KEYS` | `ANTHROPIC_API_KEY` |
+| Gemini | `GEMINI_KEYS` | `GEMINI_API_KEY` |
+| OpenRouter | `OPENROUTER_KEYS` | `OPENROUTER_API_KEY` |
+| DeepInfra | `DEEPINFRA_KEYS` | `DEEPINFRA_API_KEY` |
+| Novita | `NOVITA_KEYS` | `NOVITA_API_KEY` |
+| Together | `TOGETHER_KEYS` | `TOGETHER_API_KEY` |
+| SNO GPU | `SNO_GPU_KEYS` | `SNO_GPU_API_KEY` |
+
+`*_KEYS` is comma-separated. If both variables exist, `*_KEYS` wins.
 
 ## Config Registry
 
@@ -257,6 +325,11 @@ const config = await manager.getPreset("search_summary", "openai_fast");
 console.log(await manager.availablePresets());
 ```
 
+`didWebVerifier` is the app verifier hook required by this did:web policy. For a
+command-line runtime proof, use `llmix check-registry --did-document
+release/did.json`; in app code, pass the verifier hooks required by your trust
+policy.
+
 This is the fixed split: MDA CLI gates the release before and after publishing,
 LLMix publishes and loads the registry, and runtime code passes `signedRoot`
 options derived from the external trust anchor.
@@ -284,6 +357,78 @@ const preset = await loadMdaConfigPreset("openai_fast", "./config/llm/source/sea
 ```
 
 For production runtime code, prefer `ConfigRegistryManager`.
+
+## MDA Source Presets
+
+MDA is the source format for presets. Use it when model choice, provider
+options, cache policy, timeout policy, tags, and rollout metadata should be
+reviewed as source files instead of hidden in application code.
+
+The LLMix-specific data lives under `metadata.snoai-llmix`. MDA-owned mechanism
+fields such as `requires`, `integrity`, and `signatures` stay at the top level
+and are handled by the MDA parser.
+
+```md
+---
+name: openai_fast
+title: OpenAI Fast Search Summary
+description: Fast OpenAI preset for search summaries.
+tags:
+  - search
+  - production
+requires:
+  network: public
+metadata:
+  snoai-llmix:
+    common:
+      provider: openai
+      model: gpt-5-mini
+      temperature: 0.2
+      maxOutputTokens: 512
+      maxRetries: 2
+    providerOptions:
+      openai:
+        reasoningEffort: medium
+        textVerbosity: low
+    timeout:
+      totalTime: 45
+      streamFirstChunkTime: 12
+    caching:
+      strategy: redis-or-memory
+      ttl: 3600
+      maxItems: 2000
+    tags:
+      - search
+      - production
+---
+
+Summarize search results for a research workflow.
+```
+
+`metadata.snoai-llmix` is strict. Unknown keys are rejected unless a field is
+documented as a provider-specific pass-through record. Presets should fail
+during publishing, not during a production request.
+
+| Key | Required | Purpose |
+| --- | --- | --- |
+| `common` | yes | Provider, model, and portable generation parameters. |
+| `providerOptions` | no | Provider-specific options such as OpenAI reasoning effort or Anthropic thinking. |
+| `timeout` | no | Per-call timeout hints in seconds. |
+| `description` | no | Overrides the top-level MDA description in the projected runtime config. |
+| `deprecated` | no | Marks a preset as deprecated for tooling. |
+| `tags` | no | Overrides top-level MDA tags in the projected runtime config. |
+| `caching` | no | Response cache strategy and TTL. |
+| `bypassGateway` | no | Compatibility flag for deployments that route around a gateway. |
+
+`common.provider` and `common.model` are required. Supported providers are
+`openai`, `anthropic`, `google`, `deepseek`, `openrouter`, `deepinfra`,
+`novita`, `together`, and `sno-gpu`.
+
+The reserved semantic payload type for signed LLMix presets is:
+
+```text
+application/vnd.snoai-llmix.preset+json
+```
 
 ## Custom Dispatch
 
@@ -387,3 +532,20 @@ const pipeline = new CallPipeline({
 
 Most services should start with defaults. Tune only after real traffic shows a
 specific pressure point.
+
+## Boundaries
+
+Good fits for LLMix:
+
+- shared model presets
+- cache policy
+- retry and concurrency defaults
+- API key rotation
+- provider kwargs normalization
+
+Keep these in product code:
+
+- user authorization
+- billing policy
+- product-specific prompt branching
+- provider account ownership rules
