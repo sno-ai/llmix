@@ -110,9 +110,8 @@ impl ConfigRegistryManager {
         self.last_reload_failure_at
     }
 
-    pub fn available_presets(&mut self) -> LlmixResult<Vec<String>> {
-        self.refresh_if_needed()?;
-        Ok(self.configs.keys().cloned().collect())
+    pub fn available_presets(&self) -> Vec<String> {
+        self.configs.keys().cloned().collect()
     }
 
     pub fn get_preset<S1, S2>(&mut self, module: S1, preset: S2) -> LlmixResult<Value>

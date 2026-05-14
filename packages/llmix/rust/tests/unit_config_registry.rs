@@ -207,9 +207,7 @@ fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
     assert_eq!(manager.current_path(), root.join("current.json").as_path());
     assert_eq!(manager.compiled_dir(), root.join("compiled").as_path());
     assert_eq!(
-        manager
-            .available_presets()
-            .expect("available presets should list"),
+        manager.available_presets(),
         vec!["search/summary".to_string()]
     );
     assert!(root
@@ -303,7 +301,7 @@ fn signed_registry_root_refresh_fails_closed_when_trust_anchor_stays_pinned() {
 
     assert_ne!(second.registry_root_sha256, first.registry_root_sha256);
     let error = manager
-        .available_presets()
+        .get_preset("search", "summary")
         .expect_err("signed refresh should fail closed when pinned digest changes");
     assert!(matches!(error, LlmixError::Security(_)));
     assert!(
