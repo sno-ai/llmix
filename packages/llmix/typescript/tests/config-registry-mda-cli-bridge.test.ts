@@ -1,28 +1,19 @@
 import assert from "node:assert/strict"
-import { Buffer } from "node:buffer"
 import { execFile } from "node:child_process"
-import { createHash, generateKeyPairSync, sign as cryptoSign, verify as cryptoVerify } from "node:crypto"
+import { createHash, generateKeyPairSync } from "node:crypto"
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
-import type { DidWebVerifier, TrustPolicy } from "@snoai/mda-config"
+import type { TrustPolicy } from "@snoai/mda-config"
 
-import {
-	ConfigRegistryManager,
-	ConfigRegistryPublisher,
-	loadLlmixTrustManifest,
-	registryRootOptionsFromTrustManifest,
-	type RegistryRootSigner,
-} from "../src/index.js"
+import { runCli } from "../src/cli.js"
 
 const REQUIRED_MDA_CLI_VERSION = "1.1.2"
 const DID = "did:web:tools.example.com"
 const DID_DOMAIN = "tools.example.com"
-const DID_WEB_SIGNER = "did-web:tools.example.com"
 const DID_KEY_ID = `${DID}#release-2026`
-const REGISTRY_ROOT_PAYLOAD_TYPE = "application/vnd.snoai.llmix.registry-root+json"
-const MDA_CLI = process.env["MDA_CLI"] ?? "mda"
+const MDA_CLI = process.env["MDA_CLI"]
 
 async function runCommand(command: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
 	return await new Promise((resolve, reject) => {
@@ -37,6 +28,7 @@ async function runCommand(command: string, args: string[]): Promise<{ stdout: st
 }
 
 async function runMda(args: string[]): Promise<string> {
+	assert.ok(MDA_CLI)
 	const { stdout, stderr } = await runCommand(MDA_CLI, args)
 	assert.equal(stderr, "")
 	return stdout
@@ -46,7 +38,25 @@ async function runMdaJson<T>(args: string[]): Promise<T> {
 	return JSON.parse(await runMda([...args, "--json"])) as T
 }
 
+async function runLlmixJson<T>(args: string[]): Promise<T> {
+	const stdout: string[] = []
+	const stderr: string[] = []
+	const exitCode = await runCli([...args, "--json"], {
+		stdout(message) {
+			stdout.push(message)
+		},
+		stderr(message) {
+			stderr.push(message)
+		},
+	})
+	assert.equal(exitCode, 0, stderr.join("\n"))
+	return JSON.parse(stdout.join("\n")) as T
+}
+
 async function hasRequiredMdaCli(): Promise<boolean> {
+	if (MDA_CLI === undefined || MDA_CLI.length === 0) {
+		return false
+	}
 	try {
 		const version = (await runMda(["--version"])).trim()
 		return compareSemver(version, REQUIRED_MDA_CLI_VERSION) >= 0
@@ -73,19 +83,12 @@ function semverPart(parts: readonly number[], index: number): number {
 	return value === undefined || !Number.isFinite(value) ? 0 : value
 }
 
-function dssePae(payloadType: string, payloadBytes: Buffer): Buffer {
-	return Buffer.concat([
-		Buffer.from(`DSSEv1 ${Buffer.byteLength(payloadType, "utf8")} ${payloadType} ${payloadBytes.length} `, "utf8"),
-		payloadBytes,
-	])
-}
-
 function sha256Bytes(bytes: Buffer): string {
 	return createHash("sha256").update(bytes).digest("hex")
 }
 
 if (!(await hasRequiredMdaCli())) {
-	console.log(`[SKIP] mda >= ${REQUIRED_MDA_CLI_VERSION} is required for CLI bridge E2E`)
+	console.log(`[SKIP] MDA_CLI pointing to mda >= ${REQUIRED_MDA_CLI_VERSION} is required for CLI bridge E2E`)
 	process.exit(0)
 }
 
@@ -197,36 +200,47 @@ try {
 	assert.equal(releasePlanResult.sourceCount, 1)
 	assert.match(releasePlanResult.sourceSetDigest, /^sha256:[a-f0-9]{64}$/)
 
-	const didWebVerifier: DidWebVerifier = {
-		async verify(input) {
-			assert.equal(input.domain, DID_DOMAIN)
-			assert.equal(input.keyId, DID_KEY_ID)
-			assert.equal(input.algorithm, "ed25519")
-			return cryptoVerify(null, Buffer.from(input.paeBytes), publicKey, Buffer.from(input.signature, "base64"))
-		},
-	}
-	const registryRootSigner: RegistryRootSigner = ({ canonicalPayload, integrity, payloadType }) => ({
-		signer: DID_WEB_SIGNER,
-		"key-id": DID_KEY_ID,
-		algorithm: "ed25519",
-		"payload-type": payloadType,
-		"payload-digest": integrity.digest,
-		signature: cryptoSign(
-			null,
-			dssePae(REGISTRY_ROOT_PAYLOAD_TYPE, Buffer.from(canonicalPayload, "utf8")),
-			privateKey,
-		).toString("base64"),
-	})
-
-	const published = await new ConfigRegistryPublisher(registryDir).publish({
-		revision: "2026-05-11T000000Z",
-		trustedRuntime: true,
-		trustPolicy: policyResult.policy,
-		didWebVerifier,
-		registryRoot: { signer: registryRootSigner },
-	})
+	const published = await runLlmixJson<{
+		ok: boolean
+		revision: string
+		registryRootPath: string
+		registryRootSha256: string
+		presetIds: string[]
+	}>([
+		"publish-registry",
+		"--root",
+		registryDir,
+		"--release-plan",
+		releasePlanPath,
+		"--revision",
+		"2026-05-11T000000Z",
+		"--policy",
+		sourcePolicyPath,
+		"--did-document",
+		didDocumentPath,
+		"--root-did",
+		DID,
+		"--root-key-id",
+		DID_KEY_ID,
+		"--root-key-file",
+		keyPath,
+	])
+	assert.equal(published.ok, true)
 	assert.ok(published.registryRootPath)
 	assert.ok(published.registryRootSha256)
+	assert.deepEqual(published.presetIds, ["search_summary/openai_fast"])
+	const currentPath = path.join(registryDir, "current.json")
+	const current = JSON.parse(await readFile(currentPath, "utf8")) as { revision: string }
+	assert.equal(current.revision, "2026-05-11T000000Z")
+	const compiledRevisionDir = path.join(registryDir, "compiled", "2026-05-11T000000Z")
+	assert.equal(published.registryRootPath, path.join(compiledRevisionDir, "registry-root.json"))
+	assert.ok(JSON.parse(await readFile(path.join(compiledRevisionDir, "manifest.json"), "utf8")))
+	assert.ok(await readFile(path.join(compiledRevisionDir, "source", "search_summary", "openai_fast.mda")))
+	const resolved = JSON.parse(
+		await readFile(path.join(compiledRevisionDir, "resolved", "search_summary", "openai_fast.json"), "utf8"),
+	) as { provider: string; model: string }
+	assert.equal(resolved.provider, "openai")
+	assert.equal(resolved.model, "gpt-5-mini")
 
 	const trustManifestPath = path.join(releaseDir, "llmix-trust.json")
 	const finalizeResult = await runMdaJson<{ ok: boolean; expectedRootDigest: string; sourceSetDigest: string }>([
@@ -272,21 +286,38 @@ try {
 	])
 	assert.equal(doctorResult.ok, true)
 
-	const manifest = await loadLlmixTrustManifest(trustManifestPath)
-	const manager = await ConfigRegistryManager.open(registryDir, {
-		signedRoot: registryRootOptionsFromTrustManifest(manifest, { didWebVerifier }),
-	})
-	const config = await manager.getPreset("search_summary", "openai_fast")
-	assert.equal(config.provider, "openai")
-	assert.equal(config.model, "gpt-5-mini")
+	const checked = await runLlmixJson<{
+		ok: boolean
+		activeRevision: string
+		preset: string
+		provider: string
+		model: string
+		tamperProof: { rejected: boolean; message: string }
+	}>([
+		"check-registry",
+		"--root",
+		registryDir,
+		"--trust",
+		trustManifestPath,
+		"--preset",
+		"search_summary/openai_fast",
+		"--did-document",
+		didDocumentPath,
+		"--tamper-proof",
+	])
+	assert.equal(checked.ok, true)
+	assert.equal(checked.provider, "openai")
+	assert.equal(checked.model, "gpt-5-mini")
+	assert.equal(checked.tamperProof.rejected, true)
 	console.log(
 		"CLI_BRIDGE_LOADED_CONFIG",
 		JSON.stringify({
-			activeRevision: manager.activeRevision,
-			preset: "search_summary/openai_fast",
-			provider: config.provider,
-			model: config.model,
+			activeRevision: checked.activeRevision,
+			preset: checked.preset,
+			provider: checked.provider,
+			model: checked.model,
 			expectedRootDigest: finalizeResult.expectedRootDigest,
+			tamperRejected: checked.tamperProof.rejected,
 		}),
 	)
 	console.log("[PASS] mda 1.1.2 native LLMix registry-root bridge")
