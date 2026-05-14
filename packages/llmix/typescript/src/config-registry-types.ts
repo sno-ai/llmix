@@ -27,12 +27,12 @@ export interface PresetSource {
 	module: string
 	preset: string
 	presetId: string
-	authoringPath: string
+	sourcePath: string
 }
 
 export interface ManifestPresetEntry {
-	authoring_path: string
-	authoring_sha256: string
+	source_path: string
+	source_sha256: string
 	resolved_path: string
 	resolved_sha256: string
 }
@@ -56,7 +56,7 @@ export interface ParsedCurrentPointer {
 
 export interface PublishedRevision {
 	revision: string
-	snapshotPath: string
+	compiledPath: string
 	manifestPath: string
 	manifestSha256: string
 	registryRootPath?: string
@@ -80,7 +80,7 @@ export interface RegistryRootManifestBinding extends ConfigRegistryJsonObject {
 export interface RegistryRootFileDigest extends ConfigRegistryJsonObject {
 	path: string
 	sha256: string
-	role: "authoring" | "resolved"
+	role: "source" | "resolved"
 }
 
 export interface RegistryRootPayload extends ConfigRegistryJsonObject {

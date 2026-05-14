@@ -14,8 +14,8 @@ import {
 	readJsonObject,
 	sha256Bytes,
 	sha256File,
-	snapshotRegistryPath,
-	snapshotRelativePath,
+	compiledRegistryPath,
+	compiledRelativePath,
 	validateRevision,
 } from "./config-registry-common.js"
 import {
@@ -37,7 +37,7 @@ import {
 
 export class ConfigRegistryManager {
 	readonly root: string
-	readonly snapshotsDir: string
+	readonly compiledDir: string
 	readonly currentPath: string
 	private readonly signedRootOptions: RegistryRootVerificationOptions | undefined
 
@@ -51,7 +51,7 @@ export class ConfigRegistryManager {
 
 	private constructor(root: string, options?: ConfigRegistryOpenOptions) {
 		this.root = path.resolve(root)
-		this.snapshotsDir = path.join(this.root, "snapshots")
+		this.compiledDir = path.join(this.root, "compiled")
 		this.currentPath = path.join(this.root, "current.json")
 		this.signedRootOptions = options?.signedRoot
 	}
@@ -179,36 +179,36 @@ export class ConfigRegistryManager {
 			return { revision: pointer.revision, manifestSha256: pointer.manifestSha256 }
 		}
 
-		const manifestSha256 = await sha256File(path.join(this.snapshotsDir, pointer.revision, "manifest.json"))
+		const manifestSha256 = await sha256File(path.join(this.compiledDir, pointer.revision, "manifest.json"))
 		return { revision: pointer.revision, manifestSha256 }
 	}
 
 	private async loadRevision(pointer: CurrentPointer): Promise<Map<string, LLMConfig>> {
 		const revision = pointer.revision
 		validateRevision(revision)
-		const snapshotPath = path.join(this.snapshotsDir, revision)
+		const compiledPath = path.join(this.compiledDir, revision)
 		try {
-			await stat(snapshotPath)
+			await stat(compiledPath)
 		} catch (error) {
 			if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
-				throw new ConfigNotFoundError(`Config Registry snapshot not found: ${snapshotPath}`)
+				throw new ConfigNotFoundError(`Config Registry compiled revision not found: ${compiledPath}`)
 			}
 			throw error
 		}
 
-		const manifestPath = path.join(snapshotPath, "manifest.json")
+		const manifestPath = path.join(compiledPath, "manifest.json")
 		const manifest = parseManifest(
 			await this.readVerifiedJsonObject(manifestPath, pointer.manifestSha256, revision),
 			manifestPath,
 			revision,
 		)
-		await this.verifySignedRegistryRootIfNeeded(pointer, manifest, snapshotPath)
+		await this.verifySignedRegistryRootIfNeeded(pointer, manifest, compiledPath)
 		const configs = new Map<string, LLMConfig>()
 
 		for (const [presetId, entry] of Object.entries(manifest.presets)) {
-			const authoringPath = await this.resolveSnapshotArtifact(snapshotPath, entry.authoring_path, presetId)
-			await this.readVerifiedArtifactBytes(authoringPath, entry.authoring_sha256, presetId)
-			const resolvedPath = await this.resolveSnapshotArtifact(snapshotPath, entry.resolved_path, presetId)
+			const sourcePath = await this.resolveCompiledArtifact(compiledPath, entry.source_path, presetId)
+			await this.readVerifiedArtifactBytes(sourcePath, entry.source_sha256, presetId)
+			const resolvedPath = await this.resolveCompiledArtifact(compiledPath, entry.resolved_path, presetId)
 			const resolved = fromCanonicalResolvedConfig(
 				await this.readVerifiedJsonObject(resolvedPath, entry.resolved_sha256, presetId),
 				resolvedPath,
@@ -222,25 +222,25 @@ export class ConfigRegistryManager {
 	private async verifySignedRegistryRootIfNeeded(
 		pointer: CurrentPointer,
 		manifest: RegistryManifest,
-		snapshotPath: string,
+		compiledPath: string,
 	): Promise<void> {
 		if (this.signedRootOptions === undefined) {
 			return
 		}
-		const rootPath = path.join(snapshotPath, REGISTRY_ROOT_FILENAME)
+		const rootPath = path.join(compiledPath, REGISTRY_ROOT_FILENAME)
 		const rootDigest = await sha256File(rootPath)
 		const currentDigest = await sha256File(this.currentPath)
 		const envelope = parseRegistryRootEnvelope(await readJsonObject(rootPath), rootPath)
 		await verifyRegistryRootSignatures(envelope, this.signedRootOptions)
 		await enforceRegistryRootFreshness(envelope, this.signedRootOptions, rootDigest)
-		await this.verifyRegistryRootPayload(envelope.payload, pointer, manifest, snapshotPath, currentDigest)
+		await this.verifyRegistryRootPayload(envelope.payload, pointer, manifest, compiledPath, currentDigest)
 	}
 
 	private async verifyRegistryRootPayload(
 		payload: RegistryRootPayload,
 		pointer: CurrentPointer,
 		manifest: RegistryManifest,
-		snapshotPath: string,
+		compiledPath: string,
 		currentDigest: string,
 	): Promise<void> {
 		this.verifyRegistryRootBindings(payload, pointer, manifest, currentDigest)
@@ -252,9 +252,9 @@ export class ConfigRegistryManager {
 		}
 
 		for (const file of actualFiles) {
-			const relativePath = snapshotRelativePath(pointer.revision, file.path)
-			const artifactPath = path.join(snapshotPath, relativePath)
-			await verifyPathContainmentAsync(artifactPath, snapshotPath)
+			const relativePath = compiledRelativePath(pointer.revision, file.path)
+			const artifactPath = path.join(compiledPath, relativePath)
+			await verifyPathContainmentAsync(artifactPath, compiledPath)
 			const actualSha = await sha256File(artifactPath)
 			if (actualSha !== file.sha256) {
 				throw new SecurityError(`Registry root file digest mismatch: ${file.path}`)
@@ -277,20 +277,20 @@ export class ConfigRegistryManager {
 		if (payload.current.sha256 !== currentDigest) {
 			throw new SecurityError("Registry root current binding digest mismatch")
 		}
-		if (payload.manifest.path !== snapshotRegistryPath(pointer.revision, "manifest.json")) {
-			throw new SecurityError("Registry root manifest path does not match the active snapshot")
+		if (payload.manifest.path !== compiledRegistryPath(pointer.revision, "manifest.json")) {
+			throw new SecurityError("Registry root manifest path does not match the active compiled revision")
 		}
 		if (payload.manifest.sha256 !== pointer.manifestSha256) {
 			throw new SecurityError("Registry root manifest digest does not match current.json")
 		}
 	}
 
-	private async resolveSnapshotArtifact(snapshotPath: string, relativePath: string, presetId: string): Promise<string> {
+	private async resolveCompiledArtifact(compiledPath: string, relativePath: string, presetId: string): Promise<string> {
 		if (!relativePath) {
 			throw new InvalidConfigError(`Config Registry manifest entry is missing artifact path: ${presetId}`)
 		}
-		const artifactPath = path.join(snapshotPath, relativePath)
-		await verifyPathContainmentAsync(artifactPath, snapshotPath)
+		const artifactPath = path.join(compiledPath, relativePath)
+		await verifyPathContainmentAsync(artifactPath, compiledPath)
 		return artifactPath
 	}
 

@@ -81,21 +81,21 @@ export function currentPointerSha256(pointer: CurrentPointer): string {
 	return sha256Bytes(canonicalJsonString(currentPointerToJson(pointer)))
 }
 
-export function snapshotRegistryPath(revision: string, relativePath: string): string {
+export function compiledRegistryPath(revision: string, relativePath: string): string {
 	validateRevision(revision)
-	validateRegistryArtifactPath(relativePath, "snapshot path", "<registry>")
-	return path.posix.join("snapshots", revision, relativePath)
+	validateRegistryArtifactPath(relativePath, "compiled revision path", "<registry>")
+	return path.posix.join("compiled", revision, relativePath)
 }
 
-export function snapshotRelativePath(revision: string, registryPath: string): string {
+export function compiledRelativePath(revision: string, registryPath: string): string {
 	validateRevision(revision)
-	const prefix = `snapshots/${revision}/`
+	const prefix = `compiled/${revision}/`
 	if (!registryPath.startsWith(prefix)) {
-		throw new SecurityError(`Registry root file is outside the active snapshot: ${registryPath}`)
+		throw new SecurityError(`Registry root file is outside the active compiled revision: ${registryPath}`)
 	}
 	const relativePath = registryPath.slice(prefix.length)
 	if (!relativePath) {
-		throw new SecurityError(`Registry root file path is not a snapshot artifact: ${registryPath}`)
+		throw new SecurityError(`Registry root file path is not a compiled revision artifact: ${registryPath}`)
 	}
 	validateRegistryArtifactPath(relativePath, "registry root file", registryPath)
 	return relativePath
@@ -309,8 +309,8 @@ export function toMdaConfigLoadOptions(options?: ConfigRegistryPublishOptions): 
 	return Object.keys(loadOptions).length === 0 ? undefined : loadOptions
 }
 
-export function legacyYamlAuthoringError(filePath: string): InvalidConfigError {
-	return new InvalidConfigError(`Legacy YAML authoring presets are not supported; use .mda: ${filePath}`)
+export function legacyYamlSourceError(filePath: string): InvalidConfigError {
+	return new InvalidConfigError(`Legacy YAML source presets are not supported; use .mda: ${filePath}`)
 }
 
 function validateCanonicalResolvedObject(value: JsonObject, sourcePath: string): void {
@@ -390,8 +390,8 @@ export function manifestToJsonObject(manifest: RegistryManifest): JsonObject {
 	const presets: JsonObject = {}
 	for (const [presetId, entry] of Object.entries(manifest.presets)) {
 		presets[presetId] = {
-			authoring_path: entry.authoring_path,
-			authoring_sha256: entry.authoring_sha256,
+			source_path: entry.source_path,
+			source_sha256: entry.source_sha256,
 			resolved_path: entry.resolved_path,
 			resolved_sha256: entry.resolved_sha256,
 		}
@@ -405,23 +405,23 @@ export function manifestToJsonObject(manifest: RegistryManifest): JsonObject {
 	}
 }
 
-function parseManifestPresetEntry(value: unknown, presetId: string, sourcePath: string): ManifestPresetEntry {
+function parseManifestPresetEntry(value: unknown, presetId: string, manifestPath: string): ManifestPresetEntry {
 	if (!isJsonObject(value)) {
-		throw new InvalidConfigError(`Registry manifest entry must be an object: ${presetId} (${sourcePath})`)
+		throw new InvalidConfigError(`Registry manifest entry must be an object: ${presetId} (${manifestPath})`)
 	}
 
-	const authoringPath = ensureStringField(value, "authoring_path", sourcePath)
-	const authoringSha256 = ensureStringField(value, "authoring_sha256", sourcePath)
-	const resolvedPath = ensureStringField(value, "resolved_path", sourcePath)
-	const resolvedSha256 = ensureStringField(value, "resolved_sha256", sourcePath)
-		validateRegistryArtifactPath(authoringPath, `authoring_path for ${presetId}`, sourcePath)
-		validateRegistryArtifactPath(resolvedPath, `resolved_path for ${presetId}`, sourcePath)
-	validateSha256(authoringSha256, `manifest authoring_sha256 for ${presetId}`)
+	const sourcePath = ensureStringField(value, "source_path", manifestPath)
+	const sourceSha256 = ensureStringField(value, "source_sha256", manifestPath)
+	const resolvedPath = ensureStringField(value, "resolved_path", manifestPath)
+	const resolvedSha256 = ensureStringField(value, "resolved_sha256", manifestPath)
+	validateRegistryArtifactPath(sourcePath, `source_path for ${presetId}`, manifestPath)
+	validateRegistryArtifactPath(resolvedPath, `resolved_path for ${presetId}`, manifestPath)
+	validateSha256(sourceSha256, `manifest source_sha256 for ${presetId}`)
 	validateSha256(resolvedSha256, `manifest resolved_sha256 for ${presetId}`)
 
 	return {
-		authoring_path: authoringPath,
-		authoring_sha256: authoringSha256,
+		source_path: sourcePath,
+		source_sha256: sourceSha256,
 		resolved_path: resolvedPath,
 		resolved_sha256: resolvedSha256,
 	}

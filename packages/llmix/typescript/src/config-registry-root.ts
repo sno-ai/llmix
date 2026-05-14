@@ -12,8 +12,8 @@ import {
 	isJsonObject,
 	normalizeSha256Digest,
 	sha256Bytes,
-	snapshotRegistryPath,
-	snapshotRelativePath,
+	compiledRegistryPath,
+	compiledRelativePath,
 	validateRevision,
 	validateSha256,
 } from "./config-registry-common.js"
@@ -44,12 +44,12 @@ export function registryRootFileDigests(manifest: RegistryManifest): RegistryRoo
 	for (const [presetId, entry] of Object.entries(manifest.presets).sort(([left], [right]) => left.localeCompare(right))) {
 		const presetFiles: RegistryRootFileDigest[] = [
 			{
-				path: snapshotRegistryPath(manifest.revision, entry.authoring_path),
-				sha256: entry.authoring_sha256,
-				role: "authoring",
+				path: compiledRegistryPath(manifest.revision, entry.source_path),
+				sha256: entry.source_sha256,
+				role: "source",
 			},
 			{
-				path: snapshotRegistryPath(manifest.revision, entry.resolved_path),
+				path: compiledRegistryPath(manifest.revision, entry.resolved_path),
 				sha256: entry.resolved_sha256,
 				role: "resolved",
 			},
@@ -89,7 +89,7 @@ export function buildRegistryRootPayload(manifest: RegistryManifest, manifestSha
 			sha256: currentPointerSha256(currentPointer),
 		},
 		manifest: {
-			path: snapshotRegistryPath(manifest.revision, "manifest.json"),
+			path: compiledRegistryPath(manifest.revision, "manifest.json"),
 			sha256: manifestSha256,
 		},
 		files: registryRootFileDigests(manifest),
@@ -165,7 +165,7 @@ function parseRegistryRootFileDigest(value: unknown, sourcePath: string): Regist
 		throw new InvalidConfigError(`Registry root file entry must be an object: ${sourcePath}`)
 	}
 	const role = ensureStringField(value, "role", sourcePath)
-	if (role !== "authoring" && role !== "resolved") {
+	if (role !== "source" && role !== "resolved") {
 		throw new InvalidConfigError(`Registry root file entry has invalid role: ${sourcePath}`)
 	}
 	const sha256 = ensureStringField(value, "sha256", sourcePath)
@@ -219,13 +219,13 @@ function validateRegistryRootPayloadBindings(payload: RegistryRootPayload, sourc
 	if (payload.current.sha256 !== currentSha256) {
 		throw new InvalidConfigError(`Registry root current binding digest mismatch: ${sourcePath}`)
 	}
-	if (payload.manifest.path !== snapshotRegistryPath(payload.revision, "manifest.json")) {
+	if (payload.manifest.path !== compiledRegistryPath(payload.revision, "manifest.json")) {
 		throw new InvalidConfigError(`Registry root manifest path does not match payload revision: ${sourcePath}`)
 	}
 	for (const file of payload.files) {
-		const relativePath = snapshotRelativePath(payload.revision, file.path)
-		if (file.role === "authoring" && !relativePath.startsWith("authoring/")) {
-			throw new InvalidConfigError(`Registry root authoring file path does not match file role: ${sourcePath}`)
+		const relativePath = compiledRelativePath(payload.revision, file.path)
+		if (file.role === "source" && !relativePath.startsWith("source/")) {
+			throw new InvalidConfigError(`Registry root source file path does not match file role: ${sourcePath}`)
 		}
 		if (file.role === "resolved" && !relativePath.startsWith("resolved/")) {
 			throw new InvalidConfigError(`Registry root resolved file path does not match file role: ${sourcePath}`)
