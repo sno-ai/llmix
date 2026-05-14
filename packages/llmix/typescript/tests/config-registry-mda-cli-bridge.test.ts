@@ -22,6 +22,7 @@ const DID_DOMAIN = "tools.example.com"
 const DID_WEB_SIGNER = "did-web:tools.example.com"
 const DID_KEY_ID = `${DID}#release-2026`
 const REGISTRY_ROOT_PAYLOAD_TYPE = "application/vnd.snoai.llmix.registry-root+json"
+const MDA_CLI = process.env["MDA_CLI"] ?? "mda"
 
 async function runCommand(command: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
 	return await new Promise((resolve, reject) => {
@@ -36,7 +37,7 @@ async function runCommand(command: string, args: string[]): Promise<{ stdout: st
 }
 
 async function runMda(args: string[]): Promise<string> {
-	const { stdout, stderr } = await runCommand("mda", args)
+	const { stdout, stderr } = await runCommand(MDA_CLI, args)
 	assert.equal(stderr, "")
 	return stdout
 }
@@ -94,10 +95,10 @@ try {
 	const sourceDir = path.join(tempRoot, "release-source")
 	const sourceModuleDir = path.join(sourceDir, "search_summary")
 	const registryDir = path.join(tempRoot, "config", "llm")
-	const registryAuthoringDir = path.join(registryDir, "authoring", "search_summary")
+	const registrySourceDir = path.join(registryDir, "source", "search_summary")
 	const releaseDir = path.join(tempRoot, "release")
 	await mkdir(sourceModuleDir, { recursive: true })
-	await mkdir(registryAuthoringDir, { recursive: true })
+	await mkdir(registrySourceDir, { recursive: true })
 	await mkdir(releaseDir, { recursive: true })
 
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519")
@@ -173,7 +174,7 @@ try {
 		"--did-document",
 		didDocumentPath,
 	])
-	await copyFile(signedPresetPath, path.join(registryAuthoringDir, "openai_fast.mda"))
+	await copyFile(signedPresetPath, path.join(registrySourceDir, "openai_fast.mda"))
 
 	const releasePlanPath = path.join(releaseDir, "plan.json")
 	const releasePlanResult = await runMdaJson<{ ok: boolean; sourceCount: number; sourceSetDigest: string }>([

@@ -202,15 +202,15 @@ function trustedSigstoreMda(presetName: string): { source: string; digest: strin
 	}
 }
 
-async function writeAuthoringSource(root: string, moduleName: string, presetName: string, source: string): Promise<string> {
-	const filePath = path.join(root, "authoring", moduleName, `${presetName}.mda`)
+async function writeSourceSource(root: string, moduleName: string, presetName: string, source: string): Promise<string> {
+	const filePath = path.join(root, "source", moduleName, `${presetName}.mda`)
 	await mkdir(path.dirname(filePath), { recursive: true })
 	await writeFile(filePath, source, "utf-8")
 	return filePath
 }
 
-async function writeUnsignedAuthoringPreset(root: string, model = "gpt-4.1-mini", maxOutputTokens = 128): Promise<void> {
-	await writeAuthoringSource(
+async function writeUnsignedSourcePreset(root: string, model = "gpt-4.1-mini", maxOutputTokens = 128): Promise<void> {
+	await writeSourceSource(
 		root,
 		"search",
 		"summary",
@@ -284,7 +284,7 @@ async function sha256File(filePath: string): Promise<string> {
 }
 
 async function assertNoStagingEntries(root: string): Promise<void> {
-	const entries = await readdir(path.join(root, "snapshots", ".staging")).catch(() => [])
+	const entries = await readdir(path.join(root, "compiled", ".staging")).catch(() => [])
 	assert.deepEqual(entries, [])
 }
 
@@ -320,11 +320,11 @@ function registryRootVerifier(trusted = true): DidWebVerifier {
 }
 
 async function readRegistryRoot(root: string, revision: string): Promise<RegistryRootEnvelope> {
-	return JSON.parse(await readFile(path.join(root, "snapshots", revision, "registry-root.json"), "utf-8")) as RegistryRootEnvelope
+	return JSON.parse(await readFile(path.join(root, "compiled", revision, "registry-root.json"), "utf-8")) as RegistryRootEnvelope
 }
 
 async function writeRegistryRoot(root: string, revision: string, envelope: RegistryRootEnvelope): Promise<void> {
-	await writeFile(path.join(root, "snapshots", revision, "registry-root.json"), `${JSON.stringify(envelope, null, 2)}\n`, "utf-8")
+	await writeFile(path.join(root, "compiled", revision, "registry-root.json"), `${JSON.stringify(envelope, null, 2)}\n`, "utf-8")
 }
 
 async function resignRegistryRoot(envelope: RegistryRootEnvelope): Promise<RegistryRootEnvelope> {
@@ -354,7 +354,7 @@ function resignRegistryRootLegacyPretty(envelope: RegistryRootEnvelope): Registr
 await run("direct MDA loading accepts trustedRuntime did:web options", async () => {
 	await withTempRoot("direct-did-web", async (root) => {
 		const { source, digest } = trustedDidWebMda("direct-did-web")
-		const filePath = await writeAuthoringSource(root, "search", "direct_did_web", source)
+		const filePath = await writeSourceSource(root, "search", "direct_did_web", source)
 		const options: MdaConfigLoadOptions = {
 			trustedRuntime: true,
 			trustPolicy: DID_WEB_POLICY,
@@ -372,7 +372,7 @@ await run("direct MDA loading accepts trustedRuntime did:web options", async () 
 await run("direct MDA loading rejects a signed file after payload tampering", async () => {
 	await withTempRoot("direct-did-web-tamper", async (root) => {
 		const { source, digest } = trustedDidWebMda("direct-did-web-tamper")
-		const filePath = await writeAuthoringSource(root, "search", "direct_did_web_tamper", source)
+		const filePath = await writeSourceSource(root, "search", "direct_did_web_tamper", source)
 		const options: MdaConfigLoadOptions = {
 			trustedRuntime: true,
 			trustPolicy: DID_WEB_POLICY,
@@ -388,10 +388,10 @@ await run("direct MDA loading rejects a signed file after payload tampering", as
 
 await run("publisher keeps active revision when did:web trustedRuntime verification rejects", async () => {
 	await withTempRoot("publisher-did-web-reject", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 		const first = await new ConfigRegistryPublisher(root).publish()
 		const { source, digest } = trustedDidWebMda("summary")
-		await writeAuthoringSource(root, "search", "summary", source)
+		await writeSourceSource(root, "search", "summary", source)
 
 		const options: ConfigRegistryPublishOptions = {
 			trustedRuntime: true,
@@ -405,10 +405,10 @@ await run("publisher keeps active revision when did:web trustedRuntime verificat
 	})
 })
 
-await run("publisher accepts did:web trustedRuntime verification and publishes resolved snapshot", async () => {
+await run("publisher accepts did:web trustedRuntime verification and publishes resolved compiled revision", async () => {
 	await withTempRoot("publisher-did-web-accept", async (root) => {
 		const { source, digest } = trustedDidWebMda("summary")
-		await writeAuthoringSource(root, "search", "summary", source)
+		await writeSourceSource(root, "search", "summary", source)
 
 		const published = await new ConfigRegistryPublisher(root).publish({
 			trustedRuntime: true,
@@ -417,7 +417,7 @@ await run("publisher accepts did:web trustedRuntime verification and publishes r
 		})
 		const manager = await ConfigRegistryManager.open(root)
 		const resolved = JSON.parse(
-			await readFile(path.join(root, "snapshots", published.revision, "resolved", "search", "summary.json"), "utf-8"),
+			await readFile(path.join(root, "compiled", published.revision, "resolved", "search", "summary.json"), "utf-8"),
 		) as { model?: unknown }
 
 		assert.equal(await currentRevision(root), published.revision)
@@ -429,10 +429,10 @@ await run("publisher accepts did:web trustedRuntime verification and publishes r
 
 await run("publisher keeps active revision when Sigstore trustedRuntime Rekor lookup rejects", async () => {
 	await withTempRoot("publisher-sigstore-reject", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 		const first = await new ConfigRegistryPublisher(root).publish()
 		const { source } = trustedSigstoreMda("summary")
-		await writeAuthoringSource(root, "search", "summary", source)
+		await writeSourceSource(root, "search", "summary", source)
 
 		const options: ConfigRegistryPublishOptions = {
 			trustedRuntime: true,
@@ -447,10 +447,10 @@ await run("publisher keeps active revision when Sigstore trustedRuntime Rekor lo
 	})
 })
 
-await run("publisher accepts Sigstore trustedRuntime verification and publishes resolved snapshot", async () => {
+await run("publisher accepts Sigstore trustedRuntime verification and publishes resolved compiled revision", async () => {
 	await withTempRoot("publisher-sigstore-accept", async (root) => {
 		const { source, rekorEntry } = trustedSigstoreMda("summary")
-		await writeAuthoringSource(root, "search", "summary", source)
+		await writeSourceSource(root, "search", "summary", source)
 
 		const published = await new ConfigRegistryPublisher(root).publish({
 			trustedRuntime: true,
@@ -459,21 +459,21 @@ await run("publisher accepts Sigstore trustedRuntime verification and publishes 
 			sigstoreVerifier: sigstoreVerifier(true),
 		})
 		const manager = await ConfigRegistryManager.open(root)
-		const authoring = await readFile(
-			path.join(root, "snapshots", published.revision, "authoring", "search", "summary.mda"),
+		const publishedSource = await readFile(
+			path.join(root, "compiled", published.revision, "source", "search", "summary.mda"),
 			"utf-8",
 		)
 
 		assert.equal(await currentRevision(root), published.revision)
 		assert.equal(manager.activeRevision, published.revision)
 		assert.equal((await manager.getPreset("search", "summary")).common?.maxOutputTokens, 256)
-		assert.match(authoring, /signer: "sigstore-oidc:https:\/\/accounts\.google\.com"/)
+		assert.match(publishedSource, /signer: "sigstore-oidc:https:\/\/accounts\.google\.com"/)
 	})
 })
 
-await run("publisher writes signed registry root covering current binding, manifest, authoring MDA, and resolved JSON", async () => {
+await run("publisher writes signed registry root covering current binding, manifest, source MDA, and resolved JSON", async () => {
 	await withTempRoot("signed-root-payload", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 
 		const published = await new ConfigRegistryPublisher(root).publish({
 			revision: "2026-05-10T00:00:00.000Z",
@@ -481,19 +481,19 @@ await run("publisher writes signed registry root covering current binding, manif
 		})
 		const envelope = await readRegistryRoot(root, published.revision)
 		const payload = envelope.payload
-		const authoringDigest = payload.files.find(
-			(file) => file.role === "authoring" && file.path.endsWith("/authoring/search/summary.mda"),
+		const sourceDigest = payload.files.find(
+			(file) => file.role === "source" && file.path.endsWith("/source/search/summary.mda"),
 		)
 		const resolvedDigest = payload.files.find(
 			(file) => file.role === "resolved" && file.path.endsWith("/resolved/search/summary.json"),
 		)
-		assert.ok(authoringDigest, "registry root should cover copied authoring .mda")
+		assert.ok(sourceDigest, "registry root should cover copied source .mda")
 		assert.ok(resolvedDigest, "registry root should cover resolved JSON")
 
 		const resolved = JSON.parse(await readFile(path.join(root, resolvedDigest.path), "utf-8")) as { model?: unknown }
 
 		assert.ok(published.registryRootPath)
-		assert.equal(published.registryRootPath, path.join(root, "snapshots", published.revision, "registry-root.json"))
+		assert.equal(published.registryRootPath, path.join(root, "compiled", published.revision, "registry-root.json"))
 		assert.equal(published.registryRootSha256, await sha256File(published.registryRootPath))
 		assert.equal(envelope.integrity.digest, `sha256:${envelope.payload_sha256}`)
 		assert.equal(payload.revision, published.revision)
@@ -501,9 +501,9 @@ await run("publisher writes signed registry root covering current binding, manif
 		assert.equal(payload.current.revision, published.revision)
 		assert.equal(payload.current.manifest_sha256, published.manifestSha256)
 		assert.equal(payload.current.sha256, await sha256File(path.join(root, "current.json")))
-		assert.equal(payload.manifest.path, `snapshots/${published.revision}/manifest.json`)
+		assert.equal(payload.manifest.path, `compiled/${published.revision}/manifest.json`)
 		assert.equal(payload.manifest.sha256, published.manifestSha256)
-		assert.equal(await sha256File(path.join(root, authoringDigest.path)), authoringDigest.sha256)
+		assert.equal(await sha256File(path.join(root, sourceDigest.path)), sourceDigest.sha256)
 		assert.equal(await sha256File(path.join(root, resolvedDigest.path)), resolvedDigest.sha256)
 		assert.equal(resolved.model, "gpt-4.1-mini")
 	})
@@ -511,7 +511,7 @@ await run("publisher writes signed registry root covering current binding, manif
 
 await run("parser rejects registry root current binding digest mismatches", async () => {
 	await withTempRoot("signed-root-current-binding-parser", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 
 		const published = await new ConfigRegistryPublisher(root).publish({
 			revision: "2026-05-10T00:00:00.000Z",
@@ -529,7 +529,7 @@ await run("parser rejects registry root current binding digest mismatches", asyn
 
 await run("runtime rejects signed registry root payload binding mismatches", async () => {
 	await withTempRoot("signed-root-binding-mismatch", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 
 		const published = await new ConfigRegistryPublisher(root).publish({
 			revision: "2026-05-10T00:00:00.000Z",
@@ -566,7 +566,7 @@ await run("runtime rejects signed registry root payload binding mismatches", asy
 				name: "manifest path",
 				pattern: /manifest path/,
 				mutate: (envelope) => {
-					envelope.payload.manifest.path = "snapshots/2026-05-10T00:00:01.000Z/manifest.json"
+					envelope.payload.manifest.path = "compiled/2026-05-10T00:00:01.000Z/manifest.json"
 				},
 			},
 				{
@@ -580,16 +580,16 @@ await run("runtime rejects signed registry root payload binding mismatches", asy
 				},
 				{
 					name: "file wrong revision",
-					pattern: /outside the active snapshot/,
+					pattern: /outside the active compiled revision/,
 					mutate: (envelope) => {
 						const firstFile = envelope.payload.files[0]
 						assert.ok(firstFile)
-						firstFile.path = "snapshots/2026-05-10T00:00:01.000Z/authoring/signed/demo.mda"
+						firstFile.path = "compiled/2026-05-10T00:00:01.000Z/source/signed/demo.mda"
 					},
 				},
 				{
-					name: "file non-snapshot path",
-					pattern: /outside the active snapshot/,
+					name: "file non-compiled revision path",
+					pattern: /outside the active compiled revision/,
 					mutate: (envelope) => {
 						const firstFile = envelope.payload.files[0]
 						assert.ok(firstFile)
@@ -602,16 +602,16 @@ await run("runtime rejects signed registry root payload binding mismatches", asy
 					mutate: (envelope) => {
 						const firstFile = envelope.payload.files[0]
 						assert.ok(firstFile)
-						firstFile.path = `snapshots/${published.revision}/authoring/../current.json`
+						firstFile.path = `compiled/${published.revision}/source/../current.json`
 					},
 				},
 				{
 					name: "file role mismatch",
-					pattern: /authoring file path/,
+					pattern: /source file path/,
 					mutate: (envelope) => {
-						const firstFile = envelope.payload.files.find((file) => file.role === "authoring")
+						const firstFile = envelope.payload.files.find((file) => file.role === "source")
 						assert.ok(firstFile)
-						firstFile.path = `snapshots/${published.revision}/resolved/signed/demo.json`
+						firstFile.path = `compiled/${published.revision}/resolved/signed/demo.json`
 					},
 				},
 			]
@@ -636,7 +636,7 @@ await run("runtime rejects signed registry root payload binding mismatches", asy
 
 await run("publisher rejects existing revision with different registry root", async () => {
 	await withTempRoot("signed-root-existing-conflict", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 
 		await new ConfigRegistryPublisher(root).publish({
 			revision: "same_signed_root_revision",
@@ -656,7 +656,7 @@ await run("publisher rejects existing revision with different registry root", as
 
 await run("runtime fails closed on signed registry root refresh failure", async () => {
 	await withTempRoot("signed-root-refresh-fail-closed", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 
 		const first = await new ConfigRegistryPublisher(root).publish({
 			revision: "signed_refresh_first",
@@ -685,7 +685,7 @@ await run("runtime fails closed on signed registry root refresh failure", async 
 
 await run("runtime opens signed registry root with external verifier and rejects untrusted roots", async () => {
 	await withTempRoot("signed-root-runtime", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 
 		const published = await new ConfigRegistryPublisher(root).publish({
 			registryRoot: { signer: registryRootSigner() },
@@ -718,7 +718,7 @@ await run("runtime opens signed registry root with external verifier and rejects
 
 await run("runtime opens legacy pretty-canonical signed registry roots", async () => {
 	await withTempRoot("signed-root-legacy-pretty", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 
 		const published = await new ConfigRegistryPublisher(root).publish({
 			registryRoot: { signer: registryRootSigner() },
@@ -740,7 +740,7 @@ await run("runtime opens legacy pretty-canonical signed registry roots", async (
 
 await run("runtime opens signed registry from CLI trust manifest schema", async () => {
 	await withTempRoot("registry-root-trust-manifest", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 		const published = await new ConfigRegistryPublisher(root).publish({
 			revision: "2026-05-10T00:00:00.000Z",
 			registryRoot: { signer: registryRootSigner() },
@@ -761,7 +761,7 @@ await run("runtime opens signed registry from CLI trust manifest schema", async 
 			highWatermark: null,
 			registryRootSignerIdentity: { type: "did-web", domain: REGISTRY_ROOT_DOMAIN },
 			registryRoot: {
-				path: path.join(root, "snapshots", published.revision, "registry-root.json"),
+				path: path.join(root, "compiled", published.revision, "registry-root.json"),
 				revision: published.revision,
 				publishedAt: envelope.payload.published_at,
 				highWatermark: published.revision,
@@ -805,7 +805,7 @@ await run("runtime opens signed registry from CLI trust manifest schema", async 
 
 await run("runtime rejects coherent registry replacement when external root digest stays pinned", async () => {
 	await withTempRoot("signed-root-package-replacement", async (root) => {
-		await writeUnsignedAuthoringPreset(root, "gpt-4.1-mini", 128)
+		await writeUnsignedSourcePreset(root, "gpt-4.1-mini", 128)
 		const original = await new ConfigRegistryPublisher(root).publish({
 			revision: "package_original",
 			registryRoot: { signer: registryRootSigner() },
@@ -823,7 +823,7 @@ await run("runtime rejects coherent registry replacement when external root dige
 		const originalManager = await ConfigRegistryManager.open(root, pinnedOptions)
 		assert.equal((await originalManager.getPreset("search", "summary")).model, "gpt-4.1-mini")
 
-		await writeUnsignedAuthoringPreset(root, "gpt-5-mini", 4096)
+		await writeUnsignedSourcePreset(root, "gpt-5-mini", 4096)
 		const replacement = await new ConfigRegistryPublisher(root).publish({
 			revision: "package_replacement",
 			registryRoot: { signer: registryRootSigner() },
@@ -843,7 +843,7 @@ await run("runtime rejects coherent registry replacement when external root dige
 
 await run("runtime rejects signed registry root rollback and freshness policy violations", async () => {
 	await withTempRoot("signed-root-freshness", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 
 		const older = await new ConfigRegistryPublisher(root).publish({
 			revision: "2026-05-10T00:00:00.000Z",
@@ -904,7 +904,7 @@ await run("runtime rejects signed registry root rollback and freshness policy vi
 
 await run("runtime rejects numeric custom revision rollback with minimumRevision", async () => {
 	await withTempRoot("signed-root-numeric-revision", async (root) => {
-		await writeUnsignedAuthoringPreset(root)
+		await writeUnsignedSourcePreset(root)
 
 		const older = await new ConfigRegistryPublisher(root).publish({
 			revision: "9",

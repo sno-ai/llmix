@@ -11,7 +11,7 @@ import {
 	InvalidConfigError,
 	loadMdaConfig,
 } from "../src/index.js"
-import { snapshotRegistryPath, snapshotRelativePath } from "../src/config-registry-common.js"
+import { compiledRegistryPath, compiledRelativePath } from "../src/config-registry-common.js"
 
 let passed = 0
 let failed = 0
@@ -41,7 +41,7 @@ async function run(name: string, fn: () => Promise<void>): Promise<void> {
 	}
 }
 
-async function writeAuthoringPreset(
+async function writeSourcePreset(
 	root: string,
 	moduleName: string,
 	presetName: string,
@@ -64,7 +64,7 @@ async function writeAuthoringPreset(
 		`        reasoningEffort: ${reasoningEffort}`,
 	]
 
-	const filePath = path.join(root, "authoring", moduleName, `${presetName}.mda`)
+	const filePath = path.join(root, "source", moduleName, `${presetName}.mda`)
 	await mkdir(path.dirname(filePath), { recursive: true })
 	await writeFile(
 		filePath,
@@ -91,8 +91,8 @@ async function writeAuthoringPreset(
 }
 
 type TestManifestPreset = {
-	authoring_path: string
-	authoring_sha256: string
+	source_path: string
+	source_sha256: string
 	resolved_path: string
 	resolved_sha256: string
 }
@@ -106,7 +106,7 @@ async function rewriteManifest(
 	revision: string,
 	mutate: (manifest: TestManifest) => void,
 ): Promise<void> {
-	const manifestPath = path.join(root, "snapshots", revision, "manifest.json")
+	const manifestPath = path.join(root, "compiled", revision, "manifest.json")
 	const manifest = JSON.parse(await readFile(manifestPath, "utf-8")) as TestManifest
 	mutate(manifest)
 	const manifestContent = `${JSON.stringify(manifest, null, 2)}\n`
@@ -120,7 +120,7 @@ async function rewriteManifest(
 
 await run("publish creates active revision and manager reads canonical resolved JSON", async () => {
 	await withTempRoot("publish", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-5-mini",
 			temperature: 0.7,
 			maxOutputTokens: 1024,
@@ -130,12 +130,12 @@ await run("publish creates active revision and manager reads canonical resolved 
 		const published = await new ConfigRegistryPublisher(root).publish()
 		const manager = await ConfigRegistryManager.open(root)
 		const config = await manager.getPreset("search", "summary")
-		const resolvedPath = path.join(root, "snapshots", published.revision, "resolved", "search", "summary.json")
-		const authoringPath = path.join(root, "snapshots", published.revision, "authoring", "search", "summary.mda")
-		const legacyAuthoringPath = path.join(root, "snapshots", published.revision, "authoring", "search", "summary.yaml")
+		const resolvedPath = path.join(root, "compiled", published.revision, "resolved", "search", "summary.json")
+		const sourcePath = path.join(root, "compiled", published.revision, "source", "search", "summary.mda")
+		const legacySourcePath = path.join(root, "compiled", published.revision, "source", "search", "summary.yaml")
 		const resolved = JSON.parse(await readFile(resolvedPath, "utf-8")) as Record<string, unknown>
-		const authoring = await readFile(authoringPath, "utf-8")
-		const resolvedFromSnapshotSource = await loadMdaConfig(authoringPath)
+		const source = await readFile(sourcePath, "utf-8")
+		const resolvedFromCompiledSource = await loadMdaConfig(sourcePath)
 		const common = resolved["common"] as Record<string, unknown>
 		const providerOptions = resolved["providerOptions"] as Record<string, unknown>
 		const openai = providerOptions["openai"] as Record<string, unknown>
@@ -147,19 +147,19 @@ await run("publish creates active revision and manager reads canonical resolved 
 		assert.equal(config.model, "gpt-5-mini")
 		assert.equal(config.common?.maxOutputTokens, 1024)
 		assert.equal(config.providerOptions?.openai?.reasoningEffort, "high")
-		assert.deepEqual(resolved, JSON.parse(JSON.stringify(resolvedFromSnapshotSource)))
+		assert.deepEqual(resolved, JSON.parse(JSON.stringify(resolvedFromCompiledSource)))
 		assert.ok(manager.lastSuccessfulReloadAt instanceof Date)
 		assert.equal(manager.lastReloadFailureAt, null)
 		assert.equal(common["maxOutputTokens"], 1024)
 		assert.equal(openai["reasoningEffort"], "high")
-		assert.match(authoring, /^---\nname: summary/m)
-		await assert.rejects(readFile(legacyAuthoringPath, "utf-8"), Error)
+		assert.match(source, /^---\nname: summary/m)
+		await assert.rejects(readFile(legacySourcePath, "utf-8"), Error)
 	})
 })
 
 await run("publish and reload preserve provider option field names", async () => {
 	await withTempRoot("provider-options", async (root) => {
-		await writeAuthoringPreset(root, "search", "providers", {
+		await writeSourcePreset(root, "search", "providers", {
 			providerOptionsLines: [
 				"      openai:",
 				"        maxCompletionTokens: 321",
@@ -212,7 +212,7 @@ await run("publish and reload preserve provider option field names", async () =>
 
 await run("manager reloads after current revision changes", async () => {
 	await withTempRoot("reload", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 			reasoningEffort: "medium",
@@ -221,7 +221,7 @@ await run("manager reloads after current revision changes", async () => {
 		const first = await new ConfigRegistryPublisher(root).publish()
 		const manager = await ConfigRegistryManager.open(root)
 
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-5-mini",
 			maxOutputTokens: 2048,
 			reasoningEffort: "high",
@@ -238,9 +238,9 @@ await run("manager reloads after current revision changes", async () => {
 	})
 })
 
-await run("manager rolls back when current revision points to an older snapshot", async () => {
+await run("manager rolls back when current revision points to an older compiled revision", async () => {
 	await withTempRoot("rollback", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 			reasoningEffort: "medium",
@@ -249,7 +249,7 @@ await run("manager rolls back when current revision points to an older snapshot"
 		const first = await new ConfigRegistryPublisher(root).publish()
 		const manager = await ConfigRegistryManager.open(root)
 
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-5-mini",
 			maxOutputTokens: 2048,
 			reasoningEffort: "high",
@@ -275,7 +275,7 @@ await run("manager rolls back when current revision points to an older snapshot"
 
 await run("available presets refresh after current revision changes", async () => {
 	await withTempRoot("available-refresh", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
@@ -284,7 +284,7 @@ await run("available presets refresh after current revision changes", async () =
 		const manager = await ConfigRegistryManager.open(root)
 		assert.deepEqual(await manager.availablePresets(), ["search/summary"])
 
-		await writeAuthoringPreset(root, "chat", "reply", {
+		await writeSourcePreset(root, "chat", "reply", {
 			model: "gpt-5-mini",
 			maxOutputTokens: 512,
 		})
@@ -295,9 +295,9 @@ await run("available presets refresh after current revision changes", async () =
 	})
 })
 
-await run("manager ignores authoring edits until a new revision is published", async () => {
-	await withTempRoot("authoring-edits", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+await run("manager ignores source edits until a new revision is published", async () => {
+	await withTempRoot("source-edits", async (root) => {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 			reasoningEffort: "medium",
@@ -306,7 +306,7 @@ await run("manager ignores authoring edits until a new revision is published", a
 		const published = await new ConfigRegistryPublisher(root).publish()
 		const manager = await ConfigRegistryManager.open(root)
 
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-5-mini",
 			maxOutputTokens: 2048,
 			reasoningEffort: "high",
@@ -338,7 +338,7 @@ await run("manager fails fast with a malformed current pointer", async () => {
 
 await run("manager opens legacy current pointer without manifest hash", async () => {
 	await withTempRoot("legacy-current-pointer", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
@@ -357,7 +357,7 @@ await run("manager opens legacy current pointer without manifest hash", async ()
 
 await run("manager keeps last known good config when pointer changes to missing revision", async () => {
 	await withTempRoot("missing-revision", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
@@ -382,7 +382,7 @@ await run("manager keeps last known good config when pointer changes to missing 
 
 await run("manager keeps last known good config when current pointer becomes malformed", async () => {
 	await withTempRoot("malformed-current-after-open", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
@@ -403,7 +403,7 @@ await run("manager keeps last known good config when current pointer becomes mal
 
 await run("manager validates manifest hash changes for the active revision", async () => {
 	await withTempRoot("same-revision-hash-change", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
@@ -425,19 +425,19 @@ await run("manager validates manifest hash changes for the active revision", asy
 	})
 })
 
-await run("snapshotRelativePath requires an exact revision path boundary", async () => {
-	assert.equal(snapshotRegistryPath("v1", "resolved/search/summary.json"), "snapshots/v1/resolved/search/summary.json")
-	assert.equal(snapshotRelativePath("v1", "snapshots/v1/manifest.json"), "manifest.json")
-	assert.throws(() => snapshotRelativePath("v1", "snapshots/v10/manifest.json"), /outside the active snapshot/)
-	assert.throws(() => snapshotRelativePath("v1", "snapshots/v1"), /outside the active snapshot/)
-	assert.throws(() => snapshotRegistryPath("v1", "../current.json"), /traversal segments/)
-	assert.throws(() => snapshotRegistryPath("v1", "/tmp/current.json"), /relative POSIX path/)
-	assert.throws(() => snapshotRegistryPath("v1", "authoring\\search.mda"), /relative POSIX path/)
+await run("compiledRelativePath requires an exact revision path boundary", async () => {
+	assert.equal(compiledRegistryPath("v1", "resolved/search/summary.json"), "compiled/v1/resolved/search/summary.json")
+	assert.equal(compiledRelativePath("v1", "compiled/v1/manifest.json"), "manifest.json")
+	assert.throws(() => compiledRelativePath("v1", "compiled/v10/manifest.json"), /outside the active compiled revision/)
+	assert.throws(() => compiledRelativePath("v1", "compiled/v1"), /outside the active compiled revision/)
+	assert.throws(() => compiledRegistryPath("v1", "../current.json"), /traversal segments/)
+	assert.throws(() => compiledRegistryPath("v1", "/tmp/current.json"), /relative POSIX path/)
+	assert.throws(() => compiledRegistryPath("v1", "source\\search.mda"), /relative POSIX path/)
 })
 
 await run("manager rejects malformed manifest artifact digest on startup", async () => {
 	await withTempRoot("manifest-bad-digest", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
@@ -455,7 +455,7 @@ await run("manager rejects malformed manifest artifact digest on startup", async
 
 await run("manager rejects manifest artifact traversal path on startup", async () => {
 	await withTempRoot("manifest-traversal", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
@@ -471,9 +471,9 @@ await run("manager rejects manifest artifact traversal path on startup", async (
 	})
 })
 
-await run("publish retry activates an existing matching snapshot after current write failure", async () => {
+await run("publish retry activates an existing matching compiled revision after current write failure", async () => {
 	await withTempRoot("publish-activation-retry", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
@@ -487,13 +487,13 @@ await run("publish retry activates an existing matching snapshot after current w
 		assert.equal(published.activated, true)
 		assert.equal(manager.activeRevision, "activation_retry")
 		assert.equal((await manager.getPreset("search", "summary")).model, "gpt-4.1-mini")
-		assert.deepEqual(await readdir(path.join(root, "snapshots", ".staging")).catch(() => []), [])
+		assert.deepEqual(await readdir(path.join(root, "compiled", ".staging")).catch(() => []), [])
 	})
 })
 
 await run("publish failure leaves the active revision unchanged", async () => {
 	await withTempRoot("publish-failure", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 			reasoningEffort: "medium",
@@ -501,7 +501,7 @@ await run("publish failure leaves the active revision unchanged", async () => {
 
 		const first = await new ConfigRegistryPublisher(root).publish()
 		await writeFile(
-			path.join(root, "authoring", "search", "summary.mda"),
+			path.join(root, "source", "search", "summary.mda"),
 			"---\nname: broken\ndescription: Broken.\nmetadata:\n  snoai-llmix:\n    common:\n      provider: openai\n      model: [broken\n---\n",
 			"utf-8",
 		)
@@ -509,27 +509,27 @@ await run("publish failure leaves the active revision unchanged", async () => {
 		await assert.rejects(new ConfigRegistryPublisher(root).publish(), Error)
 
 		const pointer = JSON.parse(await readFile(path.join(root, "current.json"), "utf-8")) as { revision: string }
-		const stagingEntries = await readdir(path.join(root, "snapshots", ".staging")).catch(() => [])
+		const stagingEntries = await readdir(path.join(root, "compiled", ".staging")).catch(() => [])
 
 		assert.equal(pointer.revision, first.revision)
 		assert.deepEqual(stagingEntries, [])
 	})
 })
 
-await run("legacy YAML authoring blocks publish without changing active revision", async () => {
-	await withTempRoot("legacy-yaml-authoring", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+await run("legacy YAML source blocks publish without changing active revision", async () => {
+	await withTempRoot("legacy-yaml-source", async (root) => {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
 
 		const first = await new ConfigRegistryPublisher(root).publish()
-		await writeFile(path.join(root, "authoring", "search", "legacy.yaml"), "provider: openai\nmodel: gpt-4.1-mini\n", "utf-8")
+		await writeFile(path.join(root, "source", "search", "legacy.yaml"), "provider: openai\nmodel: gpt-4.1-mini\n", "utf-8")
 
 		await assert.rejects(new ConfigRegistryPublisher(root).publish(), InvalidConfigError)
 
 		const pointer = JSON.parse(await readFile(path.join(root, "current.json"), "utf-8")) as { revision: string }
-		const stagingEntries = await readdir(path.join(root, "snapshots", ".staging")).catch(() => [])
+		const stagingEntries = await readdir(path.join(root, "compiled", ".staging")).catch(() => [])
 
 		assert.equal(pointer.revision, first.revision)
 		assert.deepEqual(stagingEntries, [])
@@ -538,7 +538,7 @@ await run("legacy YAML authoring blocks publish without changing active revision
 
 await run("parallel publishes use isolated staging and current pointer writes", async () => {
 	await withTempRoot("parallel-publish", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
@@ -549,7 +549,7 @@ await run("parallel publishes use isolated staging and current pointer writes", 
 			publisher.publish({ revision: "parallel_b", activate: true }),
 		])
 		const manager = await ConfigRegistryManager.open(root)
-		const stagingEntries = await readdir(path.join(root, "snapshots", ".staging")).catch(() => [])
+		const stagingEntries = await readdir(path.join(root, "compiled", ".staging")).catch(() => [])
 
 		assert.deepEqual(new Set([first.revision, second.revision]), new Set(["parallel_a", "parallel_b"]))
 		assert.ok([first.revision, second.revision].includes(manager.activeRevision))
@@ -560,7 +560,7 @@ await run("parallel publishes use isolated staging and current pointer writes", 
 
 await run("parallel publishes of the same matching revision are idempotent", async () => {
 	await withTempRoot("parallel-same-revision", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
@@ -574,7 +574,7 @@ await run("parallel publishes of the same matching revision are idempotent", asy
 		const rejected = results.filter((result) => result.status === "rejected")
 		const pointer = JSON.parse(await readFile(path.join(root, "current.json"), "utf-8")) as { revision: string }
 		const manager = await ConfigRegistryManager.open(root)
-		const stagingEntries = await readdir(path.join(root, "snapshots", ".staging")).catch(() => [])
+		const stagingEntries = await readdir(path.join(root, "compiled", ".staging")).catch(() => [])
 
 		assert.equal(fulfilled.length, 2)
 		assert.equal(rejected.length, 0)
@@ -585,15 +585,15 @@ await run("parallel publishes of the same matching revision are idempotent", asy
 	})
 })
 
-await run("manager rejects a tampered resolved snapshot on startup", async () => {
+await run("manager rejects a tampered resolved compiled revision on startup", async () => {
 	await withTempRoot("tampered", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
 
 		const published = await new ConfigRegistryPublisher(root).publish()
-		const resolvedPath = path.join(root, "snapshots", published.revision, "resolved", "search", "summary.json")
+		const resolvedPath = path.join(root, "compiled", published.revision, "resolved", "search", "summary.json")
 		const resolved = JSON.parse(await readFile(resolvedPath, "utf-8")) as Record<string, unknown>
 		resolved["model"] = "tampered-model"
 		await writeFile(resolvedPath, JSON.stringify(resolved), "utf-8")
@@ -602,30 +602,30 @@ await run("manager rejects a tampered resolved snapshot on startup", async () =>
 	})
 })
 
-await run("manager rejects a tampered authoring snapshot on startup", async () => {
-	await withTempRoot("tampered-authoring", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+await run("manager rejects a tampered source compiled revision on startup", async () => {
+	await withTempRoot("tampered-source", async (root) => {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
 
 		const published = await new ConfigRegistryPublisher(root).publish()
-		const authoringPath = path.join(root, "snapshots", published.revision, "authoring", "search", "summary.mda")
-		await writeFile(authoringPath, "---\nname: tampered\ndescription: Tampered.\nmetadata: {}\n---\n", "utf-8")
+		const sourcePath = path.join(root, "compiled", published.revision, "source", "search", "summary.mda")
+		await writeFile(sourcePath, "---\nname: tampered\ndescription: Tampered.\nmetadata: {}\n---\n", "utf-8")
 
 		await assert.rejects(ConfigRegistryManager.open(root), InvalidConfigError)
 	})
 })
 
-await run("manager rejects a snapshot when manifest and artifact are tampered together", async () => {
+await run("manager rejects a compiled revision when manifest and artifact are tampered together", async () => {
 	await withTempRoot("tampered-manifest-and-artifact", async (root) => {
-		await writeAuthoringPreset(root, "search", "summary", {
+		await writeSourcePreset(root, "search", "summary", {
 			model: "gpt-4.1-mini",
 			maxOutputTokens: 256,
 		})
 
 		const published = await new ConfigRegistryPublisher(root).publish()
-		const resolvedPath = path.join(root, "snapshots", published.revision, "resolved", "search", "summary.json")
+		const resolvedPath = path.join(root, "compiled", published.revision, "resolved", "search", "summary.json")
 		const resolved = JSON.parse(await readFile(resolvedPath, "utf-8")) as Record<string, unknown>
 		resolved["model"] = "tampered-model"
 		const tamperedResolved = JSON.stringify(resolved, null, 2) + "\n"
