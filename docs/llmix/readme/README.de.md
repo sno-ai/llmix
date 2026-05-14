@@ -17,7 +17,7 @@ LLMix ist die Schicht zwischen deinem Produkt und dem Provider-SDK.
 
 Es verlangt nicht, dass du deinen OpenAI-, Anthropic-, Gemini-, LiteLLM-, AI-SDK- oder eigenen Client-Code neu schreibst. Es umschließt den Aufruf. Die langweiligen Teile liegen außen: Response-Cache, Circuit Breaker, Key Pools, Singleflight, Retry-Policy, adaptive Concurrency, Provider-Kwargs und MDA-Konfigurationsladen.
 
-Das Modell ist kein hart kodierter String mehr tief im Anwendungscode. Es wird zu Daten. Ändere ein Preset, veröffentliche einen Registry-Snapshot, lade den Service neu, und die nächste Anfrage kann einen anderen Provider oder ein anderes Modell verwenden. Kein Redeploy für den üblichen Modellwechsel.
+Das Modell ist kein hart kodierter String mehr tief im Anwendungscode. Es wird zu Daten. Ändere ein Preset, veröffentliche eine Registry-Release, lade den Service neu, und die nächste Anfrage kann einen anderen Provider oder ein anderes Modell verwenden. Kein Redeploy für den üblichen Modellwechsel.
 
 Das ist der Kern. Eine kleine Schicht. Die scharfen Kanten sind geglättet.
 

@@ -1,13 +1,19 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { createHash, generateKeyPairSync } from "node:crypto"
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
 import type { TrustPolicy } from "@snoai/mda-config"
 
 import { runCli } from "../src/cli.js"
+import { buildVerificationHooks } from "../src/config-registry-cli-support.js"
+import {
+	ConfigRegistryManager,
+	loadLlmixTrustManifest,
+	registryRootOptionsFromTrustManifest,
+} from "../src/index.js"
 
 const REQUIRED_MDA_CLI_VERSION = "1.1.2"
 const DID = "did:web:tools.example.com"
@@ -95,13 +101,11 @@ if (!(await hasRequiredMdaCli())) {
 const tempRoot = await mkdtemp(path.join(tmpdir(), "llmix-mda-cli-bridge-"))
 
 try {
-	const sourceDir = path.join(tempRoot, "release-source")
-	const sourceModuleDir = path.join(sourceDir, "search_summary")
 	const registryDir = path.join(tempRoot, "config", "llm")
-	const registrySourceDir = path.join(registryDir, "source", "search_summary")
+	const registrySourceDir = path.join(registryDir, "source")
+	const registrySourceModuleDir = path.join(registrySourceDir, "search_summary")
 	const releaseDir = path.join(tempRoot, "release")
-	await mkdir(sourceModuleDir, { recursive: true })
-	await mkdir(registrySourceDir, { recursive: true })
+	await mkdir(registrySourceModuleDir, { recursive: true })
 	await mkdir(releaseDir, { recursive: true })
 
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519")
@@ -134,7 +138,7 @@ try {
 	])
 	assert.equal(policyResult.ok, true)
 
-	const unsignedPresetPath = path.join(tempRoot, "unsigned-openai-fast.mda")
+	const presetPath = path.join(registrySourceModuleDir, "openai_fast.mda")
 	await runMdaJson<{ ok: boolean }>([
 		"init",
 		"--template",
@@ -148,14 +152,14 @@ try {
 		"--model",
 		"gpt-5-mini",
 		"--out",
-		unsignedPresetPath,
+		presetPath,
 	])
-	await runMdaJson<{ ok: boolean }>(["integrity", "compute", unsignedPresetPath, "--target", "source", "--write"])
+	await runMdaJson<{ ok: boolean }>(["validate", presetPath, "--target", "source"])
+	await runMdaJson<{ ok: boolean }>(["integrity", "compute", presetPath, "--target", "source", "--write"])
 
-	const signedPresetPath = path.join(sourceModuleDir, "openai_fast.mda")
 	await runMdaJson<{ ok: boolean }>([
 		"sign",
-		unsignedPresetPath,
+		presetPath,
 		"--profile",
 		"did-web",
 		"--did",
@@ -164,12 +168,11 @@ try {
 		DID_KEY_ID,
 		"--key-file",
 		keyPath,
-		"--out",
-		signedPresetPath,
+		"--in-place",
 	])
 	await runMdaJson<{ ok: boolean }>([
 		"verify",
-		signedPresetPath,
+		presetPath,
 		"--target",
 		"source",
 		"--policy",
@@ -177,7 +180,6 @@ try {
 		"--did-document",
 		didDocumentPath,
 	])
-	await copyFile(signedPresetPath, path.join(registrySourceDir, "openai_fast.mda"))
 
 	const releasePlanPath = path.join(releaseDir, "plan.json")
 	const releasePlanResult = await runMdaJson<{ ok: boolean; sourceCount: number; sourceSetDigest: string }>([
@@ -186,7 +188,7 @@ try {
 		"--target",
 		"llmix-registry",
 		"--source",
-		sourceDir,
+		registrySourceDir,
 		"--registry-dir",
 		registryDir,
 		"--policy",
@@ -259,6 +261,8 @@ try {
 		"--did-document",
 		didDocumentPath,
 		"--derive-root-digest",
+		"--minimum-revision",
+		"2026-05-11T000000Z",
 		"--out",
 		trustManifestPath,
 	])
@@ -274,7 +278,7 @@ try {
 		"--target",
 		"llmix-registry",
 		"--source",
-		sourceDir,
+		registrySourceDir,
 		"--registry-dir",
 		registryDir,
 		"--release-plan",
@@ -309,6 +313,38 @@ try {
 	assert.equal(checked.provider, "openai")
 	assert.equal(checked.model, "gpt-5-mini")
 	assert.equal(checked.tamperProof.rejected, true)
+
+	const trust = await loadLlmixTrustManifest(trustManifestPath)
+	assert.equal(trust.minimumRevision, "2026-05-11T000000Z")
+	const hooks = await buildVerificationHooks({
+		didDocumentPaths: [didDocumentPath],
+		rekorEntryPaths: [],
+		rekorUrl: null,
+		policy: trust.registryRootTrustPolicy,
+	})
+	const signedRoot = registryRootOptionsFromTrustManifest(trust, hooks)
+	assert.equal(signedRoot.minimumRevision, "2026-05-11T000000Z")
+	const registry = await ConfigRegistryManager.open(registryDir, { signedRoot })
+	const runtimePreset = await registry.getPreset("search_summary", "openai_fast")
+	assert.equal(registry.activeRevision, "2026-05-11T000000Z")
+	assert.equal(runtimePreset.provider, "openai")
+	assert.equal(runtimePreset.model, "gpt-5-mini")
+
+	const tamperedRegistryDir = path.join(tempRoot, "tampered-config-llm")
+	await cp(registryDir, tamperedRegistryDir, { recursive: true })
+	const tamperedCurrentPath = path.join(tamperedRegistryDir, "current.json")
+	const tamperedCurrent = JSON.parse(await readFile(tamperedCurrentPath, "utf8")) as {
+		revision: string
+		manifest_sha256: string
+	}
+	assert.equal(tamperedCurrent.revision, "2026-05-11T000000Z")
+	tamperedCurrent.manifest_sha256 = "0".repeat(64)
+	await writeFile(tamperedCurrentPath, `${JSON.stringify(tamperedCurrent, null, 2)}\n`, "utf8")
+	await assert.rejects(
+		ConfigRegistryManager.open(tamperedRegistryDir, { signedRoot }),
+		/registry root|current binding|checksum|digest|integrity|signature/i,
+	)
+
 	console.log(
 		"CLI_BRIDGE_LOADED_CONFIG",
 		JSON.stringify({
@@ -318,6 +354,9 @@ try {
 			model: checked.model,
 			expectedRootDigest: finalizeResult.expectedRootDigest,
 			tamperRejected: checked.tamperProof.rejected,
+			runtimeApiOpened: true,
+			runtimeApiTamperRejected: true,
+			minimumRevisionPinned: true,
 		}),
 	)
 	console.log("[PASS] mda 1.1.2 native LLMix registry-root bridge")
