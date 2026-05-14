@@ -48,6 +48,40 @@ function sha256Prefixed(content: string): string {
 	return `sha256:${createHash("sha256").update(content).digest("hex")}`
 }
 
+function sourceSetDigest(sources: readonly Record<string, unknown>[]): string {
+	return sha256Prefixed(mdaCanonicalJson({ sources }))
+}
+
+function mdaCanonicalJson(value: unknown): string {
+	if (value === null) {
+		return "null"
+	}
+	if (typeof value === "string") {
+		return JSON.stringify(value)
+	}
+	if (typeof value === "number") {
+		if (!Number.isFinite(value)) {
+			throw new Error("non-finite number cannot be canonicalized")
+		}
+		return JSON.stringify(value)
+	}
+	if (typeof value === "boolean") {
+		return value ? "true" : "false"
+	}
+	if (Array.isArray(value)) {
+		return `[${value.map(mdaCanonicalJson).join(",")}]`
+	}
+	if (typeof value === "object") {
+		const record = value as Record<string, unknown>
+		return `{${Object.keys(record)
+			.sort()
+			.filter((key) => record[key] !== undefined)
+			.map((key) => `${JSON.stringify(key)}:${mdaCanonicalJson(record[key])}`)
+			.join(",")}}`
+	}
+	return "null"
+}
+
 await run("help exposes official registry commands", async () => {
 	const result = await captureCli(["--help"])
 	assert.equal(result.exitCode, 0)
@@ -71,6 +105,15 @@ await run("publish-registry rejects release plan source digest mismatch", async 
 		await writeFile(sourcePath, sourceContent)
 		const releasePlanPath = path.join(tempRoot, "release", "plan.json")
 		await mkdir(path.dirname(releasePlanPath), { recursive: true })
+		const sources = [
+			{
+				module: "search",
+				preset: "summary",
+				sourcePath: "search/summary.mda",
+				rawSourceDigest: `sha256:${"0".repeat(64)}`,
+				expectedRegistryEntryIdentity: "search/summary",
+			},
+		]
 		await writeFile(
 			releasePlanPath,
 			`${JSON.stringify(
@@ -78,16 +121,8 @@ await run("publish-registry rejects release plan source digest mismatch", async 
 					version: 1,
 					kind: "llmix-release-plan",
 					registryDir: registryRoot,
-					sourceSetDigest: sha256Prefixed("source-set"),
-					sources: [
-						{
-							module: "search",
-							preset: "summary",
-							sourcePath: "search/summary.mda",
-							rawSourceDigest: `sha256:${"0".repeat(64)}`,
-							expectedRegistryEntryIdentity: "search/summary",
-						},
-					],
+					sourceSetDigest: sourceSetDigest(sources),
+					sources,
 				},
 				null,
 				2,
@@ -115,11 +150,23 @@ await run("publish-registry rejects release plan source digest mismatch", async 
 	})
 })
 
-await run("publish-registry rejects release plan source missing from config/llm/source", async () => {
-	await withTempRoot("missing-source", async (tempRoot, registryRoot) => {
-		await mkdir(path.join(registryRoot, "source"), { recursive: true })
+await run("publish-registry rejects release plan source set digest mismatch", async () => {
+	await withTempRoot("source-set-digest-mismatch", async (tempRoot, registryRoot) => {
+		const sourceContent = "---\nname: summary\n---\n\n# Test\n"
+		const sourcePath = path.join(registryRoot, "source", "search", "summary.mda")
+		await mkdir(path.dirname(sourcePath), { recursive: true })
+		await writeFile(sourcePath, sourceContent)
 		const releasePlanPath = path.join(tempRoot, "release", "plan.json")
 		await mkdir(path.dirname(releasePlanPath), { recursive: true })
+		const sources = [
+			{
+				module: "search",
+				preset: "summary",
+				sourcePath: "search/summary.mda",
+				rawSourceDigest: sha256Prefixed(sourceContent),
+				expectedRegistryEntryIdentity: "search/summary",
+			},
+		]
 		await writeFile(
 			releasePlanPath,
 			`${JSON.stringify(
@@ -127,16 +174,58 @@ await run("publish-registry rejects release plan source missing from config/llm/
 					version: 1,
 					kind: "llmix-release-plan",
 					registryDir: registryRoot,
-					sourceSetDigest: sha256Prefixed("source-set"),
-					sources: [
-						{
-							module: "search",
-							preset: "summary",
-							sourcePath: "search/summary.mda",
-							rawSourceDigest: sha256Prefixed("missing"),
-							expectedRegistryEntryIdentity: "search/summary",
-						},
-					],
+					sourceSetDigest: sha256Prefixed("tampered-source-set"),
+					sources,
+				},
+				null,
+				2,
+			)}\n`,
+		)
+		const result = await captureCli([
+			"publish-registry",
+			"--root",
+			registryRoot,
+			"--release-plan",
+			releasePlanPath,
+			"--revision",
+			"2026-05-14T000000Z",
+			"--policy",
+			path.join(tempRoot, "policy.json"),
+			"--root-did",
+			"did:web:tools.example.com",
+			"--root-key-id",
+			"did:web:tools.example.com#release",
+			"--root-key-file",
+			path.join(tempRoot, "release-key.pem"),
+		])
+		assert.equal(result.exitCode, 1)
+		assert.match(result.stderr, /sourceSetDigest/)
+	})
+})
+
+await run("publish-registry rejects release plan source missing from config/llm/source", async () => {
+	await withTempRoot("missing-source", async (tempRoot, registryRoot) => {
+		await mkdir(path.join(registryRoot, "source"), { recursive: true })
+		const releasePlanPath = path.join(tempRoot, "release", "plan.json")
+		await mkdir(path.dirname(releasePlanPath), { recursive: true })
+		const sources = [
+			{
+				module: "search",
+				preset: "summary",
+				sourcePath: "search/summary.mda",
+				rawSourceDigest: sha256Prefixed("missing"),
+				expectedRegistryEntryIdentity: "search/summary",
+			},
+		]
+		await writeFile(
+			releasePlanPath,
+			`${JSON.stringify(
+				{
+					version: 1,
+					kind: "llmix-release-plan",
+					registryDir: registryRoot,
+					sourceSetDigest: sourceSetDigest(sources),
+					sources,
 				},
 				null,
 				2,
@@ -192,6 +281,15 @@ await run("publish-registry rejects did:web policy without verifier document", a
 		const releasePlanPath = path.join(tempRoot, "release", "plan.json")
 		const policyPath = path.join(tempRoot, "release", "policy.json")
 		await mkdir(path.dirname(releasePlanPath), { recursive: true })
+		const sources = [
+			{
+				module: "search",
+				preset: "summary",
+				sourcePath: "search/summary.mda",
+				rawSourceDigest: sha256Prefixed(sourceContent),
+				expectedRegistryEntryIdentity: "search/summary",
+			},
+		]
 		await writeFile(
 			releasePlanPath,
 			`${JSON.stringify(
@@ -199,16 +297,8 @@ await run("publish-registry rejects did:web policy without verifier document", a
 					version: 1,
 					kind: "llmix-release-plan",
 					registryDir: registryRoot,
-					sourceSetDigest: sha256Prefixed("source-set"),
-					sources: [
-						{
-							module: "search",
-							preset: "summary",
-							sourcePath: "search/summary.mda",
-							rawSourceDigest: sha256Prefixed(sourceContent),
-							expectedRegistryEntryIdentity: "search/summary",
-						},
-					],
+					sourceSetDigest: sourceSetDigest(sources),
+					sources,
 				},
 				null,
 				2,
