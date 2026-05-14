@@ -131,6 +131,8 @@ class ConfigRegistryManager:
             current_pointer = self._read_current_pointer()
         except Exception as exc:
             self._record_reload_error(exc)
+            if self._should_fail_closed_on_refresh_error():
+                raise
             return
 
         if (
@@ -162,6 +164,11 @@ class ConfigRegistryManager:
                 )
             except Exception as exc:
                 self._record_reload_error(exc)
+                if self._should_fail_closed_on_refresh_error():
+                    raise
+
+    def _should_fail_closed_on_refresh_error(self) -> bool:
+        return self.signed_root_options is not None
 
     def _read_current_pointer(self) -> dict[str, str]:
         pointer = _read_json_file(self.current_path)

@@ -190,7 +190,7 @@ def test_e2e_signed_mda_and_registry_root_loads_expected_config(tmp_path: Path) 
     print("LOADED_CONFIG_JSON=" + json.dumps(loaded, sort_keys=True))
 
 
-def test_e2e_rejects_partially_tampered_signed_mda_and_snapshot(tmp_path: Path) -> None:
+def test_e2e_rejects_partially_tampered_signed_mda_and_revision(tmp_path: Path) -> None:
     root = tmp_path / "partial-tamper"
     source_path = _write_signed_mda(root)
     source_path.write_text(
@@ -212,7 +212,7 @@ def test_e2e_rejects_partially_tampered_signed_mda_and_snapshot(tmp_path: Path) 
             ),
         )
 
-    clean_root = tmp_path / "partial-snapshot-tamper"
+    clean_root = tmp_path / "partial-revision-tamper"
     _write_signed_mda(clean_root)
     published = ConfigRegistryPublisher(clean_root).publish(
         revision="2026-05-10.1", options=_publish_options()
@@ -241,11 +241,11 @@ def test_e2e_rejects_whole_registry_swap_signed_by_untrusted_anchor(tmp_path: Pa
     (trusted_root / "current.json").write_text(
         (attacker_root / "current.json").read_text(encoding="utf-8"), encoding="utf-8"
     )
-    target_snapshot = trusted_root / "compiled" / attacker.revision
-    target_snapshot.parent.mkdir(parents=True, exist_ok=True)
+    target_compiled = trusted_root / "compiled" / attacker.revision
+    target_compiled.parent.mkdir(parents=True, exist_ok=True)
     for path in (attacker_root / "compiled" / attacker.revision).rglob("*"):
         if path.is_file():
-            copied = target_snapshot / path.relative_to(attacker.compiled_path)
+            copied = target_compiled / path.relative_to(attacker.compiled_path)
             copied.parent.mkdir(parents=True, exist_ok=True)
             copied.write_bytes(path.read_bytes())
 

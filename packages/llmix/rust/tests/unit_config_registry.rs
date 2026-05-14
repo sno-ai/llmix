@@ -34,7 +34,7 @@ fn mda_source(frontmatter: &str) -> String {
     format!("---\n{}\n---\n# preset\n", frontmatter.trim())
 }
 
-fn write_authoring_preset(
+fn write_source_preset(
     root: &Path,
     module_name: &str,
     preset_name: &str,
@@ -145,7 +145,7 @@ fn signed_registry_open_options() -> ConfigRegistryOpenOptions {
 fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
     let temp_root = unique_temp_dir("llmix-config-registry-publish");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -174,7 +174,9 @@ fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
     assert_eq!(manager.current_path(), root.join("current.json").as_path());
     assert_eq!(manager.compiled_dir(), root.join("compiled").as_path());
     assert_eq!(
-        manager.available_presets(),
+        manager
+            .available_presets()
+            .expect("available presets should list"),
         vec!["search/summary".to_string()]
     );
     assert!(root
@@ -202,7 +204,7 @@ fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
 fn signed_registry_root_publish_and_open_use_public_options() {
     let temp_root = unique_temp_dir("llmix-config-registry-signed-root");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -232,10 +234,199 @@ fn signed_registry_root_publish_and_open_use_public_options() {
 }
 
 #[test]
+fn signed_registry_root_refresh_fails_closed_when_trust_anchor_stays_pinned() {
+    let temp_root = unique_temp_dir("llmix-config-registry-signed-refresh-fail-closed");
+    let root = temp_root.join("config/llm");
+    write_source_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-4.1-mini", "medium", 256, "openai")),
+    );
+
+    let signer = TestRegistryRootSigner;
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let first = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
+        .expect("first signed publish should succeed");
+    let mut open_options = signed_registry_open_options();
+    open_options
+        .signed_root
+        .as_mut()
+        .expect("signed root options should exist")
+        .expected_root_digest = first.registry_root_sha256.clone();
+    let mut manager = ConfigRegistryManager::open_with_options(&root, open_options)
+        .expect("signed registry should open");
+
+    write_source_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-5-mini", "high", 2048, "openai")),
+    );
+    let second = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-2", &signer))
+        .expect("second signed publish should succeed");
+
+    assert_ne!(second.registry_root_sha256, first.registry_root_sha256);
+    let error = manager
+        .available_presets()
+        .expect_err("signed refresh should fail closed when pinned digest changes");
+    assert!(
+        error.to_string().contains("expected_root_digest"),
+        "unexpected error: {error}"
+    );
+    assert_eq!(manager.active_revision(), "signed-1");
+    assert!(manager.last_reload_error().is_some());
+}
+
+#[test]
+fn signed_activation_failure_reuses_committed_registry_root_on_retry() {
+    let temp_root = unique_temp_dir("llmix-config-registry-signed-activation-retry");
+    let root = temp_root.join("config/llm");
+    write_source_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-4.1-mini", "medium", 256, "openai")),
+    );
+    fs::create_dir_all(root.join("current.json")).expect("current path directory should exist");
+
+    let signer = TestRegistryRootSigner;
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let error = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
+        .expect_err("activation should fail when current.json is a directory");
+
+    assert!(matches!(error, LlmixError::Io(_)));
+    let root_path = root.join("compiled/signed-1/registry-root.json");
+    let committed_root_bytes = fs::read(&root_path).expect("registry root should exist");
+
+    fs::remove_dir_all(root.join("current.json"))
+        .expect("current path directory should be removed");
+    let published = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
+        .expect("same signed revision should reuse the committed registry root");
+    let mut open_options = signed_registry_open_options();
+    open_options
+        .signed_root
+        .as_mut()
+        .expect("signed root options should exist")
+        .expected_root_digest = published.registry_root_sha256.clone();
+    let mut manager = ConfigRegistryManager::open_with_options(&root, open_options)
+        .expect("signed registry should open");
+    let config = manager
+        .get_preset("search", "summary")
+        .expect("preset should load");
+
+    assert_eq!(
+        published.registry_root_path.as_deref(),
+        Some(root_path.as_path())
+    );
+    assert!(published.registry_root_sha256.is_some());
+    assert_eq!(
+        fs::read(&root_path).expect("registry root should remain readable"),
+        committed_root_bytes
+    );
+    assert_eq!(manager.active_revision(), "signed-1");
+    assert_eq!(config["model"], json!("gpt-4.1-mini"));
+}
+
+#[test]
+fn signed_activation_retry_rejects_corrupted_committed_registry_root() {
+    let temp_root = unique_temp_dir("llmix-config-registry-signed-retry-tampered-root");
+    let root = temp_root.join("config/llm");
+    write_source_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-4.1-mini", "medium", 256, "openai")),
+    );
+    fs::create_dir_all(root.join("current.json")).expect("current path directory should exist");
+
+    let signer = TestRegistryRootSigner;
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let error = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
+        .expect_err("activation should fail when current.json is a directory");
+    assert!(matches!(error, LlmixError::Io(_)));
+
+    let root_path = root.join("compiled/signed-1/registry-root.json");
+    let mut envelope: Value = serde_json::from_str(
+        &fs::read_to_string(&root_path).expect("registry root should be readable"),
+    )
+    .expect("registry root should parse");
+    envelope["payload"]["files"] = json!([]);
+    fs::write(
+        &root_path,
+        serde_json::to_string(&envelope).expect("tampered root should serialize"),
+    )
+    .expect("registry root should be overwritten");
+
+    fs::remove_dir_all(root.join("current.json"))
+        .expect("current path directory should be removed");
+    let error = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
+        .expect_err("tampered committed registry root should block retry");
+
+    assert!(matches!(error, LlmixError::InvalidConfig(_)));
+    assert!(
+        error.to_string().contains("Registry root"),
+        "unexpected error: {error}"
+    );
+    assert!(!root.join("current.json").exists());
+}
+
+#[test]
+fn signed_activation_retry_rejects_corrupted_committed_registry_root_signature() {
+    let temp_root = unique_temp_dir("llmix-config-registry-signed-retry-tampered-signature");
+    let root = temp_root.join("config/llm");
+    write_source_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-4.1-mini", "medium", 256, "openai")),
+    );
+    fs::create_dir_all(root.join("current.json")).expect("current path directory should exist");
+
+    let signer = TestRegistryRootSigner;
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let error = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
+        .expect_err("activation should fail when current.json is a directory");
+    assert!(matches!(error, LlmixError::Io(_)));
+
+    let root_path = root.join("compiled/signed-1/registry-root.json");
+    let mut envelope: Value = serde_json::from_str(
+        &fs::read_to_string(&root_path).expect("registry root should be readable"),
+    )
+    .expect("registry root should parse");
+    envelope["signatures"][0]["signature"] = json!("TAMPERED_SIGNATURE");
+    fs::write(
+        &root_path,
+        serde_json::to_string(&envelope).expect("tampered root should serialize"),
+    )
+    .expect("registry root should be overwritten");
+
+    fs::remove_dir_all(root.join("current.json"))
+        .expect("current path directory should be removed");
+    let error = publisher
+        .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
+        .expect_err("tampered committed registry root signature should block retry");
+
+    assert!(matches!(error, LlmixError::InvalidConfig(_)));
+    assert!(
+        error.to_string().contains("signature mismatch"),
+        "unexpected error: {error}"
+    );
+    assert!(!root.join("current.json").exists());
+}
+
+#[test]
 fn signed_registry_root_opens_from_cli_trust_manifest_schema() {
     let temp_root = unique_temp_dir("llmix-config-registry-trust-manifest");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(&root, "search", "summary", None);
+    write_source_preset(&root, "search", "summary", None);
 
     let signer = TestRegistryRootSigner;
     let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
@@ -362,7 +553,7 @@ fn signed_registry_root_opens_from_cli_trust_manifest_schema() {
 fn signed_registry_root_rejects_tampered_registry_root_payload() {
     let temp_root = unique_temp_dir("llmix-config-registry-signed-root-tamper");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(&root, "search", "summary", None);
+    write_source_preset(&root, "search", "summary", None);
 
     let signer = TestRegistryRootSigner;
     let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
@@ -404,7 +595,7 @@ fn signed_registry_root_rejects_tampered_registry_root_payload() {
 fn signed_registry_root_rejects_current_binding_digest_mismatch_during_parse() {
     let temp_root = unique_temp_dir("llmix-config-registry-current-binding-tamper");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(&root, "search", "summary", None);
+    write_source_preset(&root, "search", "summary", None);
 
     let signer = TestRegistryRootSigner;
     let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
@@ -440,7 +631,7 @@ fn signed_registry_root_rejects_current_binding_digest_mismatch_during_parse() {
 fn publish_uses_unique_staging_dir_for_explicit_revision() {
     let temp_root = unique_temp_dir("llmix-config-registry-unique-stage");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -462,10 +653,66 @@ fn publish_uses_unique_staging_dir_for_explicit_revision() {
 }
 
 #[test]
+fn publish_same_revision_from_same_source_is_idempotent() {
+    let temp_root = unique_temp_dir("llmix-config-registry-idempotent-revision");
+    let root = temp_root.join("config/llm");
+    write_source_preset(&root, "search", "summary", None);
+
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    let first = publisher
+        .publish_with_options(Some("manual"), false)
+        .expect("first publish should succeed");
+    let second = publisher
+        .publish_with_options(Some("manual"), true)
+        .expect("second publish should reuse the compiled revision");
+    let mut manager = ConfigRegistryManager::open(&root).expect("manager should open");
+    let config = manager
+        .get_preset("search", "summary")
+        .expect("preset should load");
+
+    assert_eq!(first.manifest_sha256, second.manifest_sha256);
+    assert_eq!(second.revision, "manual");
+    assert!(second.activated);
+    assert_eq!(manager.active_revision(), "manual");
+    assert_eq!(config["model"], json!("gpt-4.1-mini"));
+}
+
+#[test]
+fn publish_same_revision_with_different_source_fails() {
+    let temp_root = unique_temp_dir("llmix-config-registry-different-revision");
+    let root = temp_root.join("config/llm");
+    write_source_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-4.1-mini", "medium", 256, "openai")),
+    );
+
+    let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
+    publisher
+        .publish_with_options(Some("manual"), false)
+        .expect("first publish should succeed");
+    write_source_preset(
+        &root,
+        "search",
+        "summary",
+        Some(("gpt-5-mini", "high", 2048, "openai")),
+    );
+
+    let error = publisher
+        .publish_with_options(Some("manual"), false)
+        .expect_err("changed source should not reuse an existing revision");
+    assert!(
+        error.to_string().contains("different contents"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
 fn manager_reloads_after_current_revision_changes() {
     let temp_root = unique_temp_dir("llmix-config-registry-reload");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -476,7 +723,7 @@ fn manager_reloads_after_current_revision_changes() {
     let first = publisher.publish().expect("first publish should succeed");
     let mut manager = ConfigRegistryManager::open(&root).expect("manager should open");
 
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -498,10 +745,10 @@ fn manager_reloads_after_current_revision_changes() {
 }
 
 #[test]
-fn manager_rolls_back_when_current_revision_points_to_older_snapshot() {
+fn manager_rolls_back_when_current_revision_points_to_older_revision() {
     let temp_root = unique_temp_dir("llmix-config-registry-rollback");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -512,7 +759,7 @@ fn manager_rolls_back_when_current_revision_points_to_older_snapshot() {
     let first = publisher.publish().expect("first publish should succeed");
     let mut manager = ConfigRegistryManager::open(&root).expect("manager should open");
 
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -545,10 +792,10 @@ fn manager_rolls_back_when_current_revision_points_to_older_snapshot() {
 }
 
 #[test]
-fn manager_ignores_authoring_edits_until_a_new_revision_is_published() {
-    let temp_root = unique_temp_dir("llmix-config-registry-authoring-edits");
+fn manager_ignores_source_edits_until_a_new_revision_is_published() {
+    let temp_root = unique_temp_dir("llmix-config-registry-source-edits");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -559,7 +806,7 @@ fn manager_ignores_authoring_edits_until_a_new_revision_is_published() {
     let published = publisher.publish().expect("publish should succeed");
     let mut manager = ConfigRegistryManager::open(&root).expect("manager should open");
 
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -604,7 +851,7 @@ fn manager_fails_fast_with_malformed_current_pointer() {
 fn manager_keeps_last_known_good_config_when_pointer_changes_to_missing_revision() {
     let temp_root = unique_temp_dir("llmix-config-registry-missing-revision");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -636,10 +883,10 @@ fn manager_keeps_last_known_good_config_when_pointer_changes_to_missing_revision
 }
 
 #[test]
-fn manager_rejects_a_tampered_resolved_snapshot_on_startup() {
+fn manager_rejects_a_tampered_resolved_revision_on_startup() {
     let temp_root = unique_temp_dir("llmix-config-registry-tampered");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -665,7 +912,7 @@ fn manager_rejects_a_tampered_resolved_snapshot_on_startup() {
     )
     .expect("resolved json should be overwritten");
 
-    let error = ConfigRegistryManager::open(&root).expect_err("tampered snapshot should fail");
+    let error = ConfigRegistryManager::open(&root).expect_err("tampered revision should fail");
     assert!(matches!(
         error,
         LlmixError::InvalidConfig(InvalidConfigError { .. })
@@ -673,10 +920,10 @@ fn manager_rejects_a_tampered_resolved_snapshot_on_startup() {
 }
 
 #[test]
-fn manager_rejects_a_tampered_authoring_snapshot_on_startup() {
-    let temp_root = unique_temp_dir("llmix-config-registry-authoring-tampered");
+fn manager_rejects_a_tampered_source_revision_on_startup() {
+    let temp_root = unique_temp_dir("llmix-config-registry-source-tampered");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(&root, "search", "summary", None);
+    write_source_preset(&root, "search", "summary", None);
 
     let published = ConfigRegistryPublisher::new(&root)
         .expect("publisher should open")
@@ -687,9 +934,9 @@ fn manager_rejects_a_tampered_authoring_snapshot_on_startup() {
         .join(&published.revision)
         .join("source/search/summary.mda");
     fs::write(&source_path, "---\nname: tampered\n---\n")
-        .expect("authoring artifact should be overwritten");
+        .expect("source artifact should be overwritten");
 
-    let error = ConfigRegistryManager::open(&root).expect_err("tampered snapshot should fail");
+    let error = ConfigRegistryManager::open(&root).expect_err("tampered revision should fail");
     assert!(matches!(
         error,
         LlmixError::InvalidConfig(InvalidConfigError { .. })
@@ -700,7 +947,7 @@ fn manager_rejects_a_tampered_authoring_snapshot_on_startup() {
 fn manager_rejects_manifest_with_empty_artifact_paths_before_opening_them() {
     let temp_root = unique_temp_dir("llmix-config-registry-empty-manifest-path");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(&root, "search", "summary", None);
+    write_source_preset(&root, "search", "summary", None);
 
     let published = ConfigRegistryPublisher::new(&root)
         .expect("publisher should open")
@@ -731,7 +978,7 @@ fn manager_rejects_manifest_with_empty_artifact_paths_before_opening_them() {
 fn publish_failure_leaves_active_revision_unchanged() {
     let temp_root = unique_temp_dir("llmix-config-registry-publish-failure");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -747,7 +994,7 @@ fn publish_failure_leaves_active_revision_unchanged() {
 
     let error = publisher
         .publish()
-        .expect_err("publishing invalid authoring MDA should fail");
+        .expect_err("publishing invalid source MDA should fail");
     assert!(matches!(error, LlmixError::InvalidConfig(_)));
 
     let pointer: Value = serde_json::from_str(
@@ -771,7 +1018,7 @@ fn publish_failure_leaves_active_revision_unchanged() {
 fn publish_with_mda_options_uses_mda_verification() {
     let temp_root = unique_temp_dir("llmix-config-registry-verification-options");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(&root, "search", "summary", None);
+    write_source_preset(&root, "search", "summary", None);
 
     let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
     let error = publisher
@@ -797,15 +1044,15 @@ fn publish_with_mda_options_uses_mda_verification() {
     );
     assert!(
         !root.join("compiled/manual").exists(),
-        "failed publish should not keep a snapshot"
+        "failed publish should not keep a revision"
     );
 }
 
 #[test]
-fn activation_failure_removes_new_snapshot_so_revision_can_retry() {
+fn activation_failure_keeps_compiled_revision_so_current_can_retry() {
     let temp_root = unique_temp_dir("llmix-config-registry-activation-failure");
     let root = temp_root.join("config/llm");
-    write_authoring_preset(
+    write_source_preset(
         &root,
         "search",
         "summary",
@@ -820,8 +1067,8 @@ fn activation_failure_removes_new_snapshot_so_revision_can_retry() {
 
     assert!(matches!(error, LlmixError::Io(_)));
     assert!(
-        !root.join("compiled/manual").exists(),
-        "failed activation should remove the newly renamed snapshot"
+        root.join("compiled/manual/manifest.json").is_file(),
+        "failed activation should keep the compiled revision"
     );
 
     fs::remove_dir_all(root.join("current.json"))
@@ -829,12 +1076,19 @@ fn activation_failure_removes_new_snapshot_so_revision_can_retry() {
     let published = publisher
         .publish_with_options(Some("manual"), true)
         .expect("same revision should publish after cleanup");
+    let mut manager = ConfigRegistryManager::open(&root).expect("manager should open");
+    let config = manager
+        .get_preset("search", "summary")
+        .expect("preset should load");
+
     assert_eq!(published.revision, "manual");
     assert!(published.activated);
+    assert_eq!(manager.active_revision(), "manual");
+    assert_eq!(config["model"], json!("gpt-4.1-mini"));
 }
 
 #[test]
-fn publisher_rejects_legacy_yaml_authoring_files() {
+fn publisher_rejects_legacy_yaml_source_files() {
     let temp_root = unique_temp_dir("llmix-config-registry-legacy-yaml");
     let root = temp_root.join("config/llm");
     write_file(
@@ -845,7 +1099,7 @@ fn publisher_rejects_legacy_yaml_authoring_files() {
     let error = ConfigRegistryPublisher::new(&root)
         .expect("publisher should open")
         .publish()
-        .expect_err("legacy YAML authoring should fail");
+        .expect_err("legacy YAML source should fail");
 
     assert!(matches!(error, LlmixError::InvalidConfig(_)));
     assert!(
@@ -858,7 +1112,7 @@ fn publisher_rejects_legacy_yaml_authoring_files() {
 
 #[cfg(unix)]
 #[test]
-fn publisher_rejects_symlinked_authoring_modules() {
+fn publisher_rejects_symlinked_source_modules() {
     let temp_root = unique_temp_dir("llmix-config-registry-module-symlink");
     let root = temp_root.join("config/llm");
     let outside_module = temp_root.join("outside-module");
@@ -875,14 +1129,14 @@ metadata:
 "#,
         ),
     );
-    fs::create_dir_all(root.join("source")).expect("authoring dir should exist");
+    fs::create_dir_all(root.join("source")).expect("source dir should exist");
     std::os::unix::fs::symlink(&outside_module, root.join("source/search"))
         .expect("module symlink should be created");
 
     let error = ConfigRegistryPublisher::new(&root)
         .expect("publisher should open")
         .publish()
-        .expect_err("symlinked authoring module should fail");
+        .expect_err("symlinked source module should fail");
 
     assert!(matches!(error, LlmixError::InvalidConfig(_)));
     assert!(
@@ -893,7 +1147,7 @@ metadata:
 
 #[cfg(unix)]
 #[test]
-fn publisher_rejects_symlinked_authoring_presets() {
+fn publisher_rejects_symlinked_source_presets() {
     let temp_root = unique_temp_dir("llmix-config-registry-preset-symlink");
     let root = temp_root.join("config/llm");
     let outside_preset = temp_root.join("outside-summary.mda");
@@ -917,7 +1171,7 @@ metadata:
     let error = ConfigRegistryPublisher::new(&root)
         .expect("publisher should open")
         .publish()
-        .expect_err("symlinked authoring preset should fail");
+        .expect_err("symlinked source preset should fail");
 
     assert!(matches!(error, LlmixError::InvalidConfig(_)));
     assert!(

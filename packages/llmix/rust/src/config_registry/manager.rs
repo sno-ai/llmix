@@ -110,8 +110,9 @@ impl ConfigRegistryManager {
         self.last_reload_failure_at
     }
 
-    pub fn available_presets(&self) -> Vec<String> {
-        self.configs.keys().cloned().collect()
+    pub fn available_presets(&mut self) -> LlmixResult<Vec<String>> {
+        self.refresh_if_needed()?;
+        Ok(self.configs.keys().cloned().collect())
     }
 
     pub fn get_preset<S1, S2>(&mut self, module: S1, preset: S2) -> LlmixResult<Value>
@@ -124,7 +125,7 @@ impl ConfigRegistryManager {
         validate_module(module)?;
         validate_preset(preset)?;
 
-        self.refresh_if_needed();
+        self.refresh_if_needed()?;
 
         let preset_id = format!("{module}/{preset}");
         self.configs.get(&preset_id).cloned().ok_or_else(|| {
@@ -138,13 +139,11 @@ impl ConfigRegistryManager {
         })
     }
 
-    fn refresh_if_needed(&mut self) {
+    fn refresh_if_needed(&mut self) -> LlmixResult<()> {
         let current_pointer = match read_current_pointer(&self.current_path, &self.compiled_dir) {
             Ok(value) => value,
             Err(error) => {
-                self.last_reload_error = Some(error);
-                self.last_reload_failure_at = Some(SystemTime::now());
-                return;
+                return self.handle_reload_error(error);
             }
         };
 
@@ -155,7 +154,7 @@ impl ConfigRegistryManager {
         if current_pointer.revision == self.active_revision
             && current_manifest_sha256 == self.active_manifest_sha256
         {
-            return;
+            return Ok(());
         }
 
         match load_revision(
@@ -171,12 +170,24 @@ impl ConfigRegistryManager {
                 self.last_reload_error = None;
                 self.last_successful_reload_at = Some(SystemTime::now());
                 self.last_reload_failure_at = None;
+                Ok(())
             }
-            Err(error) => {
-                self.last_reload_error = Some(error);
-                self.last_reload_failure_at = Some(SystemTime::now());
-            }
+            Err(error) => self.handle_reload_error(error),
         }
+    }
+
+    fn handle_reload_error(&mut self, error: LlmixError) -> LlmixResult<()> {
+        let fail_closed = self.open_options.signed_root.is_some();
+        let message = error.to_string();
+        self.last_reload_error = Some(error);
+        self.last_reload_failure_at = Some(SystemTime::now());
+        if fail_closed {
+            return Err(InvalidConfigError {
+                message: format!("Config Registry refresh failed: {message}"),
+            }
+            .into());
+        }
+        Ok(())
     }
 }
 

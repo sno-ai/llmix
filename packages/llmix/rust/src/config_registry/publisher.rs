@@ -5,7 +5,10 @@ use super::fs_ops::{
     to_registry_resolved_config, validate_resolved_config, validate_revision,
     validate_source_directory, write_bytes, write_json,
 };
-use super::root::{build_registry_root_payload, create_registry_root_envelope};
+use super::root::{
+    build_registry_root_payload, create_registry_root_envelope, registry_root_signing_input,
+};
+use super::root_verify::parse_registry_root_envelope;
 use super::*;
 use chrono::{DateTime, SecondsFormat, Utc};
 
@@ -16,6 +19,12 @@ pub struct ConfigRegistryPublisher {
     compiled_dir: PathBuf,
     staging_dir: PathBuf,
     current_path: PathBuf,
+}
+
+#[derive(Debug)]
+struct CommittedRevision {
+    manifest_sha256: String,
+    registry_root_sha256: Option<String>,
 }
 
 impl ConfigRegistryPublisher {
@@ -85,24 +94,17 @@ impl ConfigRegistryPublisher {
         validate_revision(&revision_id)?;
 
         let compiled_path = self.compiled_dir.join(&revision_id);
-        if compiled_path.exists() {
-            return Err(InvalidConfigError {
-                message: format!("Registry revision already exists: {revision_id}"),
-            }
-            .into());
-        }
-
         let stage_path = staging_attempt_path(&self.staging_dir, &revision_id, published_at);
 
         let publish_result = (|| -> LlmixResult<PublishedRevision> {
-            let manifest = self.build_staged_snapshot(
+            let manifest = self.build_staged_revision(
                 &stage_path,
                 &presets,
                 &revision_id,
                 &published_at_text,
                 &options.mda_options,
             )?;
-            self.verify_staged_snapshot(&stage_path, &manifest)?;
+            self.verify_staged_revision(&stage_path, &manifest)?;
             let manifest_path = stage_path.join("manifest.json");
             let manifest_sha256 = sha256_file(&manifest_path)?;
             let registry_root_sha256 = self.write_registry_root_if_requested(
@@ -112,35 +114,37 @@ impl ConfigRegistryPublisher {
                 options.registry_root.as_ref(),
             )?;
 
-            fs::create_dir_all(&self.compiled_dir)?;
-            fs::create_dir_all(&self.staging_dir)?;
-            fs::rename(&stage_path, &compiled_path)?;
-            fsync_dir(&self.compiled_dir);
+            let committed = self.commit_revision(
+                &stage_path,
+                &compiled_path,
+                &manifest,
+                manifest_sha256,
+                registry_root_sha256,
+                options.registry_root.as_ref(),
+            )?;
 
             if options.activate {
                 let pointer = CurrentPointer {
                     revision: revision_id.clone(),
-                    manifest_sha256: Some(manifest_sha256.clone()),
+                    manifest_sha256: Some(committed.manifest_sha256.clone()),
                 };
-                if let Err(error) = atomic_write_json(
+                atomic_write_json(
                     &self.current_path,
                     &serde_json::to_value(pointer).map_err(LlmixError::from)?,
-                ) {
-                    let _ = fs::remove_dir_all(&compiled_path);
-                    fsync_dir(&self.compiled_dir);
-                    return Err(error);
-                }
+                )?;
             }
 
+            let registry_root_path = committed
+                .registry_root_sha256
+                .as_ref()
+                .map(|_| compiled_path.join(REGISTRY_ROOT_FILENAME));
             Ok(PublishedRevision {
                 revision: revision_id.clone(),
                 compiled_path: compiled_path.clone(),
                 manifest_path: compiled_path.join("manifest.json"),
-                manifest_sha256,
-                registry_root_path: registry_root_sha256
-                    .as_ref()
-                    .map(|_| compiled_path.join(REGISTRY_ROOT_FILENAME)),
-                registry_root_sha256,
+                manifest_sha256: committed.manifest_sha256,
+                registry_root_path,
+                registry_root_sha256: committed.registry_root_sha256,
                 activated: options.activate,
                 preset_ids: manifest.presets.keys().cloned().collect(),
             })
@@ -151,6 +155,168 @@ impl ConfigRegistryPublisher {
         }
 
         publish_result
+    }
+
+    fn commit_revision(
+        &self,
+        stage_path: &Path,
+        compiled_path: &Path,
+        expected_manifest: &RegistryManifest,
+        manifest_sha256: String,
+        registry_root_sha256: Option<String>,
+        registry_root_options: Option<&RegistryRootSigningOptions<'_>>,
+    ) -> LlmixResult<CommittedRevision> {
+        fs::create_dir_all(&self.compiled_dir)?;
+        fs::create_dir_all(&self.staging_dir)?;
+        match fs::rename(stage_path, compiled_path) {
+            Ok(()) => {
+                fsync_dir(&self.compiled_dir);
+                Ok(CommittedRevision {
+                    manifest_sha256,
+                    registry_root_sha256,
+                })
+            }
+            Err(_) if compiled_path.exists() => {
+                let committed = self.load_matching_existing_revision(
+                    compiled_path,
+                    expected_manifest,
+                    registry_root_sha256.as_deref(),
+                    registry_root_options,
+                )?;
+                if stage_path.exists() {
+                    let _ = fs::remove_dir_all(stage_path);
+                }
+                Ok(committed)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn load_matching_existing_revision(
+        &self,
+        compiled_path: &Path,
+        expected_manifest: &RegistryManifest,
+        registry_root_sha256: Option<&str>,
+        registry_root_options: Option<&RegistryRootSigningOptions<'_>>,
+    ) -> LlmixResult<CommittedRevision> {
+        let manifest_path = compiled_path.join("manifest.json");
+        let existing_manifest_value = Value::Object(read_json_object(&manifest_path)?);
+        let existing_manifest: RegistryManifest = serde_json::from_value(existing_manifest_value)
+            .map_err(|error| InvalidConfigError {
+            message: format!(
+                "Invalid Config Registry manifest {}: {error}",
+                manifest_path.display()
+            ),
+        })?;
+        self.verify_staged_revision(compiled_path, &existing_manifest)?;
+
+        if existing_manifest.revision != expected_manifest.revision
+            || existing_manifest.schema_version != expected_manifest.schema_version
+            || existing_manifest.presets != expected_manifest.presets
+        {
+            return Err(InvalidConfigError {
+                message: format!(
+                    "Registry revision already exists with different contents: {}",
+                    expected_manifest.revision
+                ),
+            }
+            .into());
+        }
+
+        let existing_manifest_sha256 = sha256_file(&manifest_path)?;
+        let root_path = compiled_path.join(REGISTRY_ROOT_FILENAME);
+        let existing_registry_root_sha256 = if root_path.exists() {
+            Some(sha256_file(&root_path)?)
+        } else {
+            None
+        };
+        // Signed roots include publish-time material; same-revision retries must
+        // reuse the already committed root once the manifest contents match.
+        if registry_root_sha256.is_some() {
+            match existing_registry_root_sha256.as_deref() {
+                Some(_) => {
+                    let Some(registry_root_options) = registry_root_options else {
+                        return Err(InvalidConfigError {
+                            message:
+                                "Registry revision already exists but no registry root signer is available"
+                                    .to_string(),
+                        }
+                        .into());
+                    };
+                    self.verify_existing_registry_root(
+                        &root_path,
+                        &existing_manifest,
+                        &existing_manifest_sha256,
+                        registry_root_options,
+                    )?
+                }
+                None => {
+                    return Err(InvalidConfigError {
+                        message:
+                            "Registry revision already exists without the requested registry root"
+                                .to_string(),
+                    }
+                    .into())
+                }
+            }
+        }
+
+        Ok(CommittedRevision {
+            manifest_sha256: existing_manifest_sha256,
+            registry_root_sha256: existing_registry_root_sha256,
+        })
+    }
+
+    fn verify_existing_registry_root(
+        &self,
+        root_path: &Path,
+        manifest: &RegistryManifest,
+        manifest_sha256: &str,
+        registry_root_options: &RegistryRootSigningOptions<'_>,
+    ) -> LlmixResult<()> {
+        let envelope = parse_registry_root_envelope(root_path)?;
+        let signing_input = registry_root_signing_input(envelope.payload.clone())?;
+        if signing_input.payload_sha256 != envelope.payload_sha256
+            || signing_input.integrity.digest != envelope.integrity.digest
+        {
+            return Err(InvalidConfigError {
+                message: "Registry root payload digest mismatch".to_string(),
+            }
+            .into());
+        }
+        for signature in &envelope.signatures {
+            if signature.payload_digest != signing_input.integrity.digest {
+                return Err(InvalidConfigError {
+                    message:
+                        "Registry revision already exists with a registry root signature payload mismatch"
+                            .to_string(),
+                }
+                .into());
+            }
+        }
+
+        let expected_payload = build_registry_root_payload(manifest, manifest_sha256)?;
+        if envelope.payload != expected_payload {
+            return Err(InvalidConfigError {
+                message:
+                    "Registry revision already exists with a registry root that does not match the committed manifest"
+                        .to_string(),
+            }
+            .into());
+        }
+        let expected_envelope =
+            create_registry_root_envelope(expected_payload, registry_root_options)?;
+        if envelope.integrity != expected_envelope.integrity
+            || envelope.payload_sha256 != expected_envelope.payload_sha256
+            || envelope.signatures != expected_envelope.signatures
+        {
+            return Err(InvalidConfigError {
+                message: "Registry revision already exists with a registry root signature mismatch"
+                    .to_string(),
+            }
+            .into());
+        }
+        Ok(())
     }
 
     fn write_registry_root_if_requested(
@@ -275,7 +441,7 @@ impl ConfigRegistryPublisher {
         Ok(format!("r{published_at}_{}", &hash[..8]))
     }
 
-    fn build_staged_snapshot(
+    fn build_staged_revision(
         &self,
         stage_path: &Path,
         presets: &[PresetSource],
@@ -325,7 +491,7 @@ impl ConfigRegistryPublisher {
         Ok(manifest)
     }
 
-    fn verify_staged_snapshot(
+    fn verify_staged_revision(
         &self,
         stage_path: &Path,
         manifest: &RegistryManifest,

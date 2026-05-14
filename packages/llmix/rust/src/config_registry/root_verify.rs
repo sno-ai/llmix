@@ -34,7 +34,7 @@ pub(super) fn verify_signed_registry_root_if_needed(
     )
 }
 
-fn parse_registry_root_envelope(path: &Path) -> LlmixResult<RegistryRootEnvelope> {
+pub(super) fn parse_registry_root_envelope(path: &Path) -> LlmixResult<RegistryRootEnvelope> {
     let value = Value::Object(read_json_object(path)?);
     let envelope: RegistryRootEnvelope =
         serde_json::from_value(value).map_err(|error| InvalidConfigError {
