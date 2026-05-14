@@ -10,7 +10,7 @@ Roles are fixed:
 | --- | --- |
 | MDA | The preset source standard. |
 | MDA CLI | Validation, integrity, signing, verification, release prepare, release finalize, and doctor checks. |
-| LLMix | The official registry publisher API and runtime registry loader. |
+| LLMix | The official `llmix publish-registry` command, advanced publisher API, `llmix check-registry` command, and runtime registry loader. |
 | App repository | Owns source presets, release wiring, runtime verifier hooks, and provider credentials. |
 
 Do not write a custom compiler. Do not invent another directory structure. Use
@@ -47,7 +47,7 @@ runtime checks it against an external anchor.
 1. Put source presets in `config/llm/source/<module>/<preset>.mda`.
 2. Run MDA CLI validation, integrity, signing, verification, and release
    prepare.
-3. Run the official LLMix publisher API.
+3. Run `llmix publish-registry`.
 4. Generate `config/llm/current.json` and `config/llm/compiled/`.
 5. Run MDA CLI release finalize and doctor checks.
 6. Store the trust anchor outside `config/llm`.
@@ -125,56 +125,52 @@ mda release prepare \
 Use GitHub Actions Sigstore/Rekor policy instead of did:web if that is your
 release identity. The layout and LLMix publisher API do not change.
 
-## LLMix Publisher
+## LLMix Publisher Command
 
-Use the official LLMix publisher API in a release script. It reads
-`config/llm/source`, verifies source presets with the trust options you pass,
-writes `config/llm/compiled/<revision>`, writes `config/llm/current.json`, and
-signs `config/llm/compiled/<revision>/registry-root.json`.
+Run the official publisher command. It reads `config/llm/source`, checks the
+MDA CLI release plan, verifies source presets with the policy and verifier
+inputs, writes `config/llm/compiled/<revision>`, writes
+`config/llm/current.json`, and signs
+`config/llm/compiled/<revision>/registry-root.json`.
+
+```bash
+llmix publish-registry \
+  --root config/llm \
+  --release-plan release/plan.json \
+  --revision 2026-05-14T000000Z \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --root-did did:web:config.example.com \
+  --root-key-id did:web:config.example.com#release \
+  --root-key-file release/did-web-private-key.pem \
+  --json
+```
+
+Use `--rekor-url` and `--rekor-entry` when your policy uses Sigstore/Rekor
+instead of did:web. Use `--no-activate` only when a release system needs to
+inspect the generated revision before writing `current.json`.
+
+Do not replace this command with a project-local compiler.
+
+### Advanced Publisher API
+
+Use `ConfigRegistryPublisher` only when your release system must call LLMix as a
+library instead of a command. It is the same publisher behind
+`llmix publish-registry`; it is not a separate registry format.
 
 ```typescript
-import {
-  ConfigRegistryPublisher,
-  type RegistryRootSigner,
-} from "@snoai/llmix";
-
-import sourceTrustPolicy from "../release/trust-policy.json" with { type: "json" };
-
-const registryRootSigner: RegistryRootSigner = async ({
-  canonicalPayload,
-  integrity,
-  payloadType,
-}) => {
-  const signature = await signWithReleaseKey(canonicalPayload, payloadType);
-
-  return {
-    signer: "did-web:config.example.com",
-    "key-id": "did:web:config.example.com#release",
-    algorithm: "ed25519",
-    "payload-type": payloadType,
-    "payload-digest": integrity.digest,
-    signature,
-  };
-};
+import { ConfigRegistryPublisher } from "@snoai/llmix";
 
 const published = await new ConfigRegistryPublisher("config/llm").publish({
-  revision: process.env.RELEASE_REVISION,
+  revision: "2026-05-14T000000Z",
   trustedRuntime: true,
   trustPolicy: sourceTrustPolicy,
   didWebVerifier,
   registryRoot: { signer: registryRootSigner },
 });
 
-console.log(JSON.stringify({
-  revision: published.revision,
-  registryRootPath: published.registryRootPath,
-  registryRootSha256: published.registryRootSha256,
-}));
+console.log(published.registryRootPath);
 ```
-
-`signWithReleaseKey` and `didWebVerifier` are release-system adapters. They
-should use the same signing identity and verifier policy that the MDA CLI
-commands use. Do not replace this publisher with a project-local compiler.
 
 After publishing, the generated registry has this shape:
 
@@ -226,6 +222,18 @@ mda doctor release \
 
 `deploy/llmix-trust.json` is the external trust anchor. Store it outside
 `config/llm`.
+
+Run the official runtime proof after doctor:
+
+```bash
+llmix check-registry \
+  --root config/llm \
+  --trust deploy/llmix-trust.json \
+  --preset search_summary/openai_fast \
+  --did-document release/did.json \
+  --tamper-proof \
+  --json
+```
 
 ## Trust Anchor Delivery
 
@@ -285,7 +293,19 @@ only parses the registry and is not a secure runtime check.
 
 ## Runtime Tamper Proof
 
-Every downstream app should keep a runtime proof test. The test must:
+Every downstream app should keep a runtime proof test. The standard command is:
+
+```bash
+llmix check-registry \
+  --root config/llm \
+  --trust deploy/llmix-trust.json \
+  --preset search_summary/openai_fast \
+  --did-document release/did.json \
+  --tamper-proof \
+  --json
+```
+
+If you also keep an application-level test, it must:
 
 1. Open `config/llm` through LLMix with `signedRoot`.
 2. Load one expected preset.

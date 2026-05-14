@@ -25,6 +25,8 @@ This page is the map. Start with the language guide for the runtime you ship:
 
 The Python package is named `sno-llmix` on PyPI because `llmix` was already
 taken. The import module is still `llmix`.
+The official `llmix publish-registry` and `llmix check-registry` commands ship
+with the TypeScript npm package.
 
 ## Mental Model
 
@@ -130,7 +132,7 @@ The official flow is:
 1. Put presets in `config/llm/source/<module>/<preset>.mda`.
 2. Run MDA CLI validation, integrity, signing, verification, and release
    prepare.
-3. Run the LLMix publisher command/API.
+3. Run `llmix publish-registry`.
 4. Generate `config/llm/current.json` and `config/llm/compiled/`.
 5. Run MDA CLI release finalize and doctor checks.
 6. Open `config/llm` at runtime through LLMix with the external trust anchor.
@@ -140,8 +142,9 @@ Minimal release command shape:
 ```bash
 mda validate config/llm/source/search/summary.mda --target source --json
 mda integrity compute config/llm/source/search/summary.mda --target source --write --json
-mda sign config/llm/source/search/summary.mda ... --in-place --json
-mda verify config/llm/source/search/summary.mda --target source ... --json
+mda release trust policy --target llmix-registry --profile did-web --domain config.example.com --out release/trust-policy.json --json
+mda sign config/llm/source/search/summary.mda --profile did-web --did did:web:config.example.com --key-id did:web:config.example.com#release --key-file release/did-web-private-key.pem --in-place --json
+mda verify config/llm/source/search/summary.mda --target source --policy release/trust-policy.json --did-document release/did.json --json
 
 mda release prepare \
   --target llmix-registry \
@@ -153,23 +156,24 @@ mda release prepare \
   --json
 ```
 
-Publisher API:
+Publisher command:
 
-```typescript
-import { ConfigRegistryPublisher } from "@snoai/llmix";
-
-const published = await new ConfigRegistryPublisher("config/llm").publish({
-  trustedRuntime: true,
-  trustPolicy: sourceTrustPolicy,
-  didWebVerifier,
-  registryRoot: { signer: registryRootSigner },
-});
-
-console.log(published.registryRootPath);
+```bash
+llmix publish-registry \
+  --root config/llm \
+  --release-plan release/plan.json \
+  --revision 2026-05-14T000000Z \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --root-did did:web:config.example.com \
+  --root-key-id did:web:config.example.com#release \
+  --root-key-file release/did-web-private-key.pem \
+  --json
 ```
 
-The publisher reads `config/llm/source`, writes the compiled revision under
-`config/llm/compiled/<revision>`, writes `config/llm/current.json`, and can sign
+The command reads `config/llm/source`, checks the MDA CLI release plan, writes
+the compiled revision under `config/llm/compiled/<revision>`, writes
+`config/llm/current.json`, and signs
 `config/llm/compiled/<revision>/registry-root.json`.
 
 Then finalize and doctor the release with MDA CLI:
@@ -194,6 +198,18 @@ mda doctor release \
   --release-plan release/plan.json \
   --manifest deploy/llmix-trust.json \
   --did-document release/did.json \
+  --json
+```
+
+Then run the runtime proof command:
+
+```bash
+llmix check-registry \
+  --root config/llm \
+  --trust deploy/llmix-trust.json \
+  --preset search/summary \
+  --did-document release/did.json \
+  --tamper-proof \
   --json
 ```
 
@@ -223,8 +239,10 @@ console.log(manager.activeRevision);
 ```
 
 Python and Rust direct MDA loaders remain available for tests and preset
-inspection. The secure compiled registry path documented here uses the
-TypeScript publisher and runtime API as the official public flow.
+inspection. The secure compiled registry path documented here uses the LLMix
+CLI and TypeScript runtime API as the official public flow. Advanced release
+systems can call `ConfigRegistryPublisher` directly, but downstream apps should
+start with `llmix publish-registry`.
 
 Tamper proof requirement: opening through `ConfigRegistryManager.open()` with
 `signedRoot` must load an expected preset, and must reject modified

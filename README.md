@@ -44,6 +44,8 @@ You still own the prompt. You still own the SDK. LLMix owns the harness.
 | Rust | `cargo add llmix-rs` | `llmix_rs` |
 
 Python uses `sno-llmix` on PyPI because `llmix` was already taken. The import path is still `llmix`.
+The official registry commands ship with the TypeScript npm package as the
+`llmix` binary.
 
 Provider helpers use optional SDKs. Install only the provider clients you call.
 
@@ -308,7 +310,7 @@ The release flow is:
 1. Put source presets in `config/llm/source/<module>/<preset>.mda`.
 2. Run the MDA CLI validation, integrity, signing, verification, and release
    prepare steps.
-3. Run the official LLMix publisher.
+3. Run `llmix publish-registry`.
 4. Commit or package generated `config/llm/current.json` and
    `config/llm/compiled/`.
 5. Run MDA CLI release finalize and doctor checks.
@@ -317,29 +319,61 @@ The release flow is:
 ```text
 mda validate config/llm/source/search/extraction.mda --target source --json
 mda integrity compute config/llm/source/search/extraction.mda --target source --write --json
-mda sign config/llm/source/search/extraction.mda ... --in-place --json
-mda verify config/llm/source/search/extraction.mda --target source ... --json
-mda release prepare --target llmix-registry --source config/llm/source --registry-dir config/llm ... --json
+mda release trust policy --target llmix-registry --profile did-web --domain config.example.com --out release/trust-policy.json --json
+mda sign config/llm/source/search/extraction.mda --profile did-web --did did:web:config.example.com --key-id did:web:config.example.com#release --key-file release/did-web-private-key.pem --in-place --json
+mda verify config/llm/source/search/extraction.mda --target source --policy release/trust-policy.json --did-document release/did.json --json
+mda release prepare --target llmix-registry --source config/llm/source --registry-dir config/llm --policy release/trust-policy.json --did-document release/did.json --out release/plan.json --json
 ```
+
+```bash
+llmix publish-registry \
+  --root config/llm \
+  --release-plan release/plan.json \
+  --revision 2026-05-14T000000Z \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --root-did did:web:config.example.com \
+  --root-key-id did:web:config.example.com#release \
+  --root-key-file release/did-web-private-key.pem \
+  --json
+
+mda release finalize \
+  --target llmix-registry \
+  --registry-dir config/llm \
+  --registry-root config/llm/compiled/2026-05-14T000000Z/registry-root.json \
+  --release-plan release/plan.json \
+  --policy release/trust-policy.json \
+  --derive-root-digest \
+  --out deploy/llmix-trust.json \
+  --did-document release/did.json \
+  --json
+
+mda doctor release \
+  --target llmix-registry \
+  --source config/llm/source \
+  --registry-dir config/llm \
+  --release-plan release/plan.json \
+  --manifest deploy/llmix-trust.json \
+  --did-document release/did.json \
+  --json
+
+llmix check-registry \
+  --root config/llm \
+  --trust deploy/llmix-trust.json \
+  --preset search/extraction \
+  --did-document release/did.json \
+  --tamper-proof \
+  --json
+```
+
+Runtime code opens the generated registry with the external trust anchor:
 
 ```typescript
 import {
   ConfigRegistryManager,
-  ConfigRegistryPublisher,
   loadLlmixTrustManifest,
   registryRootOptionsFromTrustManifest,
 } from "@snoai/llmix";
-
-await new ConfigRegistryPublisher("config/llm").publish({
-  trustedRuntime: true,
-  trustPolicy: sourceTrustPolicy,
-  didWebVerifier,
-  registryRoot: { signer: registryRootSigner },
-});
-
-// Then run:
-// mda release finalize --target llmix-registry --registry-dir config/llm ...
-// mda doctor release --target llmix-registry --source config/llm/source --registry-dir config/llm ...
 
 const trust = await loadLlmixTrustManifest(process.env.LLMIX_TRUST_ANCHOR!);
 const manager = await ConfigRegistryManager.open("config/llm", {
@@ -352,6 +386,10 @@ Managers expose the active revision and reload health metadata. That makes it
 easy to say exactly which config a service is running. See
 [Secure LLMix Configuration with MDA](docs/llmix/secure-mda/secure-llmix-configuration.md)
 for the complete release flow and runtime tamper-rejection proof.
+
+`ConfigRegistryPublisher` is still available for advanced release systems, but
+the default public path is the `llmix publish-registry` command. Do not write a
+project-local registry compiler.
 
 ---
 
