@@ -2,7 +2,7 @@
 
 Rust source-mode loader for MDA v1.0 `.mda` configuration artifacts.
 
-Release 1.1.1 keeps this crate version-aligned with the npm and PyPI loaders
+Release 1.1.2 keeps this crate version-aligned with the npm and PyPI loaders
 while preserving the same MDA v1.0 source-mode contract.
 
 It mirrors the public contract of `@snoai/mda-config` where Rust can do so

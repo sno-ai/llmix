@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "snoai-mda-config"
-version = "1.1.1"
+version = "1.1.2"
 description = "Python source-mode loader for MDA v1.0 configuration artifacts"
 readme = "README.md"
 requires-python = ">=3.11"

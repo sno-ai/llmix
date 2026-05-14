@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@ai-sdk/provider": "^3.0.10",
-    "@snoai/mda-config": "^1.1.1",
+    "@snoai/mda-config": "^1.1.2",
     "@openrouter/sdk": "^0.12.21",
     "lru-cache": "^11.3.0",
     "proper-lockfile": "^4.1.2",

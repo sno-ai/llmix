@@ -1,6 +1,6 @@
 {
   "name": "@snoai/mda-config",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "MDA v1.0 source-mode loader: frontmatter extraction, integrity, Sigstore signature verification, requires.network enforcement.",
   "license": "Apache-2.0",
   "repository": {

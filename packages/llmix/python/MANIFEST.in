@@ -1,0 +1,7 @@
+include README.md
+include pyproject.toml
+recursive-include llmix *.py *.json py.typed
+prune build
+prune tests
+prune sno_llmix.egg-info
+global-exclude __pycache__ *.py[cod]
