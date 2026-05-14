@@ -29,7 +29,7 @@ def _canonical_json_bytes(value: dict[str, Any]) -> bytes:
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
-def _write_authoring_preset(
+def _write_source_preset(
     root: Path,
     module: str,
     preset: str,
@@ -116,7 +116,7 @@ def _trust_policy(subject: str = "releases@snoai.com") -> dict[str, Any]:
     }
 
 
-def _write_signed_authoring_preset(root: Path) -> dict[str, str]:
+def _write_signed_source_preset(root: Path) -> dict[str, str]:
     path = root / "source" / "search" / "summary.mda"
     path.parent.mkdir(parents=True, exist_ok=True)
     body = "# summary\n"
@@ -175,7 +175,7 @@ def test_publish_creates_active_revision_and_manager_reads_resolved_json(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(
+    _write_source_preset(
         root,
         "search",
         "summary",
@@ -200,10 +200,10 @@ def test_publish_creates_active_revision_and_manager_reads_resolved_json(
     assert "search/summary" in manager.available_presets()
     assert manager.last_successful_reload_at is not None
     assert manager.last_reload_failure_at is None
-    snapshot_dir = root / "compiled" / published.revision
-    assert (snapshot_dir / "source" / "search" / "summary.mda").exists()
+    revision_dir = root / "compiled" / published.revision
+    assert (revision_dir / "source" / "search" / "summary.mda").exists()
     resolved = json.loads(
-        (snapshot_dir / "resolved" / "search" / "summary.json").read_text(
+        (revision_dir / "resolved" / "search" / "summary.json").read_text(
             encoding="utf-8"
         )
     )
@@ -213,14 +213,14 @@ def test_publish_creates_active_revision_and_manager_reads_resolved_json(
 
 def test_manager_reloads_after_current_revision_changes(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(
+    _write_source_preset(
         root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
     )
 
     first = ConfigRegistryPublisher(root).publish()
     manager = ConfigRegistryManager.open(root)
 
-    _write_authoring_preset(
+    _write_source_preset(
         root, "search", "summary", model="gpt-5-mini", temperature=0.9
     )
     second = ConfigRegistryPublisher(root).publish()
@@ -237,29 +237,94 @@ def test_available_presets_refreshes_after_current_revision_changes(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary")
+    _write_source_preset(root, "search", "summary")
 
     ConfigRegistryPublisher(root).publish()
     manager = ConfigRegistryManager.open(root)
 
-    _write_authoring_preset(root, "rerank", "default")
+    _write_source_preset(root, "rerank", "default")
     ConfigRegistryPublisher(root).publish()
 
     assert manager.available_presets() == ("rerank/default", "search/summary")
 
 
-def test_manager_rolls_back_when_current_revision_points_to_older_snapshot(
+def test_publish_same_revision_from_same_source_is_idempotent(tmp_path: Path) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_source_preset(root, "search", "summary")
+    publisher = ConfigRegistryPublisher(root)
+
+    first = publisher.publish(revision="manual", activate=False)
+    second = publisher.publish(revision="manual", activate=True)
+    manager = ConfigRegistryManager.open(root)
+
+    assert first.manifest_sha256 == second.manifest_sha256
+    assert second.revision == "manual"
+    assert second.activated is True
+    assert manager.active_revision == "manual"
+    assert manager.get_preset("search", "summary")["model"] == "gpt-4.1-mini"
+
+
+def test_publish_same_revision_with_different_source_fails(tmp_path: Path) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_source_preset(root, "search", "summary", model="gpt-4.1-mini")
+    publisher = ConfigRegistryPublisher(root)
+    publisher.publish(revision="manual", activate=False)
+
+    _write_source_preset(root, "search", "summary", model="gpt-5-mini")
+
+    with pytest.raises(InvalidConfigError, match="different contents"):
+        publisher.publish(revision="manual", activate=False)
+
+
+def test_publish_retry_after_current_write_failure_reuses_compiled_revision(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(
+    _write_source_preset(root, "search", "summary")
+    (root / "current.json").mkdir(parents=True)
+    publisher = ConfigRegistryPublisher(root)
+
+    with pytest.raises(OSError):
+        publisher.publish(revision="manual", activate=True)
+
+    assert (root / "compiled" / "manual" / "manifest.json").is_file()
+    (root / "current.json").rmdir()
+    published = publisher.publish(revision="manual", activate=True)
+    manager = ConfigRegistryManager.open(root)
+
+    assert published.revision == "manual"
+    assert published.activated is True
+    assert manager.active_revision == "manual"
+    assert manager.get_preset("search", "summary")["model"] == "gpt-4.1-mini"
+
+
+def test_publish_uses_unique_staging_dir_for_explicit_revision(tmp_path: Path) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_source_preset(root, "search", "summary")
+    stale_stage_file = root / "compiled" / ".staging" / "manual.tmp" / "sentinel"
+    stale_stage_file.parent.mkdir(parents=True, exist_ok=True)
+    stale_stage_file.write_text("keep", encoding="utf-8")
+
+    published = ConfigRegistryPublisher(root).publish(
+        revision="manual", activate=False
+    )
+
+    assert published.revision == "manual"
+    assert stale_stage_file.is_file()
+
+
+def test_manager_rolls_back_when_current_revision_points_to_older_revision(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_source_preset(
         root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
     )
 
     first = ConfigRegistryPublisher(root).publish()
     manager = ConfigRegistryManager.open(root)
 
-    _write_authoring_preset(
+    _write_source_preset(
         root, "search", "summary", model="gpt-5-mini", temperature=0.9
     )
     second = ConfigRegistryPublisher(root).publish()
@@ -283,18 +348,18 @@ def test_manager_rolls_back_when_current_revision_points_to_older_snapshot(
     assert config["common"]["temperature"] == 0.2
 
 
-def test_manager_ignores_authoring_edits_until_a_new_revision_is_published(
+def test_manager_ignores_source_edits_until_a_new_revision_is_published(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(
+    _write_source_preset(
         root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
     )
 
     published = ConfigRegistryPublisher(root).publish()
     manager = ConfigRegistryManager.open(root)
 
-    _write_authoring_preset(
+    _write_source_preset(
         root, "search", "summary", model="gpt-5-mini", temperature=0.9
     )
     config = manager.get_preset("search", "summary")
@@ -308,7 +373,7 @@ def test_manager_reads_resolved_json_without_mda_loader_hot_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary")
+    _write_source_preset(root, "search", "summary")
     ConfigRegistryPublisher(root).publish()
 
     def fail_loader(*_args: object, **_kwargs: object) -> None:
@@ -341,7 +406,7 @@ def test_manager_opens_legacy_current_pointer_without_manifest_hash(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary", model="gpt-4.1-mini")
+    _write_source_preset(root, "search", "summary", model="gpt-4.1-mini")
     published = ConfigRegistryPublisher(root).publish()
     (root / "current.json").write_text(
         json.dumps({"revision": published.revision}) + "\n", encoding="utf-8"
@@ -359,7 +424,7 @@ def test_manager_keeps_last_known_good_config_when_pointer_changes_to_missing_re
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(
+    _write_source_preset(
         root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
     )
 
@@ -384,7 +449,7 @@ def test_manager_keeps_last_known_good_config_when_pointer_changes_to_missing_re
 
 def test_publish_failure_leaves_active_revision_unchanged(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(
+    _write_source_preset(
         root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
     )
 
@@ -405,11 +470,11 @@ def test_publish_failure_leaves_active_revision_unchanged(tmp_path: Path) -> Non
     )
 
 
-def test_legacy_yaml_authoring_blocks_publish_without_changing_active_revision(
+def test_legacy_yaml_source_blocks_publish_without_changing_active_revision(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary")
+    _write_source_preset(root, "search", "summary")
     first = ConfigRegistryPublisher(root).publish()
 
     legacy_path = root / "source" / "search" / "legacy.yaml"
@@ -422,15 +487,15 @@ def test_legacy_yaml_authoring_blocks_publish_without_changing_active_revision(
     assert pointer["revision"] == first.revision
 
 
-def test_publish_rejects_authoring_module_symlink_escape(tmp_path: Path) -> None:
+def test_publish_rejects_source_module_symlink_escape(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
     outside_root = tmp_path / "outside"
-    _write_authoring_preset(outside_root, "search", "summary")
+    _write_source_preset(outside_root, "search", "summary")
 
-    authoring_dir = root / "source"
-    authoring_dir.mkdir(parents=True)
+    source_dir = root / "source"
+    source_dir.mkdir(parents=True)
     try:
-        (authoring_dir / "search").symlink_to(
+        (source_dir / "search").symlink_to(
             outside_root / "source" / "search", target_is_directory=True
         )
     except OSError:
@@ -440,9 +505,9 @@ def test_publish_rejects_authoring_module_symlink_escape(tmp_path: Path) -> None
         ConfigRegistryPublisher(root).publish()
 
 
-def test_publish_rejects_authoring_file_symlink_escape(tmp_path: Path) -> None:
+def test_publish_rejects_source_file_symlink_escape(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    outside_path = _write_authoring_preset(tmp_path / "outside", "search", "summary")
+    outside_path = _write_source_preset(tmp_path / "outside", "search", "summary")
     module_dir = root / "source" / "search"
     module_dir.mkdir(parents=True)
 
@@ -457,7 +522,7 @@ def test_publish_rejects_authoring_file_symlink_escape(tmp_path: Path) -> None:
 
 def test_publish_can_enforce_mda_integrity(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    path = _write_authoring_preset(root, "search", "summary")
+    path = _write_source_preset(root, "search", "summary")
     text = path.read_text(encoding="utf-8")
     path.write_text(
         text.replace(
@@ -477,7 +542,7 @@ def test_publish_passes_mda_verification_options(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, "search", "summary")
+    _write_source_preset(root, "search", "summary")
     captured: list[Any] = []
 
     def fake_load_mda_config(_path: Path, options: Any = None) -> dict[str, Any]:
@@ -518,7 +583,7 @@ def test_publish_passes_mda_verification_options(
 
 def test_registry_publish_verify_signatures_happy_path(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    integrity = _write_signed_authoring_preset(root)
+    integrity = _write_signed_source_preset(root)
 
     published = ConfigRegistryPublisher(root).publish(
         options=ConfigRegistryPublishOptions(
@@ -536,7 +601,7 @@ def test_registry_publish_verify_signatures_happy_path(tmp_path: Path) -> None:
 
 def test_registry_publish_verify_signatures_fail_closed(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    integrity = _write_signed_authoring_preset(root)
+    integrity = _write_signed_source_preset(root)
 
     with pytest.raises(InvalidConfigError):
         ConfigRegistryPublisher(root).publish(
@@ -549,9 +614,9 @@ def test_registry_publish_verify_signatures_fail_closed(tmp_path: Path) -> None:
         )
 
 
-def test_manager_rejects_tampered_resolved_snapshot_on_startup(tmp_path: Path) -> None:
+def test_manager_rejects_tampered_resolved_revision_on_startup(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(
+    _write_source_preset(
         root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
     )
 
@@ -569,14 +634,14 @@ def test_manager_rejects_tampered_resolved_snapshot_on_startup(tmp_path: Path) -
 
 def test_manager_revalidates_resolved_json_shape_on_startup(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(
+    _write_source_preset(
         root, "search", "summary", model="gpt-4.1-mini", temperature=0.2
     )
 
     published = ConfigRegistryPublisher(root).publish()
-    snapshot_dir = root / "compiled" / published.revision
-    manifest_path = snapshot_dir / "manifest.json"
-    resolved_path = snapshot_dir / "resolved" / "search" / "summary.json"
+    revision_dir = root / "compiled" / published.revision
+    manifest_path = revision_dir / "manifest.json"
+    resolved_path = revision_dir / "resolved" / "search" / "summary.json"
     resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
     resolved["common"]["temperature"] = 3
     resolved_bytes = _canonical_json_bytes(resolved)

@@ -30,7 +30,7 @@ fn load_config_projects_mda_fixture_shape() {
 }
 
 #[test]
-fn load_config_preset_uses_mda_authoring_path() {
+fn load_config_preset_uses_mda_source_path() {
     let config = load_config_preset("sample_preset", fixture_dir()).expect("preset should load");
 
     assert_eq!(config["provider"], "openai");

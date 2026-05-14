@@ -124,7 +124,7 @@ impl ConfigRegistryManager {
         validate_module(module)?;
         validate_preset(preset)?;
 
-        self.refresh_if_needed();
+        self.refresh_if_needed()?;
 
         let preset_id = format!("{module}/{preset}");
         self.configs.get(&preset_id).cloned().ok_or_else(|| {
@@ -138,13 +138,11 @@ impl ConfigRegistryManager {
         })
     }
 
-    fn refresh_if_needed(&mut self) {
+    fn refresh_if_needed(&mut self) -> LlmixResult<()> {
         let current_pointer = match read_current_pointer(&self.current_path, &self.compiled_dir) {
             Ok(value) => value,
             Err(error) => {
-                self.last_reload_error = Some(error);
-                self.last_reload_failure_at = Some(SystemTime::now());
-                return;
+                return self.handle_reload_error(error);
             }
         };
 
@@ -155,7 +153,7 @@ impl ConfigRegistryManager {
         if current_pointer.revision == self.active_revision
             && current_manifest_sha256 == self.active_manifest_sha256
         {
-            return;
+            return Ok(());
         }
 
         match load_revision(
@@ -171,12 +169,63 @@ impl ConfigRegistryManager {
                 self.last_reload_error = None;
                 self.last_successful_reload_at = Some(SystemTime::now());
                 self.last_reload_failure_at = None;
+                Ok(())
             }
-            Err(error) => {
-                self.last_reload_error = Some(error);
-                self.last_reload_failure_at = Some(SystemTime::now());
-            }
+            Err(error) => self.handle_reload_error(error),
         }
+    }
+
+    fn handle_reload_error(&mut self, error: LlmixError) -> LlmixResult<()> {
+        let fail_closed = self.open_options.signed_root.is_some();
+        self.last_reload_failure_at = Some(SystemTime::now());
+        if fail_closed {
+            self.last_reload_error = Some(reload_error_snapshot(&error));
+            return Err(error);
+        }
+        self.last_reload_error = Some(error);
+        Ok(())
+    }
+}
+
+fn reload_error_snapshot(error: &LlmixError) -> LlmixError {
+    match error {
+        LlmixError::InvalidResponseCacheConfig(message) => {
+            LlmixError::InvalidResponseCacheConfig(message.clone())
+        }
+        LlmixError::InvalidKeyPoolConfig(message) => {
+            LlmixError::InvalidKeyPoolConfig(message.clone())
+        }
+        LlmixError::InvalidAdaptiveSemaphoreConfig(message) => {
+            LlmixError::InvalidAdaptiveSemaphoreConfig(message.clone())
+        }
+        LlmixError::InvalidRetryPolicyConfig(message) => {
+            LlmixError::InvalidRetryPolicyConfig(message.clone())
+        }
+        LlmixError::InvalidFileLockConfig(message) => {
+            LlmixError::InvalidFileLockConfig(message.clone())
+        }
+        LlmixError::InvalidProviderKwargsConfig(message) => {
+            LlmixError::InvalidProviderKwargsConfig(message.clone())
+        }
+        LlmixError::Redis(message) => LlmixError::Redis(message.clone()),
+        LlmixError::UnknownKeyPoolKey(key) => LlmixError::UnknownKeyPoolKey(key.clone()),
+        LlmixError::CircuitOpen(error) => error.clone().into(),
+        LlmixError::KillSwitchActive(error) => error.clone().into(),
+        LlmixError::KeyPoolExhausted(error) => error.clone().into(),
+        LlmixError::ConfigNotFound(error) => error.clone().into(),
+        LlmixError::ConfigAccess(error) => error.clone().into(),
+        LlmixError::InvalidConfig(error) => error.clone().into(),
+        LlmixError::Security(error) => error.clone().into(),
+        LlmixError::AdaptiveSemaphoreClosed(error) => (*error).into(),
+        LlmixError::Provider(error) => error.clone().into(),
+        LlmixError::CanonicalJson(error) => InvalidConfigError {
+            message: error.to_string(),
+        }
+        .into(),
+        LlmixError::Io(error) => InvalidConfigError {
+            message: error.to_string(),
+        }
+        .into(),
     }
 }
 

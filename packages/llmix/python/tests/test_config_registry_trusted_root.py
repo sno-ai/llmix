@@ -24,7 +24,7 @@ from llmix import (
     load_llmix_trust_manifest,
     registry_root_options_from_trust_manifest,
 )
-from llmix.config_registry_types import REGISTRY_ROOT_PAYLOAD_TYPE
+from llmix.config_registry_types import REGISTRY_ROOT_FILENAME, REGISTRY_ROOT_PAYLOAD_TYPE
 from llmix.config_registry_root_parse import parse_registry_root_envelope
 from llmix.types import InvalidConfigError, SecurityError
 
@@ -136,7 +136,7 @@ def _open_options(
     )
 
 
-def _write_authoring_preset(
+def _write_source_preset(
     root: Path,
     *,
     model: str = "gpt-4.1-mini",
@@ -164,7 +164,7 @@ def _write_authoring_preset(
     return path
 
 
-def _write_signed_authoring_preset(root: Path) -> Path:
+def _write_signed_source_preset(root: Path) -> Path:
     path = root / "source" / "search" / "summary.mda"
     path.parent.mkdir(parents=True, exist_ok=True)
     body = "# signed summary\n"
@@ -190,10 +190,10 @@ def _write_signed_authoring_preset(root: Path) -> Path:
     signed["signatures"] = [
         {
             "signer": f"did-web:{DOMAIN}",
-            "key-id": f"did:web:{DOMAIN}#authoring",
+            "key-id": f"did:web:{DOMAIN}#source",
             "payload-digest": digest,
             "algorithm": "ed25519",
-            "signature": "fixture-authoring-signature",
+            "signature": "fixture-source-signature",
             "payload-type": DEFAULT_PAYLOAD_TYPE,
         }
     ]
@@ -212,8 +212,12 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def _publish_signed_registry(root: Path, revision: str = "rev-1") -> None:
-    _write_authoring_preset(root)
+    _write_source_preset(root)
     ConfigRegistryPublisher(root).publish(revision=revision, options=_publish_options())
 
 
@@ -221,7 +225,7 @@ def test_publish_writes_signed_registry_root_and_manager_opens_it(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root, model="gpt-5-mini", temperature=0.7)
+    _write_source_preset(root, model="gpt-5-mini", temperature=0.7)
     verifier = RootDidWebVerifier()
 
     published = ConfigRegistryPublisher(root).publish(
@@ -254,7 +258,7 @@ def test_signed_registry_root_opens_legacy_pretty_canonical_payload(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root)
+    _write_source_preset(root)
 
     published = ConfigRegistryPublisher(root).publish(
         revision="rev-1", options=_publish_options()
@@ -271,7 +275,7 @@ def test_signed_registry_root_opens_legacy_pretty_canonical_payload(
 
 def test_publish_passes_trusted_runtime_options_to_mda_loader(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    _write_signed_authoring_preset(root)
+    _write_signed_source_preset(root)
     verifier = RootDidWebVerifier(expected_payload_type=DEFAULT_PAYLOAD_TYPE)
 
     published = ConfigRegistryPublisher(root).publish(
@@ -334,7 +338,7 @@ def test_registry_root_parser_rejects_current_binding_digest_mismatch(
 
 def test_unsigned_registry_rejects_manifest_digest_mismatch(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root)
+    _write_source_preset(root)
     published = ConfigRegistryPublisher(root).publish(revision="rev-1")
     manifest = _read_json(published.manifest_path)
     manifest["published_at"] = "2999-01-01T00:00:00Z"
@@ -386,7 +390,7 @@ def test_signed_registry_root_expected_digest_pins_published_artifact(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root)
+    _write_source_preset(root)
     published = ConfigRegistryPublisher(root).publish(
         revision="rev-1", options=_publish_options()
     )
@@ -401,11 +405,124 @@ def test_signed_registry_root_expected_digest_pins_published_artifact(
         ConfigRegistryManager.open(root, _open_options(expected_root_digest="0" * 64))
 
 
+def test_signed_registry_root_refresh_fails_closed_when_trust_anchor_stays_pinned(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_source_preset(root, model="gpt-4.1-mini")
+    first = ConfigRegistryPublisher(root).publish(
+        revision="rev-1", options=_publish_options()
+    )
+    assert first.registry_root_sha256 is not None
+    manager = ConfigRegistryManager.open(
+        root, _open_options(expected_root_digest=first.registry_root_sha256)
+    )
+
+    _write_source_preset(root, model="gpt-5-mini")
+    second = ConfigRegistryPublisher(root).publish(
+        revision="rev-2", options=_publish_options()
+    )
+
+    assert second.registry_root_sha256 != first.registry_root_sha256
+    with pytest.raises(SecurityError, match="expected_root_digest"):
+        manager.available_presets()
+    assert manager.active_revision == "rev-1"
+    assert manager.last_reload_error is not None
+
+
+def test_signed_publish_retry_after_current_write_failure_reuses_compiled_root(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_source_preset(root, model="gpt-4.1-mini")
+    (root / "current.json").mkdir(parents=True)
+    signature_counter = 0
+
+    def nondeterministic_signer(
+        input_value: RegistryRootSigningInput,
+    ) -> dict[str, Any]:
+        nonlocal signature_counter
+        signature_counter += 1
+        signature = _root_signer(input_value)
+        signature["signature"] = f"fixture-registry-root-signature-{signature_counter}"
+        return signature
+
+    options = ConfigRegistryPublishOptions(
+        registry_root=RegistryRootSigningOptions(signer=nondeterministic_signer)
+    )
+
+    publisher = ConfigRegistryPublisher(root)
+    with pytest.raises(OSError):
+        publisher.publish(revision="rev-1", options=options)
+
+    root_path = root / "compiled" / "rev-1" / REGISTRY_ROOT_FILENAME
+    committed_root_bytes = root_path.read_bytes()
+    committed_root_sha256 = _sha256_file(root_path)
+
+    (root / "current.json").rmdir()
+    published = publisher.publish(revision="rev-1", options=options)
+    manager = ConfigRegistryManager.open(
+        root, _open_options(expected_root_digest=published.registry_root_sha256)
+    )
+    config = manager.get_preset("search", "summary")
+
+    assert published.registry_root_path == root_path
+    assert published.registry_root_sha256 == committed_root_sha256
+    assert root_path.read_bytes() == committed_root_bytes
+    assert config["model"] == "gpt-4.1-mini"
+
+
+def test_signed_publish_retry_rejects_corrupted_committed_registry_root(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_source_preset(root, model="gpt-4.1-mini")
+    (root / "current.json").mkdir(parents=True)
+
+    publisher = ConfigRegistryPublisher(root)
+    with pytest.raises(OSError):
+        publisher.publish(revision="rev-1", options=_publish_options())
+
+    root_path = root / "compiled" / "rev-1" / REGISTRY_ROOT_FILENAME
+    envelope = _read_json(root_path)
+    envelope["payload"]["files"] = []
+    _write_json(root_path, envelope)
+
+    (root / "current.json").rmdir()
+    with pytest.raises(InvalidConfigError, match="Registry root"):
+        publisher.publish(revision="rev-1", options=_publish_options())
+
+    assert not (root / "current.json").exists()
+
+
+def test_signed_publish_retry_rejects_corrupted_committed_registry_root_signature_digest(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "config" / "llm"
+    _write_source_preset(root, model="gpt-4.1-mini")
+    (root / "current.json").mkdir(parents=True)
+
+    publisher = ConfigRegistryPublisher(root)
+    with pytest.raises(OSError):
+        publisher.publish(revision="rev-1", options=_publish_options())
+
+    root_path = root / "compiled" / "rev-1" / REGISTRY_ROOT_FILENAME
+    envelope = _read_json(root_path)
+    envelope["signatures"][0]["payload-digest"] = "sha256:" + ("0" * 64)
+    _write_json(root_path, envelope)
+
+    (root / "current.json").rmdir()
+    with pytest.raises(InvalidConfigError, match="signature payload mismatch"):
+        publisher.publish(revision="rev-1", options=_publish_options())
+
+    assert not (root / "current.json").exists()
+
+
 def test_signed_registry_root_opens_from_cli_trust_manifest_schema(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
-    _write_authoring_preset(root)
+    _write_source_preset(root)
     published = ConfigRegistryPublisher(root).publish(
         revision="rev-1", options=_publish_options()
     )
@@ -472,7 +589,7 @@ def test_failed_registry_root_signing_does_not_activate_new_revision(
     root = tmp_path / "config" / "llm"
     _publish_signed_registry(root, revision="rev-1")
     before = _read_json(root / "current.json")
-    _write_authoring_preset(root, model="gpt-5-mini")
+    _write_source_preset(root, model="gpt-5-mini")
 
     def fail_signer(_: RegistryRootSigningInput) -> dict[str, Any]:
         raise InvalidConfigError("signing backend unavailable")

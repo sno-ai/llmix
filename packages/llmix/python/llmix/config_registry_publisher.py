@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import shutil
 import threading
 from datetime import datetime
+from itertools import count
 from pathlib import Path
 from typing import Any, cast
 
@@ -28,13 +30,20 @@ from llmix.config_registry_common import (
     _write_json,
 )
 from llmix.config_registry_root import (
+    _required_signature_count,
+    _registry_root_signing_input_for_envelope,
     build_registry_root_payload,
     create_registry_root_envelope,
+    sorted_registry_root_files,
+)
+from llmix.config_registry_root_parse import (
+    parse_registry_root_envelope,
 )
 from llmix.config_registry_types import (
     REGISTRY_ROOT_FILENAME,
     ConfigRegistryPublishOptions,
     PublishedRevision,
+    RegistryRootSigningOptions,
     _PresetSource,
 )
 from llmix.mda_loader import MdaConfigLoadOptions
@@ -43,12 +52,21 @@ from llmix.types import ConfigNotFoundError, InvalidConfigError, validate_module
 
 logger = logging.getLogger(__name__)
 _PUBLISH_LOCK = threading.RLock()
+_STAGING_COUNTER = count()
 
 
 def _load_mda_config(path: Path, options: MdaConfigLoadOptions | None) -> dict[str, Any]:
     import llmix.config_registry as registry_facade
 
     return cast(dict[str, Any], registry_facade.load_mda_config(path, options))
+
+
+def _normalized_registry_root_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    normalized["current"] = dict(payload["current"])
+    normalized["manifest"] = dict(payload["manifest"])
+    normalized["files"] = sorted_registry_root_files(payload["files"])
+    return normalized
 
 
 class ConfigRegistryPublisher:
@@ -91,14 +109,8 @@ class ConfigRegistryPublisher:
         _validate_revision(revision_id)
 
         compiled_dir = self.compiled_dir / revision_id
-        stage_dir = self.staging_dir / f"{revision_id}.tmp"
+        stage_dir = self._staging_attempt_path(revision_id, published_at)
         manifest_path = compiled_dir / "manifest.json"
-
-        if compiled_dir.exists():
-            raise InvalidConfigError(f"Registry revision already exists: {revision_id}")
-
-        if stage_dir.exists():
-            shutil.rmtree(stage_dir)
 
         try:
             load_options = (
@@ -116,25 +128,33 @@ class ConfigRegistryPublisher:
                 if options
                 else None
             )
-            manifest = self._build_staged_snapshot(
+            manifest = self._build_staged_revision(
                 stage_dir, presets, revision_id, published_at, load_options
             )
-            self._verify_staged_snapshot(stage_dir, manifest)
+            self._verify_staged_revision(stage_dir, manifest)
             manifest_sha256 = _sha256_file(stage_dir / "manifest.json")
             registry_root_sha256 = self._write_registry_root_if_requested(
                 stage_dir, manifest, manifest_sha256, options
             )
-            compiled_dir.parent.mkdir(parents=True, exist_ok=True)
-            self.staging_dir.mkdir(parents=True, exist_ok=True)
-            stage_dir.rename(compiled_dir)
-            _fsync_dir(compiled_dir.parent)
+            committed_manifest_sha256, committed_registry_root_sha256 = (
+                self._commit_revision(
+                    stage_dir=stage_dir,
+                    compiled_dir=compiled_dir,
+                    expected_manifest=manifest,
+                    manifest_sha256=manifest_sha256,
+                    registry_root_sha256=registry_root_sha256,
+                    registry_root_options=(
+                        options.registry_root if options is not None else None
+                    ),
+                )
+            )
 
             if activate:
                 _atomic_write_json(
                     self.current_path,
                     {
                         "revision": revision_id,
-                        "manifest_sha256": manifest_sha256,
+                        "manifest_sha256": committed_manifest_sha256,
                     },
                 )
                 logger.info("Config Registry activated revision %s", revision_id)
@@ -144,15 +164,15 @@ class ConfigRegistryPublisher:
                 revision=revision_id,
                 compiled_path=compiled_dir,
                 manifest_path=manifest_path,
-                manifest_sha256=manifest_sha256,
+                manifest_sha256=committed_manifest_sha256,
                 activated=activate,
                 preset_ids=tuple(sorted(manifest["presets"].keys())),
                 registry_root_path=(
                     compiled_dir / REGISTRY_ROOT_FILENAME
-                    if registry_root_sha256 is not None
+                    if committed_registry_root_sha256 is not None
                     else None
                 ),
-                registry_root_sha256=registry_root_sha256,
+                registry_root_sha256=committed_registry_root_sha256,
             )
         except Exception:
             if stage_dir.exists():
@@ -174,6 +194,121 @@ class ConfigRegistryPublisher:
         root_path = stage_dir / REGISTRY_ROOT_FILENAME
         _write_json(root_path, envelope)
         return _sha256_file(root_path)
+
+    def _commit_revision(
+        self,
+        *,
+        stage_dir: Path,
+        compiled_dir: Path,
+        expected_manifest: dict[str, Any],
+        manifest_sha256: str,
+        registry_root_sha256: str | None,
+        registry_root_options: RegistryRootSigningOptions | None,
+    ) -> tuple[str, str | None]:
+        compiled_dir.parent.mkdir(parents=True, exist_ok=True)
+        self.staging_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            stage_dir.rename(compiled_dir)
+            _fsync_dir(compiled_dir.parent)
+            return manifest_sha256, registry_root_sha256
+        except OSError:
+            if not compiled_dir.exists():
+                raise
+
+        committed = self._load_matching_existing_revision(
+            compiled_dir=compiled_dir,
+            expected_manifest=expected_manifest,
+            registry_root_sha256=registry_root_sha256,
+            registry_root_options=registry_root_options,
+        )
+        shutil.rmtree(stage_dir, ignore_errors=True)
+        return committed
+
+    def _load_matching_existing_revision(
+        self,
+        *,
+        compiled_dir: Path,
+        expected_manifest: dict[str, Any],
+        registry_root_sha256: str | None,
+        registry_root_options: RegistryRootSigningOptions | None,
+    ) -> tuple[str, str | None]:
+        manifest_path = compiled_dir / "manifest.json"
+        existing_manifest = _read_json_file(manifest_path)
+        self._verify_staged_revision(compiled_dir, existing_manifest)
+
+        if (
+            existing_manifest.get("revision") != expected_manifest.get("revision")
+            or existing_manifest.get("schema_version")
+            != expected_manifest.get("schema_version")
+            or existing_manifest.get("presets") != expected_manifest.get("presets")
+        ):
+            raise InvalidConfigError(
+                f"Registry revision already exists with different contents: {expected_manifest.get('revision')}"
+            )
+
+        existing_manifest_sha256 = _sha256_file(manifest_path)
+        root_path = compiled_dir / REGISTRY_ROOT_FILENAME
+        existing_registry_root_sha256 = (
+            _sha256_file(root_path) if root_path.exists() else None
+        )
+        # Signed roots include publish-time material; same-revision retries must
+        # reuse the already committed root once the manifest contents match.
+        if registry_root_sha256 is not None:
+            if existing_registry_root_sha256 is None:
+                raise InvalidConfigError(
+                    "Registry revision already exists without the requested registry root"
+                )
+            if registry_root_options is None:
+                raise InvalidConfigError(
+                    "Registry revision already exists but no registry root signer is available"
+                )
+            self._verify_existing_registry_root(
+                root_path,
+                existing_manifest,
+                existing_manifest_sha256,
+                registry_root_options,
+            )
+        return existing_manifest_sha256, existing_registry_root_sha256
+
+    def _staging_attempt_path(self, revision_id: str, published_at: datetime) -> Path:
+        stamp = published_at.strftime("%Y%m%dT%H%M%S%fZ")
+        counter = next(_STAGING_COUNTER)
+        return self.staging_dir / f"{revision_id}.{stamp}.{os.getpid()}.{counter}.tmp"
+
+    def _verify_existing_registry_root(
+        self,
+        root_path: Path,
+        manifest: dict[str, Any],
+        manifest_sha256: str,
+        registry_root_options: RegistryRootSigningOptions,
+    ) -> None:
+        envelope = parse_registry_root_envelope(
+            _read_json_file(root_path), str(root_path)
+        )
+        signing_input = _registry_root_signing_input_for_envelope(envelope)
+        for signature in envelope["signatures"]:
+            if signature["payload-digest"] != signing_input.integrity["digest"]:
+                raise InvalidConfigError(
+                    "Registry revision already exists with a registry root signature payload mismatch"
+                )
+        required_signatures = _required_signature_count(
+            registry_root_options.min_signatures
+        )
+        if len(envelope["signatures"]) < required_signatures:
+            raise InvalidConfigError(
+                "Registry revision already exists with "
+                f"{len(envelope['signatures'])} registry root signatures; "
+                f"expected at least {required_signatures}"
+            )
+
+        actual_payload = _normalized_registry_root_payload(envelope["payload"])
+        expected_payload = _normalized_registry_root_payload(
+            build_registry_root_payload(manifest, manifest_sha256)
+        )
+        if actual_payload != expected_payload:
+            raise InvalidConfigError(
+                "Registry revision already exists with a registry root that does not match the committed manifest"
+            )
 
     def _discover_presets(self) -> list[_PresetSource]:
         if not self.source_dir.exists():
@@ -233,7 +368,7 @@ class ConfigRegistryPublisher:
         timestamp = published_at.strftime("%Y-%m-%dT%H-%M-%SZ")
         return f"{timestamp}_{digest.hexdigest()[:8]}"
 
-    def _build_staged_snapshot(
+    def _build_staged_revision(
         self,
         stage_dir: Path,
         presets: list[_PresetSource],
@@ -272,7 +407,7 @@ class ConfigRegistryPublisher:
         _write_json(stage_dir / "manifest.json", manifest)
         return manifest
 
-    def _verify_staged_snapshot(
+    def _verify_staged_revision(
         self, stage_dir: Path, manifest: dict[str, Any]
     ) -> None:
         stored_manifest = _read_json_file(stage_dir / "manifest.json")
