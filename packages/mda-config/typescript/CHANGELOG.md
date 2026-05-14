@@ -2,6 +2,11 @@
 
 All notable changes to `@snoai/mda-config` are documented here. The project follows Semantic Versioning and pins the MDA spec version it targets.
 
+## [1.1.2] — 2026-05-14
+
+- Release alignment for the TypeScript, Python, and Rust packages used by LLMix
+  2.0.6.
+
 ## [1.1.1] — 2026-05-10
 
 - Move the package into the `sno-ai/llmix` monorepo and update repository
