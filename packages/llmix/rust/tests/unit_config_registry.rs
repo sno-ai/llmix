@@ -7,6 +7,7 @@ use llmix_rs::{
     RegistryRootSigningOptions, RegistryRootVerificationOptions, TrustPolicy, TrustedSigner,
 };
 use serde_json::{json, Value};
+use std::cell::Cell;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -80,6 +81,38 @@ impl RegistryRootSigner for TestRegistryRootSigner {
             payload_digest: input.integrity.digest.clone(),
             algorithm: "ed25519".to_string(),
             signature: "TEST_SIGNATURE".to_string(),
+            rekor_log_id: None,
+            rekor_log_index: None,
+            payload_type: Some(input.payload_type.clone()),
+        }])
+    }
+}
+
+struct NonDeterministicRegistryRootSigner {
+    counter: Cell<usize>,
+}
+
+impl NonDeterministicRegistryRootSigner {
+    fn new() -> Self {
+        Self {
+            counter: Cell::new(0),
+        }
+    }
+}
+
+impl RegistryRootSigner for NonDeterministicRegistryRootSigner {
+    fn sign_registry_root(
+        &self,
+        input: &RegistryRootSigningInput,
+    ) -> LlmixResult<Vec<RegistryRootSignature>> {
+        let next = self.counter.get() + 1;
+        self.counter.set(next);
+        Ok(vec![RegistryRootSignature {
+            signer: "did-web:tools.example.com".to_string(),
+            key_id: "did:web:tools.example.com#key-1".to_string(),
+            payload_digest: input.integrity.digest.clone(),
+            algorithm: "ed25519".to_string(),
+            signature: format!("TEST_SIGNATURE_{next}"),
             rekor_log_id: None,
             rekor_log_index: None,
             payload_type: Some(input.payload_type.clone()),
@@ -292,7 +325,7 @@ fn signed_activation_failure_reuses_committed_registry_root_on_retry() {
     );
     fs::create_dir_all(root.join("current.json")).expect("current path directory should exist");
 
-    let signer = TestRegistryRootSigner;
+    let signer = NonDeterministicRegistryRootSigner::new();
     let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
     let error = publisher
         .publish_with_registry_options(&signed_registry_publish_options("signed-1", &signer))
@@ -378,7 +411,7 @@ fn signed_activation_retry_rejects_corrupted_committed_registry_root() {
 }
 
 #[test]
-fn signed_activation_retry_rejects_corrupted_committed_registry_root_signature() {
+fn signed_activation_retry_rejects_corrupted_committed_registry_root_signature_digest() {
     let temp_root = unique_temp_dir("llmix-config-registry-signed-retry-tampered-signature");
     let root = temp_root.join("config/llm");
     write_source_preset(
@@ -401,7 +434,7 @@ fn signed_activation_retry_rejects_corrupted_committed_registry_root_signature()
         &fs::read_to_string(&root_path).expect("registry root should be readable"),
     )
     .expect("registry root should parse");
-    envelope["signatures"][0]["signature"] = json!("TAMPERED_SIGNATURE");
+    envelope["signatures"][0]["payload-digest"] = json!(format!("sha256:{}", "0".repeat(64)));
     fs::write(
         &root_path,
         serde_json::to_string(&envelope).expect("tampered root should serialize"),
@@ -416,7 +449,7 @@ fn signed_activation_retry_rejects_corrupted_committed_registry_root_signature()
 
     assert!(matches!(error, LlmixError::InvalidConfig(_)));
     assert!(
-        error.to_string().contains("signature mismatch"),
+        error.to_string().contains("signature payload mismatch"),
         "unexpected error: {error}"
     );
     assert!(!root.join("current.json").exists());

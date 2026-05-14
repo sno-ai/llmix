@@ -436,17 +436,31 @@ def test_signed_publish_retry_after_current_write_failure_reuses_compiled_root(
     root = tmp_path / "config" / "llm"
     _write_source_preset(root, model="gpt-4.1-mini")
     (root / "current.json").mkdir(parents=True)
+    signature_counter = 0
+
+    def nondeterministic_signer(
+        input_value: RegistryRootSigningInput,
+    ) -> dict[str, Any]:
+        nonlocal signature_counter
+        signature_counter += 1
+        signature = _root_signer(input_value)
+        signature["signature"] = f"fixture-registry-root-signature-{signature_counter}"
+        return signature
+
+    options = ConfigRegistryPublishOptions(
+        registry_root=RegistryRootSigningOptions(signer=nondeterministic_signer)
+    )
 
     publisher = ConfigRegistryPublisher(root)
     with pytest.raises(OSError):
-        publisher.publish(revision="rev-1", options=_publish_options())
+        publisher.publish(revision="rev-1", options=options)
 
     root_path = root / "compiled" / "rev-1" / REGISTRY_ROOT_FILENAME
     committed_root_bytes = root_path.read_bytes()
     committed_root_sha256 = _sha256_file(root_path)
 
     (root / "current.json").rmdir()
-    published = publisher.publish(revision="rev-1", options=_publish_options())
+    published = publisher.publish(revision="rev-1", options=options)
     manager = ConfigRegistryManager.open(
         root, _open_options(expected_root_digest=published.registry_root_sha256)
     )
@@ -481,7 +495,7 @@ def test_signed_publish_retry_rejects_corrupted_committed_registry_root(
     assert not (root / "current.json").exists()
 
 
-def test_signed_publish_retry_rejects_corrupted_committed_registry_root_signature(
+def test_signed_publish_retry_rejects_corrupted_committed_registry_root_signature_digest(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "config" / "llm"
@@ -494,11 +508,11 @@ def test_signed_publish_retry_rejects_corrupted_committed_registry_root_signatur
 
     root_path = root / "compiled" / "rev-1" / REGISTRY_ROOT_FILENAME
     envelope = _read_json(root_path)
-    envelope["signatures"][0]["signature"] = "tampered-registry-root-signature"
+    envelope["signatures"][0]["payload-digest"] = "sha256:" + ("0" * 64)
     _write_json(root_path, envelope)
 
     (root / "current.json").rmdir()
-    with pytest.raises(InvalidConfigError, match="signature mismatch"):
+    with pytest.raises(InvalidConfigError, match="signature payload mismatch"):
         publisher.publish(revision="rev-1", options=_publish_options())
 
     assert not (root / "current.json").exists()

@@ -30,6 +30,7 @@ from llmix.config_registry_common import (
     _write_json,
 )
 from llmix.config_registry_root import (
+    _required_signature_count,
     _registry_root_signing_input_for_envelope,
     build_registry_root_payload,
     create_registry_root_envelope,
@@ -290,6 +291,15 @@ class ConfigRegistryPublisher:
                 raise InvalidConfigError(
                     "Registry revision already exists with a registry root signature payload mismatch"
                 )
+        required_signatures = _required_signature_count(
+            registry_root_options.min_signatures
+        )
+        if len(envelope["signatures"]) < required_signatures:
+            raise InvalidConfigError(
+                "Registry revision already exists with "
+                f"{len(envelope['signatures'])} registry root signatures; "
+                f"expected at least {required_signatures}"
+            )
 
         actual_payload = _normalized_registry_root_payload(envelope["payload"])
         expected_payload = _normalized_registry_root_payload(
@@ -298,17 +308,6 @@ class ConfigRegistryPublisher:
         if actual_payload != expected_payload:
             raise InvalidConfigError(
                 "Registry revision already exists with a registry root that does not match the committed manifest"
-            )
-        expected_envelope = create_registry_root_envelope(
-            expected_payload, registry_root_options
-        )
-        if (
-            envelope["integrity"] != expected_envelope["integrity"]
-            or envelope["payload_sha256"] != expected_envelope["payload_sha256"]
-            or envelope["signatures"] != expected_envelope["signatures"]
-        ):
-            raise InvalidConfigError(
-                "Registry revision already exists with a registry root signature mismatch"
             )
 
     def _discover_presets(self) -> list[_PresetSource]:

@@ -7,6 +7,7 @@ use super::fs_ops::{
 };
 use super::root::{
     build_registry_root_payload, create_registry_root_envelope, registry_root_signing_input,
+    required_signature_count,
 };
 use super::root_verify::parse_registry_root_envelope;
 use super::*;
@@ -294,6 +295,16 @@ impl ConfigRegistryPublisher {
                 .into());
             }
         }
+        let required_signatures = required_signature_count(registry_root_options.min_signatures)?;
+        if envelope.signatures.len() < required_signatures {
+            return Err(InvalidConfigError {
+                message: format!(
+                    "Registry revision already exists with {} registry root signatures; expected at least {required_signatures}",
+                    envelope.signatures.len()
+                ),
+            }
+            .into());
+        }
 
         let expected_payload = build_registry_root_payload(manifest, manifest_sha256)?;
         if envelope.payload != expected_payload {
@@ -301,18 +312,6 @@ impl ConfigRegistryPublisher {
                 message:
                     "Registry revision already exists with a registry root that does not match the committed manifest"
                         .to_string(),
-            }
-            .into());
-        }
-        let expected_envelope =
-            create_registry_root_envelope(expected_payload, registry_root_options)?;
-        if envelope.integrity != expected_envelope.integrity
-            || envelope.payload_sha256 != expected_envelope.payload_sha256
-            || envelope.signatures != expected_envelope.signatures
-        {
-            return Err(InvalidConfigError {
-                message: "Registry revision already exists with a registry root signature mismatch"
-                    .to_string(),
             }
             .into());
         }
