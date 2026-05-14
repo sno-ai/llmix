@@ -305,12 +305,16 @@ fn signed_registry_root_refresh_fails_closed_when_trust_anchor_stays_pinned() {
     let error = manager
         .available_presets()
         .expect_err("signed refresh should fail closed when pinned digest changes");
+    assert!(matches!(error, LlmixError::Security(_)));
     assert!(
         error.to_string().contains("expected_root_digest"),
         "unexpected error: {error}"
     );
     assert_eq!(manager.active_revision(), "signed-1");
-    assert!(manager.last_reload_error().is_some());
+    assert!(matches!(
+        manager.last_reload_error(),
+        Some(LlmixError::Security(_))
+    ));
 }
 
 #[test]

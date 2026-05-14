@@ -178,16 +178,55 @@ impl ConfigRegistryManager {
 
     fn handle_reload_error(&mut self, error: LlmixError) -> LlmixResult<()> {
         let fail_closed = self.open_options.signed_root.is_some();
-        let message = error.to_string();
-        self.last_reload_error = Some(error);
         self.last_reload_failure_at = Some(SystemTime::now());
         if fail_closed {
-            return Err(InvalidConfigError {
-                message: format!("Config Registry refresh failed: {message}"),
-            }
-            .into());
+            self.last_reload_error = Some(reload_error_snapshot(&error));
+            return Err(error);
         }
+        self.last_reload_error = Some(error);
         Ok(())
+    }
+}
+
+fn reload_error_snapshot(error: &LlmixError) -> LlmixError {
+    match error {
+        LlmixError::InvalidResponseCacheConfig(message) => {
+            LlmixError::InvalidResponseCacheConfig(message.clone())
+        }
+        LlmixError::InvalidKeyPoolConfig(message) => {
+            LlmixError::InvalidKeyPoolConfig(message.clone())
+        }
+        LlmixError::InvalidAdaptiveSemaphoreConfig(message) => {
+            LlmixError::InvalidAdaptiveSemaphoreConfig(message.clone())
+        }
+        LlmixError::InvalidRetryPolicyConfig(message) => {
+            LlmixError::InvalidRetryPolicyConfig(message.clone())
+        }
+        LlmixError::InvalidFileLockConfig(message) => {
+            LlmixError::InvalidFileLockConfig(message.clone())
+        }
+        LlmixError::InvalidProviderKwargsConfig(message) => {
+            LlmixError::InvalidProviderKwargsConfig(message.clone())
+        }
+        LlmixError::Redis(message) => LlmixError::Redis(message.clone()),
+        LlmixError::UnknownKeyPoolKey(key) => LlmixError::UnknownKeyPoolKey(key.clone()),
+        LlmixError::CircuitOpen(error) => error.clone().into(),
+        LlmixError::KillSwitchActive(error) => error.clone().into(),
+        LlmixError::KeyPoolExhausted(error) => error.clone().into(),
+        LlmixError::ConfigNotFound(error) => error.clone().into(),
+        LlmixError::ConfigAccess(error) => error.clone().into(),
+        LlmixError::InvalidConfig(error) => error.clone().into(),
+        LlmixError::Security(error) => error.clone().into(),
+        LlmixError::AdaptiveSemaphoreClosed(error) => (*error).into(),
+        LlmixError::Provider(error) => error.clone().into(),
+        LlmixError::CanonicalJson(error) => InvalidConfigError {
+            message: error.to_string(),
+        }
+        .into(),
+        LlmixError::Io(error) => InvalidConfigError {
+            message: error.to_string(),
+        }
+        .into(),
     }
 }
 
