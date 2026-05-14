@@ -1,6 +1,6 @@
 {
   "name": "@snoai/llmix",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "description": "Config-driven harness around your LLM SDK. MDA-driven model swap, two-tier cache, circuit breaker, key-pool rotation.",
   "author": "Sno AI",
   "license": "Apache-2.0",
