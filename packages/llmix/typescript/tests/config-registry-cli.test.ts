@@ -1,12 +1,16 @@
 import assert from "node:assert/strict"
+import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { promisify } from "node:util"
 
 import { runCli } from "../src/cli.js"
 import { buildVerificationHooks } from "../src/config-registry-cli-support.js"
+
+const execFileAsync = promisify(execFile)
 
 let passed = 0
 let failed = 0
@@ -103,6 +107,16 @@ await run("package exposes llmix bin", async () => {
 		bin?: Record<string, string>
 	}
 	assert.equal(packageJson.bin?.["llmix"], "./dist/cli.js")
+})
+
+await run("llmix bin executes through symlink", async () => {
+	await withTempRoot("symlink-bin", async (tempRoot) => {
+		const cliPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.ts")
+		const binPath = path.join(tempRoot, "llmix")
+		await symlink(cliPath, binPath)
+		const { stdout } = await execFileAsync(process.execPath, [binPath, "--help"], { encoding: "utf8" })
+		assert.match(stdout, /LLMix registry CLI/)
+	})
 })
 
 await run("publish-registry rejects release plan source digest mismatch", async () => {
