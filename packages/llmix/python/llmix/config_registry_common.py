@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from llmix.mda_loader_schema import _CAMEL_TO_SNAKE, _normalize_config_keys
 from llmix.mda_loader_validation import _validate_runtime_config
 from llmix.types import (
     ConfigAccessError,
@@ -25,6 +26,7 @@ _REVISION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _REVISION_TOKEN_PATTERN = re.compile(r"\d+|\D+")
 _DIGIT_TOKEN_PATTERN = re.compile(r"^\d+$")
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
+_SNAKE_TO_CANONICAL = {snake: camel for camel, snake in _CAMEL_TO_SNAKE.items()}
 
 
 def _utcnow() -> datetime:
@@ -81,20 +83,20 @@ def _current_pointer_sha256(pointer: dict[str, str]) -> str:
     )
 
 
-def _snapshot_registry_path(revision: str, relative_path: str) -> str:
-    return posixpath.join("snapshots", revision, relative_path)
+def _compiled_registry_path(revision: str, relative_path: str) -> str:
+    return posixpath.join("compiled", revision, relative_path)
 
 
-def _snapshot_relative_path(revision: str, registry_path: str) -> str:
-    prefix = _snapshot_registry_path(revision, "")
+def _compiled_relative_path(revision: str, registry_path: str) -> str:
+    prefix = _compiled_registry_path(revision, "")
     if not registry_path.startswith(prefix):
         raise SecurityError(
-            f"Registry root file is outside the active snapshot: {registry_path}"
+            f"Registry root file is outside the active compiled revision: {registry_path}"
         )
     relative_path = registry_path[len(prefix) :]
     if not relative_path:
         raise SecurityError(
-            f"Registry root file path is not a snapshot artifact: {registry_path}"
+            f"Registry root file path is not a compiled artifact: {registry_path}"
         )
     return relative_path
 
@@ -207,10 +209,32 @@ def _validate_revision(revision: str) -> None:
 
 
 def _validate_resolved_config(path: Path, value: dict[str, Any]) -> None:
-    _validate_runtime_config(value, path)
+    _validate_runtime_config(_from_registry_resolved_config(value), path)
 
 
-def _is_legacy_yaml_authoring_path(path: Path) -> bool:
+def _to_registry_resolved_config(value: dict[str, Any]) -> dict[str, Any]:
+    return _convert_config_keys(value, _SNAKE_TO_CANONICAL)
+
+
+def _from_registry_resolved_config(value: dict[str, Any]) -> dict[str, Any]:
+    normalized = _normalize_config_keys(value)
+    if not isinstance(normalized, dict):
+        raise InvalidConfigError("Resolved config must normalize to a JSON object")
+    return normalized
+
+
+def _convert_config_keys(value: Any, key_map: dict[str, str]) -> Any:
+    if isinstance(value, dict):
+        return {
+            key_map.get(str(raw_key), str(raw_key)): _convert_config_keys(item, key_map)
+            for raw_key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_convert_config_keys(item, key_map) for item in value]
+    return value
+
+
+def _is_legacy_yaml_source_path(path: Path) -> bool:
     return path.name.lower().endswith((".yaml", ".yml"))
 
 

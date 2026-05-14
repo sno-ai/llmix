@@ -142,7 +142,7 @@ def _write_authoring_preset(
     model: str = "gpt-4.1-mini",
     temperature: float = 0.2,
 ) -> Path:
-    path = root / "authoring" / "search" / "summary.mda"
+    path = root / "source" / "search" / "summary.mda"
     path.parent.mkdir(parents=True, exist_ok=True)
     frontmatter = {
         "name": "summary",
@@ -165,7 +165,7 @@ def _write_authoring_preset(
 
 
 def _write_signed_authoring_preset(root: Path) -> Path:
-    path = root / "authoring" / "search" / "summary.mda"
+    path = root / "source" / "search" / "summary.mda"
     path.parent.mkdir(parents=True, exist_ok=True)
     body = "# signed summary\n"
     unsigned = {
@@ -242,9 +242,9 @@ def test_publish_writes_signed_registry_root_and_manager_opens_it(
     assert payload["schema_version"] == 1
     assert isinstance(payload["published_at"], str)
     assert payload["current"]["manifest_sha256"] == published.manifest_sha256
-    assert payload["manifest"]["path"] == "snapshots/rev-1/manifest.json"
-    assert "snapshots/rev-1/authoring/search/summary.mda" in paths
-    assert "snapshots/rev-1/resolved/search/summary.json" in paths
+    assert payload["manifest"]["path"] == "compiled/rev-1/manifest.json"
+    assert "compiled/rev-1/source/search/summary.mda" in paths
+    assert "compiled/rev-1/resolved/search/summary.json" in paths
     assert config["model"] == "gpt-5-mini"
     assert verifier.seen is not None
     assert verifier.seen.payload_type == REGISTRY_ROOT_PAYLOAD_TYPE
@@ -297,7 +297,7 @@ def test_signed_registry_root_rejects_resolved_artifact_tampering(
 ) -> None:
     root = tmp_path / "config" / "llm"
     _publish_signed_registry(root)
-    resolved = root / "snapshots" / "rev-1" / "resolved" / "search" / "summary.json"
+    resolved = root / "compiled" / "rev-1" / "resolved" / "search" / "summary.json"
     data = _read_json(resolved)
     data["model"] = "tampered"
     _write_json(resolved, data)
@@ -324,7 +324,7 @@ def test_registry_root_parser_rejects_current_binding_digest_mismatch(
 ) -> None:
     root = tmp_path / "config" / "llm"
     _publish_signed_registry(root)
-    root_path = root / "snapshots" / "rev-1" / "registry-root.json"
+    root_path = root / "compiled" / "rev-1" / "registry-root.json"
     envelope = _read_json(root_path)
     envelope["payload"]["current"]["sha256"] = "0" * 64
 
@@ -347,7 +347,7 @@ def test_unsigned_registry_rejects_manifest_digest_mismatch(tmp_path: Path) -> N
 def test_signed_registry_root_rejects_malformed_root_payload(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
     _publish_signed_registry(root)
-    root_path = root / "snapshots" / "rev-1" / "registry-root.json"
+    root_path = root / "compiled" / "rev-1" / "registry-root.json"
     original = _read_json(root_path)
     envelope = deepcopy(original)
     del envelope["payload"]["schema"]
@@ -486,4 +486,4 @@ def test_failed_registry_root_signing_does_not_activate_new_revision(
         )
 
     assert _read_json(root / "current.json") == before
-    assert not (root / "snapshots" / "rev-2").exists()
+    assert not (root / "compiled" / "rev-2").exists()

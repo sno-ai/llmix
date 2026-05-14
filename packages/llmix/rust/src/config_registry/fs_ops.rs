@@ -26,19 +26,19 @@ pub(super) fn is_legacy_preset_filename(file_name: &str) -> bool {
     lower.ends_with(".yaml") || lower.ends_with(".yml")
 }
 
-pub(super) fn validate_authoring_directory(path: &Path) -> LlmixResult<()> {
+pub(super) fn validate_source_directory(path: &Path) -> LlmixResult<()> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_dir() => Ok(()),
         Ok(metadata) if metadata.file_type().is_symlink() => Err(InvalidConfigError {
             message: format!(
-                "Config Registry authoring directory must not be a symlink: {}",
+                "Config Registry source directory must not be a symlink: {}",
                 path.display()
             ),
         }
         .into()),
         Ok(_) => Err(InvalidConfigError {
             message: format!(
-                "Config Registry authoring path is not a directory: {}",
+                "Config Registry source path is not a directory: {}",
                 path.display()
             ),
         }
@@ -87,6 +87,7 @@ pub(super) fn validate_revision(revision: &str) -> LlmixResult<()> {
 }
 
 pub(super) fn validate_resolved_config(path: &Path, value: &Value) -> LlmixResult<()> {
+    let value = from_registry_resolved_config(value.clone());
     let Value::Object(object) = value else {
         return Err(InvalidConfigError {
             message: format!(
@@ -112,14 +113,134 @@ pub(super) fn validate_resolved_config(path: &Path, value: &Value) -> LlmixResul
     Ok(())
 }
 
+pub(super) fn to_registry_resolved_config(value: Value) -> Value {
+    map_config_keys(value, snake_to_canonical_key)
+}
+
+pub(super) fn from_registry_resolved_config(value: Value) -> Value {
+    map_config_keys(value, canonical_to_snake_key)
+}
+
+fn map_config_keys(value: Value, key_map: fn(&str) -> &str) -> Value {
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .into_iter()
+                .map(|(key, value)| (key_map(&key).to_string(), map_config_keys(value, key_map)))
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(
+            values
+                .into_iter()
+                .map(|value| map_config_keys(value, key_map))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+fn snake_to_canonical_key(key: &str) -> &str {
+    match key {
+        "base_url" => "baseUrl",
+        "max_output_tokens" => "maxOutputTokens",
+        "max_retries" => "maxRetries",
+        "top_p" => "topP",
+        "top_k" => "topK",
+        "presence_penalty" => "presencePenalty",
+        "frequency_penalty" => "frequencyPenalty",
+        "stop_sequences" => "stopSequences",
+        "total_time" => "totalTime",
+        "stream_first_chunk_time" => "streamFirstChunkTime",
+        "provider_options" => "providerOptions",
+        "bypass_gateway" => "bypassGateway",
+        "config_id" => "configId",
+        "enable_thinking" => "enableThinking",
+        "keep_thinking_output" => "keepThinkingOutput",
+        "thinking_budget" => "thinkingBudget",
+        "reasoning_effort" => "reasoningEffort",
+        "text_verbosity" => "textVerbosity",
+        "structured_outputs" => "structuredOutputs",
+        "parallel_tool_calls" => "parallelToolCalls",
+        "logit_bias" => "logitBias",
+        "strict_json_schema" => "strictJsonSchema",
+        "max_completion_tokens" => "maxCompletionTokens",
+        "service_tier" => "serviceTier",
+        "prompt_cache_key" => "promptCacheKey",
+        "prompt_cache_retention" => "promptCacheRetention",
+        "gpu_path" => "gpuPath",
+        "max_items" => "maxItems",
+        "safety_identifier" => "safetyIdentifier",
+        "budget_tokens" => "budgetTokens",
+        "disable_parallel_tool_use" => "disableParallelToolUse",
+        "send_reasoning" => "sendReasoning",
+        "tool_streaming" => "toolStreaming",
+        "structured_output_mode" => "structuredOutputMode",
+        "thinking_level" => "thinkingLevel",
+        "thinking_config" => "thinkingConfig",
+        "include_thoughts" => "includeThoughts",
+        "cached_content" => "cachedContent",
+        "safety_settings" => "safetySettings",
+        "response_modalities" => "responseModalities",
+        "cache_control" => "cacheControl",
+        other => other,
+    }
+}
+
+fn canonical_to_snake_key(key: &str) -> &str {
+    match key {
+        "baseUrl" => "base_url",
+        "maxOutputTokens" => "max_output_tokens",
+        "maxRetries" => "max_retries",
+        "topP" => "top_p",
+        "topK" => "top_k",
+        "presencePenalty" => "presence_penalty",
+        "frequencyPenalty" => "frequency_penalty",
+        "stopSequences" => "stop_sequences",
+        "totalTime" => "total_time",
+        "streamFirstChunkTime" => "stream_first_chunk_time",
+        "providerOptions" => "provider_options",
+        "bypassGateway" => "bypass_gateway",
+        "configId" => "config_id",
+        "enableThinking" => "enable_thinking",
+        "keepThinkingOutput" => "keep_thinking_output",
+        "thinkingBudget" => "thinking_budget",
+        "reasoningEffort" => "reasoning_effort",
+        "textVerbosity" => "text_verbosity",
+        "structuredOutputs" => "structured_outputs",
+        "parallelToolCalls" => "parallel_tool_calls",
+        "logitBias" => "logit_bias",
+        "strictJsonSchema" => "strict_json_schema",
+        "maxCompletionTokens" => "max_completion_tokens",
+        "serviceTier" => "service_tier",
+        "promptCacheKey" => "prompt_cache_key",
+        "promptCacheRetention" => "prompt_cache_retention",
+        "gpuPath" => "gpu_path",
+        "maxItems" => "max_items",
+        "safetyIdentifier" => "safety_identifier",
+        "budgetTokens" => "budget_tokens",
+        "disableParallelToolUse" => "disable_parallel_tool_use",
+        "sendReasoning" => "send_reasoning",
+        "toolStreaming" => "tool_streaming",
+        "structuredOutputMode" => "structured_output_mode",
+        "thinkingLevel" => "thinking_level",
+        "thinkingConfig" => "thinking_config",
+        "includeThoughts" => "include_thoughts",
+        "cachedContent" => "cached_content",
+        "safetySettings" => "safety_settings",
+        "responseModalities" => "response_modalities",
+        "cacheControl" => "cache_control",
+        other => other,
+    }
+}
+
 pub(super) fn canonical_json_bytes(value: &Value) -> LlmixResult<Vec<u8>> {
     let mut content = canonical_json::to_string(value)?;
     content.push('\n');
     Ok(content.into_bytes())
 }
 
-pub(super) fn read_authoring_file_bytes(path: &Path) -> LlmixResult<Vec<u8>> {
-    let before = validate_regular_authoring_file(path)?;
+pub(super) fn read_source_file_bytes(path: &Path) -> LlmixResult<Vec<u8>> {
+    let before = validate_regular_source_file(path)?;
     let mut file = match File::open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == ErrorKind::NotFound => {
@@ -137,26 +258,26 @@ pub(super) fn read_authoring_file_bytes(path: &Path) -> LlmixResult<Vec<u8>> {
         Err(error) => return Err(error.into()),
     };
     let after = file.metadata()?;
-    validate_same_authoring_file(path, &before, &after)?;
+    validate_same_source_file(path, &before, &after)?;
 
     let mut content = Vec::new();
     file.read_to_end(&mut content)?;
     Ok(content)
 }
 
-fn validate_regular_authoring_file(path: &Path) -> LlmixResult<fs::Metadata> {
+fn validate_regular_source_file(path: &Path) -> LlmixResult<fs::Metadata> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_file() => Ok(metadata),
         Ok(metadata) if metadata.file_type().is_symlink() => Err(InvalidConfigError {
             message: format!(
-                "Config Registry authoring preset must not be a symlink: {}",
+                "Config Registry source preset must not be a symlink: {}",
                 path.display()
             ),
         }
         .into()),
         Ok(_) => Err(InvalidConfigError {
             message: format!(
-                "Config Registry authoring preset is not a file: {}",
+                "Config Registry source preset is not a file: {}",
                 path.display()
             ),
         }
@@ -173,7 +294,7 @@ fn validate_regular_authoring_file(path: &Path) -> LlmixResult<fs::Metadata> {
     }
 }
 
-fn validate_same_authoring_file(
+fn validate_same_source_file(
     path: &Path,
     before: &fs::Metadata,
     after: &fs::Metadata,
@@ -181,7 +302,7 @@ fn validate_same_authoring_file(
     if !after.file_type().is_file() {
         return Err(InvalidConfigError {
             message: format!(
-                "Config Registry authoring preset is not a file: {}",
+                "Config Registry source preset is not a file: {}",
                 path.display()
             ),
         }
@@ -192,7 +313,7 @@ fn validate_same_authoring_file(
     if before.dev() != after.dev() || before.ino() != after.ino() {
         return Err(InvalidConfigError {
             message: format!(
-                "Config Registry authoring preset changed while publishing: {}",
+                "Config Registry source preset changed while publishing: {}",
                 path.display()
             ),
         }

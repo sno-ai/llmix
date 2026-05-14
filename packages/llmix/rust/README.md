@@ -11,7 +11,7 @@ The crate is usable today, but it should still be treated as beta. The public su
 - Circuit breaker, kill switch, retry, singleflight, key-pool rotation, and AIMD semaphore
 - Provider kwargs normalization for OpenAI, Anthropic, Gemini, OpenRouter, and `sno-gpu`
 - Thinking-token stripping
-- Config Registry runtime manager and publisher for committed preset snapshots
+- Direct `.mda` loading and runtime primitives for preset configs
 - Low-level MDA Source Mode config helpers with `load_config` and `load_config_preset`
 - Optional provider modules for OpenAI-compatible, Anthropic, Gemini, and `sno-gpu` HTTP dispatch
 
@@ -83,38 +83,24 @@ The same callback shape works when you replace the inline closure with your own 
 
 ## Config Registry
 
-The Rust crate now exposes `ConfigRegistryPublisher` and
-`ConfigRegistryManager` as the preferred preset runtime path.
+The public secure registry flow is defined by the root LLMix docs:
 
-```rust,no_run
-use llmix_rs::{ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir};
-
-# fn main() -> Result<(), Box<dyn std::error::Error>> {
-let root = resolve_config_dir(None)?.config_dir;
-ConfigRegistryPublisher::new(&root)?.publish()?;
-
-let mut manager = ConfigRegistryManager::open(&root)?;
-let config = manager.get_preset("search", "summary")?;
-# let _ = config;
-# Ok(())
-# }
+```text
+config/llm/
+  source/
+    <module>/
+      <preset>.mda
+  current.json
+  compiled/
 ```
 
-The registry contract stays aligned across Python, TypeScript, and Rust:
-
-- `.mda` Source Mode stays as the authoring format
-- publishing creates immutable snapshot revisions
-- `current.json` is the only live switch
-- runtime reads committed snapshot artifacts instead of mutable authoring MDA
-
-That lets Rust stay aligned with Python and TypeScript without putting
-cross-language MDA parsing on the runtime hot path.
-
-The manager also exposes the active revision and reload health metadata so
-service code can report which snapshot is live and whether a reload failed.
+Use the MDA CLI for validation, integrity, signing, verification, and release
+gates. Use the official LLMix publisher against `config/llm` to generate
+`current.json` and `compiled/`. Do not build a Rust-local compiler, publisher,
+or custom directory layout.
 
 `load_config` and `load_config_preset` remain available as low-level helpers
-for authoring tools, tests, and migration work. They now hard-require `.mda`
+for editing tools, tests, and migration work. They now hard-require `.mda`
 files and reject legacy `.yaml` / `.yml` preset paths.
 
 ## Optional provider modules

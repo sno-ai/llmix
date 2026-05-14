@@ -1,12 +1,17 @@
-"""LLMix Config Registry example.
+"""LLMix runtime preset example.
 
-Shows how to publish MDA presets into the Config Registry, then load them with
-ConfigRegistryManager at runtime.
+The official secure registry release path is:
+    mda release prepare -> llmix publish-registry -> mda release finalize
+    -> mda doctor release -> llmix check-registry
 
-Requires a registry root with at least one authoring preset, for example:
-    config/llm/authoring/search/summary.mda
+This Python example is only the application runtime side. It assumes the app
+repo already contains the generated registry files under config/llm from that
+release flow:
+    config/llm/source/search/summary.mda
+    config/llm/current.json
+    config/llm/compiled/
 
-See docs/llmix/secure-llmix-configuration.md for the preset format.
+Keep the trust anchor outside config/llm.
 
 Run with:
     OPENAI_API_KEY=sk-... uv run --project packages/llmix/python python examples/llmix/python/config_registry.py
@@ -20,7 +25,6 @@ from llmix import (
     CallInput,
     CallPipeline,
     ConfigRegistryManager,
-    ConfigRegistryPublisher,
     KeyPool,
     PipelineConfig,
     TwoTierCache,
@@ -31,8 +35,7 @@ from llmix import (
 async def main() -> None:
     registry_root = Path("./config/llm")
 
-    # Publish authoring/*.mda files into an immutable runtime snapshot.
-    ConfigRegistryPublisher(registry_root).publish()
+    # Open the registry produced by the official MDA CLI + llmix command flow.
     registry = ConfigRegistryManager.open(registry_root)
 
     pipeline = CallPipeline(
@@ -44,7 +47,7 @@ async def main() -> None:
     pipeline.set_key_pool("openai", KeyPool([os.environ["OPENAI_API_KEY"]]))
 
     # Load a named preset. Provider, model, and parameters come from the
-    # published registry snapshot, not from application code.
+    # published registry, not from application code.
     config = registry.get_preset("search", "summary")
 
     response = await pipeline.call(
@@ -63,10 +66,8 @@ async def main() -> None:
     print(f"Response: {response.content}")
     print(f"Cache hit: {response.cache_hit}")
 
-    # To hot-swap: update the authoring MDA, publish a new revision, and the
-    # manager will observe current.json on the next preset lookup.
-    # ConfigRegistryPublisher(registry_root).publish()
-    # new_config = registry.get_preset("search", "summary")
+    # To update: edit config/llm/source/<module>/<preset>.mda, run the official
+    # release flow again, and deploy the generated current.json and compiled/.
 
 
 if __name__ == "__main__":

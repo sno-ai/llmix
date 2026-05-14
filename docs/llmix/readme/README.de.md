@@ -17,7 +17,7 @@ LLMix ist die Schicht zwischen deinem Produkt und dem Provider-SDK.
 
 Es verlangt nicht, dass du deinen OpenAI-, Anthropic-, Gemini-, LiteLLM-, AI-SDK- oder eigenen Client-Code neu schreibst. Es umschließt den Aufruf. Die langweiligen Teile liegen außen: Response-Cache, Circuit Breaker, Key Pools, Singleflight, Retry-Policy, adaptive Concurrency, Provider-Kwargs und MDA-Konfigurationsladen.
 
-Das Modell ist kein hart kodierter String mehr tief im Anwendungscode. Es wird zu Daten. Ändere ein Preset, veröffentliche einen Registry-Snapshot, lade den Service neu, und die nächste Anfrage kann einen anderen Provider oder ein anderes Modell verwenden. Kein Redeploy für den üblichen Modellwechsel.
+Das Modell ist kein hart kodierter String mehr tief im Anwendungscode. Es wird zu Daten. Ändere ein Preset, veröffentliche eine Registry-Release, lade den Service neu, und die nächste Anfrage kann einen anderen Provider oder ein anderes Modell verwenden. Kein Redeploy für den üblichen Modellwechsel.
 
 Das ist der Kern. Eine kleine Schicht. Die scharfen Kanten sind geglättet.
 
@@ -62,7 +62,6 @@ cargo add llmix-rs --features providers-openai,redis
 
 ## Dokumentation
 
-- [Usage reference](../llmix-usage-ref.md)
 - [TypeScript guide](../llmix-typescript.md)
 - [Python guide](../llmix-python.md)
 - [Rust guide](../llmix-rust.md)
@@ -218,7 +217,7 @@ Vollständige `main`-Beispiele und Feature-Flags stehen im [Rust guide](../llmix
 | Concurrency | AIMD-adaptives Semaphore, gesteuert durch Rate-Limit-Feedback |
 | Provider kwargs | Common config wird zu provider-spezifischen Request-Feldern |
 | Thinking tokens | Optionale Extraktion von `<think>` in normalisierte Response-Objekte |
-| Registry | Unveränderliche Config-Snapshots mit einem live `current.json`-Pointer |
+| Registry | Signed compiled config registry with one live `current.json` pointer |
 
 Die Defaults sollen langweilig sein. Tune sie erst, wenn echter Traffic dir einen Grund gibt.
 
@@ -226,19 +225,32 @@ Die Defaults sollen langweilig sein. Tune sie erst, wenn echter Traffic dir eine
 
 ## MDA Presets
 
-![LLMix turns editable MDA presets into immutable registry snapshots that Python, TypeScript, and Rust runtimes can read consistently.](../images/llmix-mda-config.png)
+![LLMix turns editable MDA presets into signed compiled registry releases that runtimes can open through the official flow.](../images/llmix-mda-config.png)
 
-LLMix nutzt MDA Source Mode für Konfiguration. Menschliche Notizen und Runtime-Einstellungen leben in einer Datei. Die Runtime sieht nur das aufgelöste JSON.
+LLMix uses MDA Source Mode for preset source files. Put every human-edited preset under the official source directory:
+
+```text
+config/llm/
+  source/
+    <module>/
+      <preset>.mda
+  current.json
+  compiled/
+```
+
+`source/` is for people. `current.json` and `compiled/` are generated. Keep the trust anchor outside `config/llm`.
+
+A preset is still a normal MDA file:
 
 ```mda
 ---
-name: extraction
-description: Entity extraction preset.
+name: openai_fast
+description: Fast OpenAI preset for search summaries.
 metadata:
   snoai-llmix:
     common:
       provider: openai
-      model: gpt-4o-mini
+      model: gpt-5-mini
       temperature: 0.2
       maxOutputTokens: 512
     caching:
@@ -247,76 +259,158 @@ metadata:
       openai:
         reasoningEffort: medium
 ---
-# extraction
+# openai_fast
 
-Extract named entities. Return compact JSON.
+Summarize search results for a research workflow.
 ```
 
-Beim Schreiben oder Testen kannst du direkt laden:
+For editing or tests, direct loaders can read source presets:
 
 ```typescript
 import { loadMdaConfig } from "@snoai/llmix";
 
-const config = await loadMdaConfig("./config/llm/search/extraction.mda");
+const config = await loadMdaConfig("./config/llm/source/search_summary/openai_fast.mda");
 ```
 
 ```python
 from llmix import load_mda_config
 
-config = load_mda_config("./config/llm/search/extraction.mda")
+config = load_mda_config("./config/llm/source/search_summary/openai_fast.mda")
 ```
 
 ```rust
 use llmix_rs::load_config;
 
-let config = load_config("./config/llm/search/extraction.mda")?;
+let config = load_config("./config/llm/source/search_summary/openai_fast.mda")?;
 ```
 
-Für Produktionsservices solltest du die Registry verwenden.
+Production services should use the registry flow below.
 
 ---
 
 ## Config Registry
 
-Editierbare MDA-Dateien sind gut für Menschen. Laufende Services brauchen etwas Ruhigeres.
+MDA is the standard. The MDA CLI validates, computes integrity, signs, verifies, and gates releases. LLMix is the official registry publisher and runtime opener. The app repo owns source presets and runtime wiring; it does not implement a compiler or publisher.
 
-Die LLMix Config Registry veröffentlicht Authoring-Dateien als unveränderliche, content-addressed Snapshots. Runtime-Code liest den aktiven Snapshot, nicht den veränderlichen Source Tree.
+Required flow:
 
-```text
-config/llm/
-  authoring/
-    search/
-      extraction.mda
-  snapshots/
-    2026-05-09T000000Z-...
-  current.json
-```
+1. Put presets in `config/llm/source/<module>/<preset>.mda`.
+2. Run the MDA CLI validation, integrity, signing, verification, and release prepare gates.
+3. Run the official LLMix publisher.
+4. Let LLMix generate `config/llm/current.json` and `config/llm/compiled/`.
+5. Run the MDA CLI release finalize and doctor checks.
+6. Deliver the trust anchor from outside `config/llm`.
+7. Open `config/llm` at runtime through LLMix with that external trust anchor.
 
-```python
-from llmix import ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir
+The did:web example assumes `release/did-web-private-key.pem` and `release/did.json` already exist outside `config/llm`.
 
-root = resolve_config_dir().config_dir
-ConfigRegistryPublisher(root).publish()
+```bash
+mkdir -p config/llm/source/search_summary release deploy
 
-manager = ConfigRegistryManager.open(root)
-config = manager.get_preset("search", "extraction")
+mda init --template llmix-preset \
+  --module search_summary \
+  --preset openai_fast \
+  --provider openai \
+  --model gpt-5-mini \
+  --out config/llm/source/search_summary/openai_fast.mda
+
+mda validate config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --json
+
+mda integrity compute config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --write \
+  --json
+
+mda release trust policy \
+  --target llmix-registry \
+  --profile did-web \
+  --domain config.example.com \
+  --out release/trust-policy.json \
+  --json
+
+mda sign config/llm/source/search_summary/openai_fast.mda \
+  --profile did-web \
+  --did did:web:config.example.com \
+  --key-id did:web:config.example.com#release \
+  --key-file release/did-web-private-key.pem \
+  --in-place \
+  --json
+
+mda verify config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --json
+
+mda release prepare \
+  --target llmix-registry \
+  --source config/llm/source \
+  --registry-dir config/llm \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --out release/plan.json \
+  --json
+
+llmix publish-registry \
+  --root config/llm \
+  --release-plan release/plan.json \
+  --revision 2026-05-14T000000Z \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --root-did did:web:config.example.com \
+  --root-key-id did:web:config.example.com#release \
+  --root-key-file release/did-web-private-key.pem \
+  --json
+
+mda release finalize \
+  --target llmix-registry \
+  --registry-dir config/llm \
+  --registry-root config/llm/compiled/2026-05-14T000000Z/registry-root.json \
+  --release-plan release/plan.json \
+  --policy release/trust-policy.json \
+  --derive-root-digest \
+  --minimum-revision 2026-05-14T000000Z \
+  --out deploy/llmix-trust.json \
+  --did-document release/did.json \
+  --json
+
+mda doctor release \
+  --target llmix-registry \
+  --source config/llm/source \
+  --registry-dir config/llm \
+  --release-plan release/plan.json \
+  --manifest deploy/llmix-trust.json \
+  --did-document release/did.json \
+  --json
+
+llmix check-registry \
+  --root config/llm \
+  --trust deploy/llmix-trust.json \
+  --preset search_summary/openai_fast \
+  --did-document release/did.json \
+  --tamper-proof \
+  --json
 ```
 
 ```typescript
 import {
   ConfigRegistryManager,
-  ConfigRegistryPublisher,
-  resolveConfigDir,
+  loadLlmixTrustManifest,
+  registryRootOptionsFromTrustManifest,
 } from "@snoai/llmix";
 
-const { configDir } = resolveConfigDir();
-await new ConfigRegistryPublisher(configDir).publish();
-
-const manager = await ConfigRegistryManager.open(configDir);
-const config = await manager.getPreset("search", "extraction");
+const trust = await loadLlmixTrustManifest(process.env.LLMIX_TRUST_ANCHOR!);
+const manager = await ConfigRegistryManager.open("config/llm", {
+  signedRoot: registryRootOptionsFromTrustManifest(trust, { didWebVerifier }),
+});
+const config = await manager.getPreset("search_summary", "openai_fast");
 ```
 
-Manager stellen die aktive Revision und Reload-Health-Metadaten bereit. So kannst du genau sagen, welche Konfiguration ein Service gerade ausführt.
+`didWebVerifier` is the app verifier hook required by this did:web policy. For a command-line runtime proof, use `llmix check-registry --did-document release/did.json`; in app code, pass the verifier hooks required by your trust policy.
+
+The external trust anchor can come from an environment variable, application config, build-time constant, secret/config manager, Kubernetes or cloud config, or release attestation.
 
 ---
 

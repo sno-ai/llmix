@@ -10,7 +10,7 @@ import {
 	fromCanonicalResolvedConfig,
 	fsyncDir,
 	isLegacyYamlPresetFilename,
-	legacyYamlAuthoringError,
+	legacyYamlSourceError,
 	manifestToJsonObject,
 	mapReadError,
 	parseMdaPresetFilename,
@@ -38,23 +38,23 @@ import {
 
 export class ConfigRegistryPublisher {
 	readonly root: string
-	readonly authoringDir: string
-	readonly snapshotsDir: string
+	readonly sourceDir: string
+	readonly compiledDir: string
 	readonly stagingDir: string
 	readonly currentPath: string
 
 	constructor(root: string) {
 		this.root = path.resolve(root)
-		this.authoringDir = path.join(this.root, "authoring")
-		this.snapshotsDir = path.join(this.root, "snapshots")
-		this.stagingDir = path.join(this.snapshotsDir, ".staging")
+		this.sourceDir = path.join(this.root, "source")
+		this.compiledDir = path.join(this.root, "compiled")
+		this.stagingDir = path.join(this.compiledDir, ".staging")
 		this.currentPath = path.join(this.root, "current.json")
 	}
 
 	async publish(options?: ConfigRegistryPublishOptions): Promise<PublishedRevision> {
 		const presets = await this.discoverPresets()
 		if (presets.length === 0) {
-			throw new ConfigNotFoundError(`No authoring presets found under ${this.authoringDir}`)
+			throw new ConfigNotFoundError(`No source presets found under ${this.sourceDir}`)
 		}
 
 		const publishedAt = new Date()
@@ -62,24 +62,24 @@ export class ConfigRegistryPublisher {
 		const activate = options?.activate ?? true
 		validateRevision(revisionId)
 
-		const snapshotPath = path.join(this.snapshotsDir, revisionId)
+		const compiledPath = path.join(this.compiledDir, revisionId)
 		const stagePath = path.join(this.stagingDir, `${revisionId}.${process.pid}.${randomUUID()}.tmp`)
-		const manifestPath = path.join(snapshotPath, "manifest.json")
+		const manifestPath = path.join(compiledPath, "manifest.json")
 
 		try {
-			const manifest = await this.buildStagedSnapshot(
+			const manifest = await this.buildStagedRevision(
 				stagePath,
 				presets,
 				revisionId,
 				publishedAt,
 				toMdaConfigLoadOptions(options),
 			)
-			await this.verifyStagedSnapshot(stagePath, manifest)
+			await this.verifyStagedRevision(stagePath, manifest)
 			const manifestSha256 = await sha256File(path.join(stagePath, "manifest.json"))
 			const registryRootSha256 = await this.writeRegistryRootIfRequested(stagePath, manifest, manifestSha256, options)
-			await mkdir(this.snapshotsDir, { recursive: true })
+			await mkdir(this.compiledDir, { recursive: true })
 			await mkdir(this.stagingDir, { recursive: true })
-			const committed = await this.commitSnapshot(stagePath, snapshotPath, manifest, manifestSha256, registryRootSha256)
+			const committed = await this.commitRevision(stagePath, compiledPath, manifest, manifestSha256, registryRootSha256)
 
 			if (activate) {
 				await atomicWriteJson(this.currentPath, { revision: revisionId, manifest_sha256: committed.manifestSha256 })
@@ -87,13 +87,13 @@ export class ConfigRegistryPublisher {
 
 			return {
 				revision: revisionId,
-				snapshotPath,
+				compiledPath,
 				manifestPath,
 				manifestSha256: committed.manifestSha256,
 				...(committed.registryRootSha256 === undefined
 					? {}
 					: {
-							registryRootPath: path.join(snapshotPath, REGISTRY_ROOT_FILENAME),
+							registryRootPath: path.join(compiledPath, REGISTRY_ROOT_FILENAME),
 							registryRootSha256: committed.registryRootSha256,
 						}),
 				activated: activate,
@@ -105,16 +105,16 @@ export class ConfigRegistryPublisher {
 		}
 	}
 
-	private async commitSnapshot(
+	private async commitRevision(
 		stagePath: string,
-		snapshotPath: string,
-			manifest: RegistryManifest,
-			manifestSha256: string,
-			registryRootSha256: string | undefined,
-		): Promise<{ manifestSha256: string; registryRootSha256?: string }> {
+		compiledPath: string,
+		manifest: RegistryManifest,
+		manifestSha256: string,
+		registryRootSha256: string | undefined,
+	): Promise<{ manifestSha256: string; registryRootSha256?: string }> {
 		try {
-			await rename(stagePath, snapshotPath)
-			await fsyncDir(this.snapshotsDir)
+			await rename(stagePath, compiledPath)
+			await fsyncDir(this.compiledDir)
 			return registryRootSha256 === undefined ? { manifestSha256 } : { manifestSha256, registryRootSha256 }
 		} catch (error) {
 			if (!isExistingPathError(error)) {
@@ -122,32 +122,32 @@ export class ConfigRegistryPublisher {
 			}
 		}
 
-			const committed = await this.loadMatchingExistingRevision(snapshotPath, manifest, registryRootSha256)
+		const committed = await this.loadMatchingExistingRevision(compiledPath, manifest, registryRootSha256)
 		await rm(stagePath, { recursive: true, force: true })
 		return committed
 	}
 
-		private async loadMatchingExistingRevision(
-			snapshotPath: string,
-			expectedManifest: RegistryManifest,
-			expectedRegistryRootSha256: string | undefined,
-		): Promise<{ manifestSha256: string; registryRootSha256?: string }> {
-		const manifestPath = path.join(snapshotPath, "manifest.json")
+	private async loadMatchingExistingRevision(
+		compiledPath: string,
+		expectedManifest: RegistryManifest,
+		expectedRegistryRootSha256: string | undefined,
+	): Promise<{ manifestSha256: string; registryRootSha256?: string }> {
+		const manifestPath = path.join(compiledPath, "manifest.json")
 		const existingManifest = parseManifest(await readJsonObject(manifestPath), manifestPath, expectedManifest.revision)
-		await this.verifyStagedSnapshot(snapshotPath, existingManifest)
+		await this.verifyStagedRevision(compiledPath, existingManifest)
 		if (!manifestPresetsMatch(existingManifest.presets, expectedManifest.presets)) {
 			throw new InvalidConfigError(`Registry revision already exists with different contents: ${expectedManifest.revision}`)
 		}
-			const manifestSha256 = await sha256File(manifestPath)
-			const registryRootSha256 = await optionalSha256File(path.join(snapshotPath, REGISTRY_ROOT_FILENAME))
-			if (expectedRegistryRootSha256 !== undefined && registryRootSha256 === undefined) {
-				throw new InvalidConfigError(`Registry revision already exists without requested registry root: ${expectedManifest.revision}`)
-			}
-			if (expectedRegistryRootSha256 !== undefined && registryRootSha256 !== expectedRegistryRootSha256) {
-				throw new InvalidConfigError(`Registry revision already exists with different registry root: ${expectedManifest.revision}`)
-			}
-			return registryRootSha256 === undefined ? { manifestSha256 } : { manifestSha256, registryRootSha256 }
+		const manifestSha256 = await sha256File(manifestPath)
+		const registryRootSha256 = await optionalSha256File(path.join(compiledPath, REGISTRY_ROOT_FILENAME))
+		if (expectedRegistryRootSha256 !== undefined && registryRootSha256 === undefined) {
+			throw new InvalidConfigError(`Registry revision already exists without requested registry root: ${expectedManifest.revision}`)
 		}
+		if (expectedRegistryRootSha256 !== undefined && registryRootSha256 !== expectedRegistryRootSha256) {
+			throw new InvalidConfigError(`Registry revision already exists with different registry root: ${expectedManifest.revision}`)
+		}
+		return registryRootSha256 === undefined ? { manifestSha256 } : { manifestSha256, registryRootSha256 }
+	}
 
 	private async writeRegistryRootIfRequested(
 		stagePath: string,
@@ -168,9 +168,9 @@ export class ConfigRegistryPublisher {
 	private async discoverPresets(): Promise<PresetSource[]> {
 		let moduleEntries: Array<{ name: string; isDirectory(): boolean }>
 		try {
-			moduleEntries = await readdir(this.authoringDir, { withFileTypes: true })
+			moduleEntries = await readdir(this.sourceDir, { withFileTypes: true })
 		} catch (error) {
-			throw mapReadError(error, this.authoringDir)
+			throw mapReadError(error, this.sourceDir)
 		}
 
 		const presets: PresetSource[] = []
@@ -181,7 +181,7 @@ export class ConfigRegistryPublisher {
 
 			const moduleName = moduleEntry.name
 			validateModule(moduleName)
-			const modulePath = path.join(this.authoringDir, moduleName)
+			const modulePath = path.join(this.sourceDir, moduleName)
 
 			const files = await readdir(modulePath, { withFileTypes: true })
 			for (const fileEntry of [...files].sort((left, right) => left.name.localeCompare(right.name))) {
@@ -189,9 +189,9 @@ export class ConfigRegistryPublisher {
 					continue
 				}
 
-				const authoringPath = path.join(modulePath, fileEntry.name)
+				const sourcePath = path.join(modulePath, fileEntry.name)
 				if (isLegacyYamlPresetFilename(fileEntry.name)) {
-					throw legacyYamlAuthoringError(authoringPath)
+					throw legacyYamlSourceError(sourcePath)
 				}
 
 				const presetName = parseMdaPresetFilename(fileEntry.name)
@@ -205,7 +205,7 @@ export class ConfigRegistryPublisher {
 					module: moduleName,
 					preset: presetName,
 					presetId: `${moduleName}/${presetName}`,
-					authoringPath,
+					sourcePath,
 				})
 			}
 		}
@@ -216,10 +216,10 @@ export class ConfigRegistryPublisher {
 	private async buildRevisionId(presets: PresetSource[], publishedAt: Date): Promise<string> {
 		const hash = createHash("sha256")
 		for (const preset of presets) {
-			const relativePath = path.relative(this.authoringDir, preset.authoringPath)
+			const relativePath = path.relative(this.sourceDir, preset.sourcePath)
 			hash.update(relativePath)
 			hash.update("\0")
-			hash.update(await readFileBytes(preset.authoringPath))
+			hash.update(await readFileBytes(preset.sourcePath))
 			hash.update("\0")
 		}
 
@@ -227,7 +227,7 @@ export class ConfigRegistryPublisher {
 		return `${timestamp}_${hash.digest("hex").slice(0, 8)}`
 	}
 
-	private async buildStagedSnapshot(
+	private async buildStagedRevision(
 		stagePath: string,
 		presets: PresetSource[],
 		revisionId: string,
@@ -238,23 +238,23 @@ export class ConfigRegistryPublisher {
 		await mkdir(stagePath, { recursive: true })
 
 		for (const preset of presets) {
-			const authoringBytes = await readFileBytes(preset.authoringPath)
-			const authoringRel = path.posix.join("authoring", preset.module, `${preset.preset}.mda`)
+			const sourceBytes = await readFileBytes(preset.sourcePath)
+			const sourceRel = path.posix.join("source", preset.module, `${preset.preset}.mda`)
 			const resolvedRel = path.posix.join("resolved", preset.module, `${preset.preset}.json`)
-			const stagedAuthoringPath = path.join(stagePath, authoringRel)
+			const stagedSourcePath = path.join(stagePath, sourceRel)
 
-			await writeBytes(stagedAuthoringPath, authoringBytes)
+			await writeBytes(stagedSourcePath, sourceBytes)
 
-			const resolved = await loadMdaConfig(stagedAuthoringPath, loadOptions)
+			const resolved = await loadMdaConfig(stagedSourcePath, loadOptions)
 			const canonicalResolved = toCanonicalResolvedConfig(resolved)
-			fromCanonicalResolvedConfig(canonicalResolved, stagedAuthoringPath)
+			fromCanonicalResolvedConfig(canonicalResolved, stagedSourcePath)
 			const resolvedBytes = canonicalJsonString(canonicalResolved)
 
 			await writeBytes(path.join(stagePath, resolvedRel), resolvedBytes)
 
 			manifestPresets[preset.presetId] = {
-				authoring_path: authoringRel,
-				authoring_sha256: sha256Bytes(authoringBytes),
+				source_path: sourceRel,
+				source_sha256: sha256Bytes(sourceBytes),
 				resolved_path: resolvedRel,
 				resolved_sha256: sha256Bytes(resolvedBytes),
 			}
@@ -270,7 +270,7 @@ export class ConfigRegistryPublisher {
 		return manifest
 	}
 
-	private async verifyStagedSnapshot(stagePath: string, manifest: RegistryManifest): Promise<void> {
+	private async verifyStagedRevision(stagePath: string, manifest: RegistryManifest): Promise<void> {
 		const storedManifest = await readJsonObject(path.join(stagePath, "manifest.json"))
 		if (canonicalJsonString(storedManifest) !== canonicalJsonString(manifestToJsonObject(manifest))) {
 			throw new InvalidConfigError("Staged registry manifest changed during verification")
@@ -278,7 +278,7 @@ export class ConfigRegistryPublisher {
 
 		for (const [presetId, entry] of Object.entries(manifest.presets)) {
 			for (const [shaKey, pathKey] of [
-				["authoring_sha256", "authoring_path"],
+				["source_sha256", "source_path"],
 				["resolved_sha256", "resolved_path"],
 			] as const) {
 				const relativePath = entry[pathKey]
@@ -326,8 +326,8 @@ function manifestPresetsMatch(
 
 function manifestPresetEntryMatches(left: ManifestPresetEntry, right: ManifestPresetEntry): boolean {
 	return (
-		left.authoring_path === right.authoring_path &&
-		left.authoring_sha256 === right.authoring_sha256 &&
+		left.source_path === right.source_path &&
+		left.source_sha256 === right.source_sha256 &&
 		left.resolved_path === right.resolved_path &&
 		left.resolved_sha256 === right.resolved_sha256
 	)

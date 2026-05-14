@@ -2,92 +2,226 @@
 
 Languages: [English](./secure-llmix-configuration.md) | [Deutsch](./secure-llmix-configuration.de.md) | [Español](./secure-llmix-configuration.es.md) | [Français](./secure-llmix-configuration.fr.md) | [हिन्दी](./secure-llmix-configuration.hi.md) | [日本語](./secure-llmix-configuration.ja.md) | [한국어](./secure-llmix-configuration.ko.md) | [Русский](./secure-llmix-configuration.ru.md) | [中文](./secure-llmix-configuration.zh.md)
 
-LLMix can load model presets from signed MDA files and publish them as a signed
-registry. That lets you move model behavior out of application code without
-letting downstream users silently edit it.
+This is the official secure LLMix registry flow. Read it after the README and
+the guide for the runtime you ship. This page is the production runbook, not a
+second registry design.
 
-The important rule is simple:
+Roles are fixed:
 
-The registry can ship with the app, but the trust anchor must live outside the
-registry.
+| Role | Responsibility |
+| --- | --- |
+| MDA | The preset source standard. |
+| MDA CLI | Validation, integrity, signing, verification, release prepare, release finalize, and doctor checks. |
+| LLMix | The official `llmix publish-registry` command, advanced publisher API, `llmix check-registry` command, and runtime registry loader. |
+| App repository | Owns source presets, release wiring, runtime verifier hooks, and provider credentials. |
 
-If an attacker can replace `config/llm/`, they can replace every file inside it.
-So the runtime must pin something outside that directory: the expected registry
-root digest, the trust policy, signer identity, and freshness rules.
+Do not write a custom compiler. Do not invent another directory structure. Use
+MDA CLI plus LLMix.
 
-## Quick Start
+## Layout
 
-Use the current MDA CLI 1.1.x or newer. These commands were checked with
-`mda --version` returning `1.1.2`.
+Use this layout in the app repository:
 
-1. Write LLMix presets as source `.mda` files.
-2. Validate and sign those files in CI or release automation.
-3. Publish a signed LLMix registry from the verified presets.
-4. Finalize an external deployment trust manifest.
-5. At runtime, open the registry with that manifest.
+```text
+config/llm/
+  source/
+    <module>/
+      <preset>.mda
+  current.json
+  compiled/
+```
+
+Meanings:
+
+| Path | Owner | Meaning |
+| --- | --- | --- |
+| `config/llm/source/` | People | Human-edited MDA preset sources. |
+| `config/llm/current.json` | LLMix | Machine-generated active registry pointer. |
+| `config/llm/compiled/` | LLMix | Machine-generated signed and resolved registry output. |
+| Trust anchor | App/deployment | Stored outside `config/llm`. |
+
+The trust anchor must never be loaded from `config/llm`. If an attacker can
+replace `config/llm`, every file inside that directory is untrusted until the
+runtime checks it against an external anchor.
+
+## Required Flow
+
+1. Put source presets in `config/llm/source/<module>/<preset>.mda`.
+2. Run MDA CLI validation, integrity, signing, verification, and release
+   prepare.
+3. Run `llmix publish-registry`.
+4. Generate `config/llm/current.json` and `config/llm/compiled/`.
+5. Run MDA CLI release finalize and doctor checks.
+6. Store the trust anchor outside `config/llm`.
+7. Open `config/llm` at runtime through LLMix with the external trust anchor.
+
+## Source Preset
+
+Create one preset:
 
 ```bash
+mkdir -p config/llm/source/search_summary release deploy
+
 mda init --template llmix-preset \
   --module search_summary \
   --preset openai_fast \
   --provider openai \
   --model gpt-5-mini \
-  --out authoring/search_summary/openai_fast.mda
-
-mda validate authoring/search_summary/openai_fast.mda --target source --json
-mda integrity compute authoring/search_summary/openai_fast.mda --target source --write --json
+  --out config/llm/source/search_summary/openai_fast.mda
 ```
 
-Sign the preset with the signer your release process uses. A did:web key is the
-simplest local example:
+The source path is part of the public contract:
+
+```text
+config/llm/source/search_summary/openai_fast.mda
+```
+
+Use lowercase letters, numbers, `_`, and `-` for module and preset names.
+
+## Release Identity Inputs
+
+The did:web example assumes these release-identity inputs already exist outside
+`config/llm`:
+
+| Path | Meaning |
+| --- | --- |
+| `release/did-web-private-key.pem` | Private signing key for the release identity. |
+| `release/did.json` | DID document containing `did:web:config.example.com#release`. |
+
+Do not put either file in `config/llm`. Provide them from your release system,
+secret/config manager, or CI environment. If GitHub Actions Sigstore/Rekor is
+your release identity, use that MDA CLI profile instead; the layout and LLMix
+publisher command do not change.
+
+## MDA CLI Gate
+
+Validate, compute integrity, create the trust policy, sign, verify, and prepare
+the release before publishing:
 
 ```bash
-mda sign authoring/search_summary/openai_fast.mda \
+mda validate config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --json
+
+mda integrity compute config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --write \
+  --json
+
+mda release trust policy \
+  --target llmix-registry \
+  --profile did-web \
+  --domain config.example.com \
+  --out release/trust-policy.json \
+  --json
+
+mda sign config/llm/source/search_summary/openai_fast.mda \
   --profile did-web \
   --did did:web:config.example.com \
   --key-id did:web:config.example.com#release \
   --key-file release/did-web-private-key.pem \
   --in-place \
   --json
-```
 
-Generate the source and registry-root trust policies, prepare the release plan,
-publish the LLMix registry, then finalize the external manifest:
-
-```bash
-mda release trust policy \
-  --target llmix-registry \
-  --profile did-web \
-  --domain config.example.com \
-  --out release/source-policy.json \
-  --json
-
-mda release trust policy \
-  --target llmix-registry \
-  --profile did-web \
-  --domain config.example.com \
-  --out release/root-policy.json \
+mda verify config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
   --json
 
 mda release prepare \
   --target llmix-registry \
-  --source authoring \
+  --source config/llm/source \
   --registry-dir config/llm \
-  --policy release/source-policy.json \
+  --policy release/trust-policy.json \
   --did-document release/did.json \
   --out release/plan.json \
   --json
+```
 
-# Run the LLMix publisher here with trustedRuntime enabled.
-# It reads authoring/, verifies every signed .mda, writes config/llm/, and
-# signs config/llm/snapshots/<revision>/registry-root.json.
+Use GitHub Actions Sigstore/Rekor policy instead of did:web if that is your
+release identity. The layout and LLMix publisher API do not change.
 
+## LLMix Publisher Command
+
+Run the official publisher command. It reads `config/llm/source`, checks the
+MDA CLI release plan, verifies source presets with the policy and verifier
+inputs, writes `config/llm/compiled/<revision>`, writes
+`config/llm/current.json`, and signs
+`config/llm/compiled/<revision>/registry-root.json`.
+
+```bash
+llmix publish-registry \
+  --root config/llm \
+  --release-plan release/plan.json \
+  --revision 2026-05-14T000000Z \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --root-did did:web:config.example.com \
+  --root-key-id did:web:config.example.com#release \
+  --root-key-file release/did-web-private-key.pem \
+  --json
+```
+
+Use `--rekor-url` and `--rekor-entry` when your policy uses Sigstore/Rekor
+instead of did:web. Use `--no-activate` only when a release system needs to
+inspect the generated revision before writing `current.json`.
+
+Do not replace this command with a project-local compiler.
+
+### Advanced Publisher API
+
+Most apps should use the command. Use `ConfigRegistryPublisher` only when your
+release system must call LLMix as a library instead of a command. It is the
+same publisher behind `llmix publish-registry`; it is not a separate registry
+format.
+
+```typescript
+import { ConfigRegistryPublisher } from "@snoai/llmix";
+
+const published = await new ConfigRegistryPublisher("config/llm").publish({
+  revision: "2026-05-14T000000Z",
+  trustedRuntime: true,
+  trustPolicy: sourceTrustPolicy,
+  didWebVerifier,
+  registryRoot: { signer: registryRootSigner },
+});
+
+console.log(published.registryRootPath);
+```
+
+After publishing, the generated registry has this shape:
+
+```text
+config/llm/
+  source/
+    search_summary/
+      openai_fast.mda
+  current.json
+  compiled/
+    <revision>/
+      manifest.json
+      registry-root.json
+      source/
+        search_summary/
+          openai_fast.mda
+      resolved/
+        search_summary/
+          openai_fast.json
+```
+
+## Finalize Release
+
+Finalize the external trust anchor after the LLMix publisher writes the signed
+registry root:
+
+```bash
 mda release finalize \
   --target llmix-registry \
   --registry-dir config/llm \
-  --registry-root config/llm/snapshots/<revision>/registry-root.json \
+  --registry-root config/llm/compiled/<revision>/registry-root.json \
   --release-plan release/plan.json \
-  --policy release/root-policy.json \
+  --policy release/trust-policy.json \
   --derive-root-digest \
   --minimum-revision <revision> \
   --out deploy/llmix-trust.json \
@@ -96,7 +230,7 @@ mda release finalize \
 
 mda doctor release \
   --target llmix-registry \
-  --source authoring \
+  --source config/llm/source \
   --registry-dir config/llm \
   --release-plan release/plan.json \
   --manifest deploy/llmix-trust.json \
@@ -104,244 +238,167 @@ mda doctor release \
   --json
 ```
 
-`deploy/llmix-trust.json` is the external anchor. Do not store it under
-`config/llm/`.
+`deploy/llmix-trust.json` is the external trust anchor. Store it outside
+`config/llm`.
 
-## What This Protects
+Run the official runtime proof after doctor:
 
-This setup is designed for three real cases:
+```bash
+llmix check-registry \
+  --root config/llm \
+  --trust deploy/llmix-trust.json \
+  --preset search_summary/openai_fast \
+  --did-document release/did.json \
+  --tamper-proof \
+  --json
+```
 
-| Case | Expected result |
+## Trust Anchor Delivery
+
+Deliver the trust anchor through one of these channels:
+
+| Channel | Use when |
 | --- | --- |
-| Signed `.mda` files are valid and the registry root matches the external trust manifest. | LLMix loads the preset. |
-| A preset, manifest, `current.json`, or registry root is edited after publish. | Runtime rejects the registry. |
-| Someone replaces the whole `config/llm/` directory with another internally consistent registry. | Runtime still rejects it because `expectedRootDigest`, signer policy, and freshness rules come from outside that directory. |
+| Environment variable | The app can receive a path or JSON blob at process start. |
+| Application config | The deployment system already manages config files outside the registry. |
+| Build-time constant | The registry is pinned by a rebuilt app or CLI. |
+| Secret/config manager | The platform owns trusted runtime configuration. |
+| Kubernetes or cloud config | The app is deployed through cluster or cloud configuration. |
+| Release attestation | The deployment records the approved release digest and policy. |
 
-It also supports rollback protection. Use `minimumRevision`,
-`minimumPublishedAt`, or a high-watermark value when an older valid release must
-not become active again.
-
-## Files
-
-Recommended layout:
-
-```text
-authoring/
-  search_summary/
-    openai_fast.mda
-    openrouter_balanced.mda
-
-config/llm/
-  current.json
-  snapshots/
-    <revision>/
-      manifest.json
-      registry-root.json
-      search_summary/
-        openai_fast.json
-        openrouter_balanced.json
-
-deploy/
-  llmix-trust.json
-```
-
-`authoring/` contains human-edited source `.mda` files. `config/llm/` contains
-the published LLMix registry and may ship with the app. `deploy/llmix-trust.json`
-must come from a separate deployment channel such as application config, a
-secret/config manager, Kubernetes config, a baked app constant, or release
-attestation.
-
-The signed `registry-root.json` is evidence. The external trust manifest is the
-anchor.
-
-## Author Presets
-
-Put MDA mechanism fields at the top level. Put LLMix settings under
-`metadata.snoai-llmix`.
-
-```markdown
----
-name: openai_fast
-description: Fast OpenAI preset for search summaries.
-requires:
-  network: ["api.openai.com"]
-metadata:
-  snoai-llmix:
-    common:
-      provider: openai
-      model: gpt-5-mini
-      temperature: 0.2
-      maxOutputTokens: 1024
-integrity:
-  algorithm: sha256
-  digest: "sha256:..."
-signatures:
-  - signer: "did-web:config.example.com"
-    key-id: "did:web:config.example.com#release"
-    payload-digest: "sha256:..."
-    algorithm: ed25519
-    signature: "..."
-    payload-type: "application/vnd.snoai-llmix.preset+json"
----
-
-# Optional notes for humans
-```
-
-Use registry-safe names for modules and presets. Lowercase letters, numbers,
-`_`, and `-` are the safest choice. Keep provider API keys, tenant secrets, and
-environment-specific credentials out of `.mda`; store those in the runtime
-environment or secret manager.
-
-For the full provider config shape, see
-[LLMix usage reference](../llmix-usage-ref.md).
-
-## Publisher Contract
-
-When publishing a production registry, the publisher should:
-
-1. Load source `.mda` files with `trustedRuntime: true`.
-2. Enforce the source trust policy and required network policy.
-3. Write immutable resolved JSON snapshots.
-4. Write `current.json` for the active revision.
-5. Write and sign `registry-root.json` for the whole registry revision.
-
-The registry root covers the active pointer, snapshot manifest, resolved config
-files, source digests, release revision, and publication time. A partial edit is
-therefore detected. A full replacement is detected by the external
-`expectedRootDigest` and trust policy.
+The app must not read `deploy/llmix-trust.json` from inside `config/llm`.
 
 ## Runtime
 
-The runtime opens `config/llm/` with `signedRoot` options derived from the
-external trust manifest.
+Runtime inputs are explicit:
 
-TypeScript:
+| Input | Example |
+| --- | --- |
+| Registry directory | `config/llm` |
+| Trust anchor | `/etc/llmix/llmix-trust.json` or `process.env.LLMIX_TRUST_ANCHOR` |
+| Verifier hooks | did:web, Rekor, Sigstore, or the verifier required by the policy |
+| Preset id | `search_summary/openai_fast` |
 
-```ts
+Open the registry through LLMix:
+
+```typescript
 import {
   ConfigRegistryManager,
   loadLlmixTrustManifest,
   registryRootOptionsFromTrustManifest,
 } from "@snoai/llmix";
 
-const manifest = await loadLlmixTrustManifest("/etc/llmix/llmix-trust.json");
+const trust = await loadLlmixTrustManifest(process.env.LLMIX_TRUST_ANCHOR!);
 
-const registry = await ConfigRegistryManager.open("./config/llm", {
-  signedRoot: registryRootOptionsFromTrustManifest(manifest, {
+const registry = await ConfigRegistryManager.open("config/llm", {
+  signedRoot: registryRootOptionsFromTrustManifest(trust, {
     didWebVerifier,
     rekorClient,
     sigstoreVerifier,
-    highWatermark,
   }),
 });
 
 const preset = await registry.getPreset("search_summary", "openai_fast");
+console.log({
+  activeRevision: registry.activeRevision,
+  provider: preset.provider,
+  model: preset.model,
+});
 ```
 
-Python:
+The verifier variables are app hooks, not extra registry files. For this did:web
+example, `didWebVerifier` is enough when the policy only requires did:web; add
+`rekorClient` and `sigstoreVerifier` only when your policy requires
+Sigstore/Rekor. For a command-line runtime proof, use `llmix check-registry
+--did-document release/did.json`.
 
-```python
-from llmix import (
-    ConfigRegistryManager,
-    ConfigRegistryOpenOptions,
-    load_llmix_trust_manifest,
-    registry_root_options_from_trust_manifest,
-)
+For production services, always pass `signedRoot`. Opening without `signedRoot`
+only parses the registry and is not a secure runtime check.
 
-manifest = load_llmix_trust_manifest("/etc/llmix/llmix-trust.json")
+## Runtime Tamper Proof
 
-registry = ConfigRegistryManager.open(
-    "./config/llm",
-    ConfigRegistryOpenOptions(
-        signed_root=registry_root_options_from_trust_manifest(
-            manifest,
-            did_web_verifier=did_web_verifier,
-            rekor_client=rekor_client,
-            sigstore_verifier=sigstore_verifier,
-            high_watermark=high_watermark,
-        )
-    ),
-)
-
-preset = registry.get_preset("search_summary", "openai_fast")
-```
-
-Rust:
-
-```rust
-use llmix_rs::{
-    registry_root_options_from_trust_manifest,
-    ConfigRegistryManager,
-    ConfigRegistryOpenOptions,
-    load_llmix_trust_manifest,
-};
-
-let manifest = load_llmix_trust_manifest("/etc/llmix/llmix-trust.json")?;
-let signed_root = registry_root_options_from_trust_manifest(&manifest)?;
-
-let registry = ConfigRegistryManager::open_with_options(
-    "./config/llm",
-    ConfigRegistryOpenOptions {
-        signed_root: Some(signed_root),
-    },
-)?;
-
-let preset = registry.get_preset("search_summary", "openai_fast")?;
-```
-
-In all runtimes, the app must provide the verifier hooks needed by its policy.
-If the policy trusts did:web, provide a did:web verifier. If the policy trusts
-Sigstore/GitHub Actions, provide Sigstore and Rekor verification.
-
-## Anchor Choices
-
-Choose the simplest anchor that matches how you deploy.
-
-| Anchor | Best fit | Notes |
-| --- | --- | --- |
-| External trust manifest file | Most services | Generated by `mda release finalize`; stored outside `config/llm/`; easiest default. |
-| App constant or baked config | Static desktop, CLI, embedded app | Pin `expectedRootDigest` and policy at build time. Update the app to accept a new registry. |
-| Deployment config or secret manager | Server deployments | Put `llmix-trust.json` in Kubernetes config, cloud config, Secret Manager, SSM, Vault, or similar. |
-| GitHub Actions OIDC plus Rekor | Common CI release flow | Good default when releases come from a repo workflow. The policy pins repo, workflow, ref, issuer, and Rekor. |
-| did:web, KMS, or HSM | Organization-controlled signing | Best when your org already owns web identity or key management. |
-
-The MDA CLI can generate policies, validate sources, verify signatures, prepare
-release plans, finalize trust manifests, and emit deployment snippets. It should
-not be the final trust boundary at runtime. Runtime trust still comes from the
-external anchor you pass to LLMix.
-
-## Snippets For Deployment
-
-After `deploy/llmix-trust.json` exists, the CLI can generate deployment-specific
-snippets from the same manifest:
+Every downstream app should keep a runtime proof test. The standard command is:
 
 ```bash
-mda release finalize \
-  --target llmix-registry \
-  --registry-dir config/llm \
-  --manifest deploy/llmix-trust.json \
-  --snippet-format kubernetes \
-  --snippet-out deploy/llmix-trust.kubernetes.yaml \
+llmix check-registry \
+  --root config/llm \
+  --trust deploy/llmix-trust.json \
+  --preset search_summary/openai_fast \
+  --did-document release/did.json \
+  --tamper-proof \
   --json
 ```
 
-Supported snippet formats include `json`, `env`, `kubernetes`,
-`github-actions`, `terraform`, `typescript`, `python`, and `rust`.
+If you also keep an application-level test, it must:
+
+1. Open `config/llm` through LLMix with `signedRoot`.
+2. Load one expected preset.
+3. Modify registry content in a temporary copy.
+4. Confirm LLMix rejects the modified registry while the external trust anchor
+   still pins the trusted release.
+
+Example:
+
+```typescript
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import {
+  ConfigRegistryManager,
+  loadLlmixTrustManifest,
+  registryRootOptionsFromTrustManifest,
+} from "@snoai/llmix";
+
+const trust = await loadLlmixTrustManifest(process.env.LLMIX_TRUST_ANCHOR!);
+const signedRoot = registryRootOptionsFromTrustManifest(trust, { didWebVerifier });
+
+const registry = await ConfigRegistryManager.open("config/llm", { signedRoot });
+const preset = await registry.getPreset("search_summary", "openai_fast");
+assert.equal(preset.model, "gpt-5-mini");
+
+const temp = await mkdtemp(path.join(tmpdir(), "llmix-registry-proof-"));
+await copyRegistry("config/llm", temp);
+
+const currentPath = path.join(temp, "current.json");
+const current = JSON.parse(await readFile(currentPath, "utf8"));
+current.revision = `${current.revision}-tampered`;
+await writeFile(currentPath, `${JSON.stringify(current, null, 2)}\n`);
+
+await assert.rejects(
+  ConfigRegistryManager.open(temp, { signedRoot }),
+  /digest|integrity|registry root|signature/i,
+);
+```
+
+`copyRegistry` is a test helper that copies the directory recursively. The point
+is the behavior: a valid registry loads; a modified registry does not.
+
+## What Not To Do
+
+- Do not put human-edited presets anywhere except
+  `config/llm/source/<module>/<preset>.mda`.
+- Do not put the trust anchor inside `config/llm`.
+- Do not let runtime code read source `.mda` files for production requests.
+- Do not generate `current.json` by hand.
+- Do not write a project-local compiler.
+- Do not skip MDA CLI release finalize and doctor checks.
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
-| A valid registry fails to open with a digest error. | Confirm `expectedRootDigest` is the SHA-256 of the `registry-root.json` artifact bytes, not only the inner payload digest. Re-run `mda release finalize --derive-root-digest`. |
-| Runtime says no trusted signature exists. | The signature may verify cryptographically but not match `trustedSigners`. Check signer type, domain, issuer, subject, workflow, and ref. |
-| did:web verification fails. | Make sure the runtime did:web verifier resolves the same DID document used during release, and that `key-id` exists in that document. |
-| Sigstore verification fails. | Check Rekor policy, issuer, subject, workflow/ref binding, and whether the runtime has a Rekor client and Sigstore verifier. |
-| A tampered file still appears to load. | Make sure the app opens the registry with `signedRoot` options. Loading without signed root verification is only parsing the registry. |
-| A whole replaced registry loads. | The trust manifest is probably being loaded from inside `config/llm/` or from the replaced package. Move it outside the registry. |
-| An old signed registry loads. | Set `minimumRevision`, `minimumPublishedAt`, or a high-watermark value during release finalize and runtime open. |
+| No presets are published. | Confirm files are under `config/llm/source/<module>/<preset>.mda`. |
+| `release prepare` fails. | Run `mda validate`, `mda integrity compute`, `mda sign`, and `mda verify` on the source preset first. |
+| Runtime rejects a valid-looking registry. | Confirm the trust anchor points to the generated `registry-root.json` digest for this release. |
+| Runtime accepts a modified registry. | Confirm the app passes `signedRoot` and loads the trust anchor from outside `config/llm`. |
+| An older release loads. | Use `--minimum-revision`, `--minimum-published-at`, or a runtime high-watermark. |
 
 ## Related Docs
 
+- [LLMix README](../../../README.md)
+- [LLMix TypeScript guide](../llmix-typescript.md)
+- [LLMix Python guide](../llmix-python.md)
+- [LLMix Rust guide](../llmix-rust.md)
 - [MDA Config Runtime Guide](../../mda-config/README.md)
-- [LLMix usage reference](../llmix-usage-ref.md)
-- [中文：安全使用 LLMix MDA 配置](./secure-llmix-configuration.zh.md)

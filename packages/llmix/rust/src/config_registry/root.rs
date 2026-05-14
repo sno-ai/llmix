@@ -24,7 +24,7 @@ pub(super) fn build_registry_root_payload(
             sha256: current_sha256,
         },
         manifest: RegistryRootManifestBinding {
-            path: snapshot_registry_path(&manifest.revision, "manifest.json"),
+            path: compiled_registry_path(&manifest.revision, "manifest.json"),
             sha256: manifest_sha256.to_string(),
         },
         files: registry_root_file_digests(manifest)?,
@@ -102,27 +102,23 @@ pub(super) fn registry_root_file_digests(
 ) -> LlmixResult<Vec<RegistryRootFileDigest>> {
     let mut files = Vec::new();
     for entry in manifest.presets.values() {
-        validate_manifest_entry_string(&entry.authoring_path, "authoring_path", "<registry-root>")?;
-        validate_manifest_entry_string(
-            &entry.authoring_sha256,
-            "authoring_sha256",
-            "<registry-root>",
-        )?;
+        validate_manifest_entry_string(&entry.source_path, "source_path", "<registry-root>")?;
+        validate_manifest_entry_string(&entry.source_sha256, "source_sha256", "<registry-root>")?;
         validate_manifest_entry_string(&entry.resolved_path, "resolved_path", "<registry-root>")?;
         validate_manifest_entry_string(
             &entry.resolved_sha256,
             "resolved_sha256",
             "<registry-root>",
         )?;
-        validate_sha256(&entry.authoring_sha256, "registry root authoring file")?;
+        validate_sha256(&entry.source_sha256, "registry root source file")?;
         validate_sha256(&entry.resolved_sha256, "registry root resolved file")?;
         files.push(RegistryRootFileDigest {
-            path: snapshot_registry_path(&manifest.revision, &entry.authoring_path),
-            sha256: entry.authoring_sha256.clone(),
-            role: "authoring".to_string(),
+            path: compiled_registry_path(&manifest.revision, &entry.source_path),
+            sha256: entry.source_sha256.clone(),
+            role: "source".to_string(),
         });
         files.push(RegistryRootFileDigest {
-            path: snapshot_registry_path(&manifest.revision, &entry.resolved_path),
+            path: compiled_registry_path(&manifest.revision, &entry.resolved_path),
             sha256: entry.resolved_sha256.clone(),
             role: "resolved".to_string(),
         });
@@ -194,19 +190,19 @@ pub(super) fn current_pointer_bytes(pointer: &CurrentPointer) -> LlmixResult<Vec
     canonical_json_bytes(&value)
 }
 
-pub(super) fn snapshot_registry_path(revision: &str, relative_path: &str) -> String {
-    format!("snapshots/{revision}/{relative_path}")
+pub(super) fn compiled_registry_path(revision: &str, relative_path: &str) -> String {
+    format!("compiled/{revision}/{relative_path}")
 }
 
-pub(super) fn snapshot_relative_path(revision: &str, registry_path: &str) -> LlmixResult<String> {
-    let prefix = format!("snapshots/{revision}/");
+pub(super) fn compiled_relative_path(revision: &str, registry_path: &str) -> LlmixResult<String> {
+    let prefix = format!("compiled/{revision}/");
     registry_path
         .strip_prefix(&prefix)
         .map(str::to_string)
         .ok_or_else(|| {
             SecurityError {
                 message: format!(
-                    "Registry root file path is outside active snapshot: {registry_path}"
+                    "Registry root file path is outside active compiled revision: {registry_path}"
                 ),
             }
             .into()

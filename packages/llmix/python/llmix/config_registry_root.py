@@ -14,7 +14,7 @@ from llmix.config_registry_common import (
     _compare_revision,
     _current_pointer_sha256,
     _sha256_bytes,
-    _snapshot_registry_path,
+    _compiled_registry_path,
     _validate_sha256,
 )
 from llmix.config_registry_types import (
@@ -45,12 +45,12 @@ def registry_root_file_digests(manifest: dict[str, Any]) -> list[dict[str, str]]
     for preset_id, entry_value in sorted(presets.items()):
         entry = ensure_object(entry_value, f"registry manifest preset {preset_id}")
         for role, path_key, sha_key in (
-            ("authoring", "authoring_path", "authoring_sha256"),
+            ("source", "source_path", "source_sha256"),
             ("resolved", "resolved_path", "resolved_sha256"),
         ):
             relative_path = require_string(entry, path_key, f"preset {preset_id}")
             sha256 = require_string(entry, sha_key, f"preset {preset_id}")
-            path = _snapshot_registry_path(revision, relative_path)
+            path = _compiled_registry_path(revision, relative_path)
             _validate_sha256(sha256, f"registry root file {path} ({preset_id})")
             files.append({"path": path, "sha256": sha256, "role": role})
     return sorted(files, key=lambda item: item["path"])
@@ -90,7 +90,7 @@ def build_registry_root_payload(
             "sha256": _current_pointer_sha256(current),
         },
         "manifest": {
-            "path": _snapshot_registry_path(revision, "manifest.json"),
+            "path": _compiled_registry_path(revision, "manifest.json"),
             "sha256": manifest_sha256,
         },
         "files": registry_root_file_digests(manifest),

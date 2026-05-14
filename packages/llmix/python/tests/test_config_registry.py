@@ -37,21 +37,27 @@ def _write_authoring_preset(
     provider: str = "openai",
     model: str = "gpt-4.1-mini",
     temperature: float = 0.2,
+    max_output_tokens: int | None = None,
+    reasoning_effort: str | None = None,
 ) -> Path:
-    path = root / "authoring" / module / f"{preset}.mda"
+    path = root / "source" / module / f"{preset}.mda"
     path.parent.mkdir(parents=True, exist_ok=True)
+    common: dict[str, Any] = {
+        "provider": provider,
+        "model": model,
+        "temperature": temperature,
+    }
+    if max_output_tokens is not None:
+        common["maxOutputTokens"] = max_output_tokens
+    namespace: dict[str, Any] = {"common": common}
+    if reasoning_effort is not None:
+        namespace["providerOptions"] = {
+            "openai": {"reasoningEffort": reasoning_effort}
+        }
     frontmatter = {
         "name": preset,
         "description": f"{module}/{preset}",
-        "metadata": {
-            "snoai-llmix": {
-                "common": {
-                    "provider": provider,
-                    "model": model,
-                    "temperature": temperature,
-                }
-            }
-        },
+        "metadata": {"snoai-llmix": namespace},
     }
     path.write_text(
         f"---\n{json.dumps(frontmatter, indent=2)}\n---\n# {preset}\n", encoding="utf-8"
@@ -111,7 +117,7 @@ def _trust_policy(subject: str = "releases@snoai.com") -> dict[str, Any]:
 
 
 def _write_signed_authoring_preset(root: Path) -> dict[str, str]:
-    path = root / "authoring" / "search" / "summary.mda"
+    path = root / "source" / "search" / "summary.mda"
     path.parent.mkdir(parents=True, exist_ok=True)
     body = "# summary\n"
     frontmatter: dict[str, Any] = {
@@ -170,7 +176,13 @@ def test_publish_creates_active_revision_and_manager_reads_resolved_json(
 ) -> None:
     root = tmp_path / "config" / "llm"
     _write_authoring_preset(
-        root, "search", "summary", model="gpt-5-mini", temperature=0.7
+        root,
+        "search",
+        "summary",
+        model="gpt-5-mini",
+        temperature=0.7,
+        max_output_tokens=1024,
+        reasoning_effort="high",
     )
 
     published = ConfigRegistryPublisher(root).publish()
@@ -183,12 +195,20 @@ def test_publish_creates_active_revision_and_manager_reads_resolved_json(
     assert config["provider"] == "openai"
     assert config["model"] == "gpt-5-mini"
     assert config["common"]["temperature"] == 0.7
+    assert config["common"]["max_output_tokens"] == 1024
+    assert config["provider_options"]["openai"]["reasoning_effort"] == "high"
     assert "search/summary" in manager.available_presets()
     assert manager.last_successful_reload_at is not None
     assert manager.last_reload_failure_at is None
-    snapshot_dir = root / "snapshots" / published.revision
-    assert (snapshot_dir / "authoring" / "search" / "summary.mda").exists()
-    assert (snapshot_dir / "resolved" / "search" / "summary.json").exists()
+    snapshot_dir = root / "compiled" / published.revision
+    assert (snapshot_dir / "source" / "search" / "summary.mda").exists()
+    resolved = json.loads(
+        (snapshot_dir / "resolved" / "search" / "summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert resolved["common"]["maxOutputTokens"] == 1024
+    assert resolved["providerOptions"]["openai"]["reasoningEffort"] == "high"
 
 
 def test_manager_reloads_after_current_revision_changes(tmp_path: Path) -> None:
@@ -369,7 +389,7 @@ def test_publish_failure_leaves_active_revision_unchanged(tmp_path: Path) -> Non
     )
 
     first = ConfigRegistryPublisher(root).publish()
-    broken_path = root / "authoring" / "search" / "summary.mda"
+    broken_path = root / "source" / "search" / "summary.mda"
     broken_path.write_text(
         "---\nname: broken\nmetadata: [broken\n---\n", encoding="utf-8"
     )
@@ -381,7 +401,7 @@ def test_publish_failure_leaves_active_revision_unchanged(tmp_path: Path) -> Non
     assert pointer["revision"] == first.revision
     assert not any(
         path.name.endswith(".tmp")
-        for path in (root / "snapshots" / ".staging").glob("*")
+        for path in (root / "compiled" / ".staging").glob("*")
     )
 
 
@@ -392,7 +412,7 @@ def test_legacy_yaml_authoring_blocks_publish_without_changing_active_revision(
     _write_authoring_preset(root, "search", "summary")
     first = ConfigRegistryPublisher(root).publish()
 
-    legacy_path = root / "authoring" / "search" / "legacy.yaml"
+    legacy_path = root / "source" / "search" / "legacy.yaml"
     legacy_path.write_text("provider: openai\nmodel: gpt-4.1-mini\n", encoding="utf-8")
 
     with pytest.raises(InvalidConfigError, match=r"\.mda"):
@@ -407,11 +427,11 @@ def test_publish_rejects_authoring_module_symlink_escape(tmp_path: Path) -> None
     outside_root = tmp_path / "outside"
     _write_authoring_preset(outside_root, "search", "summary")
 
-    authoring_dir = root / "authoring"
+    authoring_dir = root / "source"
     authoring_dir.mkdir(parents=True)
     try:
         (authoring_dir / "search").symlink_to(
-            outside_root / "authoring" / "search", target_is_directory=True
+            outside_root / "source" / "search", target_is_directory=True
         )
     except OSError:
         pytest.skip("symlinks are not available on this filesystem")
@@ -423,7 +443,7 @@ def test_publish_rejects_authoring_module_symlink_escape(tmp_path: Path) -> None
 def test_publish_rejects_authoring_file_symlink_escape(tmp_path: Path) -> None:
     root = tmp_path / "config" / "llm"
     outside_path = _write_authoring_preset(tmp_path / "outside", "search", "summary")
-    module_dir = root / "authoring" / "search"
+    module_dir = root / "source" / "search"
     module_dir.mkdir(parents=True)
 
     try:
@@ -537,7 +557,7 @@ def test_manager_rejects_tampered_resolved_snapshot_on_startup(tmp_path: Path) -
 
     published = ConfigRegistryPublisher(root).publish()
     resolved_path = (
-        root / "snapshots" / published.revision / "resolved" / "search" / "summary.json"
+        root / "compiled" / published.revision / "resolved" / "search" / "summary.json"
     )
     resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
     resolved["model"] = "tampered-model"
@@ -554,7 +574,7 @@ def test_manager_revalidates_resolved_json_shape_on_startup(tmp_path: Path) -> N
     )
 
     published = ConfigRegistryPublisher(root).publish()
-    snapshot_dir = root / "snapshots" / published.revision
+    snapshot_dir = root / "compiled" / published.revision
     manifest_path = snapshot_dir / "manifest.json"
     resolved_path = snapshot_dir / "resolved" / "search" / "summary.json"
     resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
