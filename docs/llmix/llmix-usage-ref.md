@@ -103,73 +103,137 @@ cache, key pool, and registry contract are the stable center.
 
 ## Config Registry
 
-For production services, prefer the Config Registry over reading mutable MDA
-files at request time.
+For production services, use the Config Registry instead of reading mutable MDA
+files at request time. The app repository owns source presets and runtime
+wiring. MDA is the standard. The MDA CLI is the validation, integrity, signing,
+verification, and release gate. LLMix is the official registry publisher and
+runtime loader.
 
-The registry layout is:
+Use this layout:
 
 ```text
 config/llm/
-  authoring/
-    search/
-      summary.mda
-  snapshots/
-    2026-05-09T120000Z/
-      search/
-        summary.json
+  source/
+    <module>/
+      <preset>.mda
   current.json
+  compiled/
 ```
 
-Publishing turns MDA Source Mode presets into immutable JSON snapshots.
-Runtime code reads `current.json` and the selected snapshot. That makes model
-rollouts a data switch, not a redeploy.
+`source/` contains human-edited MDA preset sources. `current.json` is the
+machine-generated active registry pointer. `compiled/` is machine-generated
+signed and resolved registry output. Store the trust anchor outside
+`config/llm`.
 
-Python:
+The official flow is:
 
-```python
-from llmix import ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir
+1. Put presets in `config/llm/source/<module>/<preset>.mda`.
+2. Run MDA CLI validation, integrity, signing, verification, and release
+   prepare.
+3. Run the LLMix publisher command/API.
+4. Generate `config/llm/current.json` and `config/llm/compiled/`.
+5. Run MDA CLI release finalize and doctor checks.
+6. Open `config/llm` at runtime through LLMix with the external trust anchor.
 
-root = resolve_config_dir().config_dir
-ConfigRegistryPublisher(root).publish()
+Minimal release command shape:
 
-manager = ConfigRegistryManager.open(root)
-config = manager.get_preset("search", "summary")
-print(manager.active_revision)
+```bash
+mda validate config/llm/source/search/summary.mda --target source --json
+mda integrity compute config/llm/source/search/summary.mda --target source --write --json
+mda sign config/llm/source/search/summary.mda ... --in-place --json
+mda verify config/llm/source/search/summary.mda --target source ... --json
+
+mda release prepare \
+  --target llmix-registry \
+  --source config/llm/source \
+  --registry-dir config/llm \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --out release/plan.json \
+  --json
 ```
 
-TypeScript:
+Publisher API:
+
+```typescript
+import { ConfigRegistryPublisher } from "@snoai/llmix";
+
+const published = await new ConfigRegistryPublisher("config/llm").publish({
+  trustedRuntime: true,
+  trustPolicy: sourceTrustPolicy,
+  didWebVerifier,
+  registryRoot: { signer: registryRootSigner },
+});
+
+console.log(published.registryRootPath);
+```
+
+The publisher reads `config/llm/source`, writes the compiled revision under
+`config/llm/compiled/<revision>`, writes `config/llm/current.json`, and can sign
+`config/llm/compiled/<revision>/registry-root.json`.
+
+Then finalize and doctor the release with MDA CLI:
+
+```bash
+mda release finalize \
+  --target llmix-registry \
+  --registry-dir config/llm \
+  --registry-root config/llm/compiled/<revision>/registry-root.json \
+  --release-plan release/plan.json \
+  --policy release/trust-policy.json \
+  --derive-root-digest \
+  --minimum-revision <revision> \
+  --out deploy/llmix-trust.json \
+  --did-document release/did.json \
+  --json
+
+mda doctor release \
+  --target llmix-registry \
+  --source config/llm/source \
+  --registry-dir config/llm \
+  --release-plan release/plan.json \
+  --manifest deploy/llmix-trust.json \
+  --did-document release/did.json \
+  --json
+```
+
+`deploy/llmix-trust.json` is the trust anchor. Deliver it outside
+`config/llm`: environment variable, application config, build-time constant,
+secret/config manager, Kubernetes or cloud config, or release attestation.
+
+Runtime open:
 
 ```typescript
 import {
   ConfigRegistryManager,
-  ConfigRegistryPublisher,
-  resolveConfigDir,
+  loadLlmixTrustManifest,
+  registryRootOptionsFromTrustManifest,
 } from "@snoai/llmix";
 
-const { configDir } = resolveConfigDir();
-await new ConfigRegistryPublisher(configDir).publish();
-
-const manager = await ConfigRegistryManager.open(configDir);
+const trust = await loadLlmixTrustManifest(process.env.LLMIX_TRUST_ANCHOR!);
+const manager = await ConfigRegistryManager.open("config/llm", {
+  signedRoot: registryRootOptionsFromTrustManifest(trust, {
+    didWebVerifier,
+    rekorClient,
+    sigstoreVerifier,
+  }),
+});
 const config = await manager.getPreset("search", "summary");
 console.log(manager.activeRevision);
 ```
 
-Rust:
+Python and Rust direct MDA loaders remain available for tests and preset
+inspection. The secure compiled registry path documented here uses the
+TypeScript publisher and runtime API as the official public flow.
 
-```rust
-use llmix_rs::{ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir};
-
-let root = resolve_config_dir(None)?.config_dir;
-ConfigRegistryPublisher::new(&root)?.publish()?;
-
-let mut manager = ConfigRegistryManager::open(&root)?;
-let config = manager.get_preset("search", "summary")?;
-println!("{:?}", manager.active_revision());
-```
+Tamper proof requirement: opening through `ConfigRegistryManager.open()` with
+`signedRoot` must load an expected preset, and must reject modified
+`current.json`, `registry-root.json`, `manifest.json`, source files, or resolved
+JSON while the external trust anchor still pins the trusted release.
 
 ## MDA Source Mode
 
-MDA is the authoring format for presets. Use it when you want model choice,
+MDA is the source format for presets. Use it when you want model choice,
 provider options, cache policy, timeout policy, tags, and rollout metadata to be
 reviewed as source files instead of hidden in application code.
 
@@ -336,13 +400,13 @@ production publishes, prefer `trustedRuntime: true` in TypeScript or
 `trusted_runtime=True` in Python with a trust policy and caller-provided Rekor,
 Sigstore, and/or did:web verifier hooks.
 
-The TypeScript and Python registries can also write and verify a signed
-`registry-root.json` that covers `current.json`, the snapshot manifest, copied
-`.mda` authoring files, and resolved JSON files as one bundle. Runtime trust
-anchors for that root must come from application or deployment configuration
-outside the registry directory being verified.
+The TypeScript registry publisher writes and signs `registry-root.json` under
+`config/llm/compiled/<revision>/`. That root covers `current.json`, the compiled
+manifest, copied source `.mda` files, and resolved JSON files as one bundle.
+Runtime trust anchors for that root must come from application or deployment
+configuration outside the registry directory being verified.
 
-Direct MDA loading helpers still exist for authoring tools and tests:
+Direct MDA loading helpers still exist for editing tools and tests:
 
 | Runtime | Helper |
 | --- | --- |

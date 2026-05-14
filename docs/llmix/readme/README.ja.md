@@ -17,7 +17,7 @@ LLMix は、あなたのプロダクトと provider SDK の間にあるレイヤ
 
 OpenAI、Anthropic、Gemini、LiteLLM、AI SDK、または自前の client code を書き直す必要はありません。LLMix は呼び出しを包みます。その周囲に、毎回必要になる部分を置きます。response cache、circuit breaker、key pools、singleflight、retry policy、adaptive concurrency、provider kwargs、MDA config loading です。
 
-モデルは、アプリケーションコードに埋め込まれた hard-coded string ではなくなります。データになります。preset を変更し、registry snapshot を publish し、service を reload すれば、次の request は別の provider や model で動かせます。普通の model swap に redeploy はいりません。
+モデルは、アプリケーションコードに埋め込まれた hard-coded string ではなくなります。データになります。preset を変更し、compiled registry release を publish し、service を reload すれば、次の request は別の provider や model で動かせます。普通の model swap に redeploy はいりません。
 
 それだけです。小さなレイヤーです。扱いづらい角を削ってあります。
 
@@ -218,7 +218,7 @@ let response = pipeline
 | Concurrency | Rate-limit feedback で動く AIMD adaptive semaphore |
 | Provider kwargs | Common config を provider-specific request fields に変換 |
 | Thinking tokens | Optional `<think>` extraction into normalized response objects |
-| Registry | Immutable config snapshots と live `current.json` pointer |
+| Registry | Signed compiled config registry with one live `current.json` pointer |
 
 Defaults は退屈であるべきです。実トラフィックが理由をくれたときに調整してください。
 
@@ -226,9 +226,22 @@ Defaults は退屈であるべきです。実トラフィックが理由をく�
 
 ## MDA Presets
 
-![LLMix turns editable MDA presets into immutable registry snapshots that Python, TypeScript, and Rust runtimes can read consistently.](../images/llmix-mda-config.png)
+![LLMix turns editable MDA presets into signed compiled registry releases that runtimes can open through the official flow.](../images/llmix-mda-config.png)
 
-LLMix は config authoring に MDA Source Mode を使います。人間向けの notes と runtime settings が 1 つのファイルに入ります。runtime が見るのは resolved JSON だけです。
+LLMix uses MDA Source Mode for preset source files. Put every human-edited preset under the official source directory:
+
+```text
+config/llm/
+  source/
+    <module>/
+      <preset>.mda
+  current.json
+  compiled/
+```
+
+`source/` is for people. `current.json` and `compiled/` are generated. Keep the trust anchor outside `config/llm`.
+
+A preset is still a normal MDA file:
 
 ```mda
 ---
@@ -252,71 +265,78 @@ metadata:
 Extract named entities. Return compact JSON.
 ```
 
-Authoring や testing では直接 load できます。
+For editing or tests, direct loaders can read source presets:
 
 ```typescript
 import { loadMdaConfig } from "@snoai/llmix";
 
-const config = await loadMdaConfig("./config/llm/search/extraction.mda");
+const config = await loadMdaConfig("./config/llm/source/search/extraction.mda");
 ```
 
 ```python
 from llmix import load_mda_config
 
-config = load_mda_config("./config/llm/search/extraction.mda")
+config = load_mda_config("./config/llm/source/search/extraction.mda")
 ```
 
 ```rust
 use llmix_rs::load_config;
 
-let config = load_config("./config/llm/search/extraction.mda")?;
+let config = load_config("./config/llm/source/search/extraction.mda")?;
 ```
 
-Production service では registry を使ってください。
+Production services should use the registry flow below.
 
 ---
 
 ## Config Registry
 
-編集可能な MDA files は人間には便利です。実行中の service には、もっと静かなものが必要です。
+MDA is the standard. The MDA CLI validates, computes integrity, signs, verifies, and gates releases. LLMix is the official registry publisher and runtime opener. The app repo owns source presets and runtime wiring; it does not implement a compiler or publisher.
 
-LLMix Config Registry は authoring files を immutable, content-addressed snapshots として publish します。Runtime code は mutable source tree ではなく active snapshot を読みます。
+Required flow:
 
-```text
-config/llm/
-  authoring/
-    search/
-      extraction.mda
-  snapshots/
-    2026-05-09T000000Z-...
-  current.json
-```
+1. Put presets in `config/llm/source/<module>/<preset>.mda`.
+2. Run the MDA CLI validation, integrity, signing, verification, and release prepare gates.
+3. Run the official LLMix publisher.
+4. Let LLMix generate `config/llm/current.json` and `config/llm/compiled/`.
+5. Run the MDA CLI release finalize and doctor checks.
+6. Deliver the trust anchor from outside `config/llm`.
+7. Open `config/llm` at runtime through LLMix with that external trust anchor.
 
-```python
-from llmix import ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir
-
-root = resolve_config_dir().config_dir
-ConfigRegistryPublisher(root).publish()
-
-manager = ConfigRegistryManager.open(root)
-config = manager.get_preset("search", "extraction")
+```bash
+mda validate config/llm/source/search/extraction.mda --target source --json
+mda integrity compute config/llm/source/search/extraction.mda --target source --write --json
+mda sign config/llm/source/search/extraction.mda ... --in-place --json
+mda verify config/llm/source/search/extraction.mda --target source ... --json
+mda release prepare --target llmix-registry --source config/llm/source --registry-dir config/llm ... --json
 ```
 
 ```typescript
 import {
   ConfigRegistryManager,
   ConfigRegistryPublisher,
-  resolveConfigDir,
+  RegistryRootVerificationOptions,
 } from "@snoai/llmix";
 
-const { configDir } = resolveConfigDir();
-await new ConfigRegistryPublisher(configDir).publish();
+await new ConfigRegistryPublisher("config/llm").publish({
+  trustedRuntime: true,
+  trustPolicy: sourceTrustPolicy,
+  didWebVerifier,
+  registryRoot: { signer: registryRootSigner },
+});
 
-const manager = await ConfigRegistryManager.open(configDir);
+const signedRoot: RegistryRootVerificationOptions = {
+  trustPolicy: registryRootTrustPolicy,
+  didWebVerifier,
+  expectedRootDigest: externalTrust.expectedRootDigest,
+  minimumRevision: externalTrust.minimumRevision,
+};
+
+const manager = await ConfigRegistryManager.open("config/llm", { signedRoot });
 const config = await manager.getPreset("search", "extraction");
 ```
 
-Managers は active revision と reload health metadata を公開します。これにより、service がどの config を実行しているかを正確に言えます。
+The external trust anchor can come from an environment variable, application config, build-time constant, secret/config manager, Kubernetes or cloud config, or release attestation.
 
 ---
 

@@ -17,7 +17,7 @@ LLMix 位于你的产品和模型供应商 SDK 之间。
 
 它不要求你重写 OpenAI、Anthropic、Gemini、LiteLLM、AI SDK 或自定义客户端代码。它只包住那次调用。那些重复但必须做好的部分放在外层：响应缓存、熔断器、密钥池、singleflight、重试策略、自适应并发、供应商 kwargs，以及 MDA 配置加载。
 
-模型不再是埋在业务代码里的硬编码字符串。它变成数据。修改一个 preset，发布一份 registry snapshot，重新加载服务，下一次请求就可以使用不同的供应商或模型。常见的模型切换不需要重新部署。
+模型不再是埋在业务代码里的硬编码字符串。它变成数据。修改一个 preset，发布一份 compiled registry release，重新加载服务，下一次请求就可以使用不同的供应商或模型。常见的模型切换不需要重新部署。
 
 事情就是这样。很小的一层。把容易割手的边缘磨平。
 
@@ -218,7 +218,7 @@ let response = pipeline
 | Concurrency | AIMD 自适应 semaphore，由 rate-limit 反馈驱动 |
 | Provider kwargs | 把 common config 转成供应商特定请求字段 |
 | Thinking tokens | 可选提取 `<think>` 到规范化 response 对象 |
-| Registry | 不可变 config snapshot，加一个 live `current.json` 指针 |
+| Registry | Signed compiled config registry with one live `current.json` pointer |
 
 默认值应该保持无聊。等真实流量给你理由时再调。
 
@@ -226,9 +226,22 @@ let response = pipeline
 
 ## MDA Presets
 
-![LLMix turns editable MDA presets into immutable registry snapshots that Python, TypeScript, and Rust runtimes can read consistently.](../images/llmix-mda-config.png)
+![LLMix turns editable MDA presets into signed compiled registry releases that runtimes can open through the official flow.](../images/llmix-mda-config.png)
 
-LLMix 使用 MDA Source Mode 编写配置。人读的说明和 runtime 设置放在同一个文件里。runtime 只读取解析后的 JSON。
+LLMix uses MDA Source Mode for preset source files. Put every human-edited preset under the official source directory:
+
+```text
+config/llm/
+  source/
+    <module>/
+      <preset>.mda
+  current.json
+  compiled/
+```
+
+`source/` is for people. `current.json` and `compiled/` are generated. Keep the trust anchor outside `config/llm`.
+
+A preset is still a normal MDA file:
 
 ```mda
 ---
@@ -252,71 +265,78 @@ metadata:
 Extract named entities. Return compact JSON.
 ```
 
-在编写或测试时可以直接加载：
+For editing or tests, direct loaders can read source presets:
 
 ```typescript
 import { loadMdaConfig } from "@snoai/llmix";
 
-const config = await loadMdaConfig("./config/llm/search/extraction.mda");
+const config = await loadMdaConfig("./config/llm/source/search/extraction.mda");
 ```
 
 ```python
 from llmix import load_mda_config
 
-config = load_mda_config("./config/llm/search/extraction.mda")
+config = load_mda_config("./config/llm/source/search/extraction.mda")
 ```
 
 ```rust
 use llmix_rs::load_config;
 
-let config = load_config("./config/llm/search/extraction.mda")?;
+let config = load_config("./config/llm/source/search/extraction.mda")?;
 ```
 
-生产服务建议使用 registry。
+Production services should use the registry flow below.
 
 ---
 
 ## Config Registry
 
-可编辑的 MDA 文件适合人。运行中的服务需要更安静的东西。
+MDA is the standard. The MDA CLI validates, computes integrity, signs, verifies, and gates releases. LLMix is the official registry publisher and runtime opener. The app repo owns source presets and runtime wiring; it does not implement a compiler or publisher.
 
-LLMix Config Registry 会把 authoring 文件发布成不可变、内容寻址的 snapshot。runtime 代码读取 active snapshot，而不是可变的源码目录。
+Required flow:
 
-```text
-config/llm/
-  authoring/
-    search/
-      extraction.mda
-  snapshots/
-    2026-05-09T000000Z-...
-  current.json
-```
+1. Put presets in `config/llm/source/<module>/<preset>.mda`.
+2. Run the MDA CLI validation, integrity, signing, verification, and release prepare gates.
+3. Run the official LLMix publisher.
+4. Let LLMix generate `config/llm/current.json` and `config/llm/compiled/`.
+5. Run the MDA CLI release finalize and doctor checks.
+6. Deliver the trust anchor from outside `config/llm`.
+7. Open `config/llm` at runtime through LLMix with that external trust anchor.
 
-```python
-from llmix import ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir
-
-root = resolve_config_dir().config_dir
-ConfigRegistryPublisher(root).publish()
-
-manager = ConfigRegistryManager.open(root)
-config = manager.get_preset("search", "extraction")
+```bash
+mda validate config/llm/source/search/extraction.mda --target source --json
+mda integrity compute config/llm/source/search/extraction.mda --target source --write --json
+mda sign config/llm/source/search/extraction.mda ... --in-place --json
+mda verify config/llm/source/search/extraction.mda --target source ... --json
+mda release prepare --target llmix-registry --source config/llm/source --registry-dir config/llm ... --json
 ```
 
 ```typescript
 import {
   ConfigRegistryManager,
   ConfigRegistryPublisher,
-  resolveConfigDir,
+  RegistryRootVerificationOptions,
 } from "@snoai/llmix";
 
-const { configDir } = resolveConfigDir();
-await new ConfigRegistryPublisher(configDir).publish();
+await new ConfigRegistryPublisher("config/llm").publish({
+  trustedRuntime: true,
+  trustPolicy: sourceTrustPolicy,
+  didWebVerifier,
+  registryRoot: { signer: registryRootSigner },
+});
 
-const manager = await ConfigRegistryManager.open(configDir);
+const signedRoot: RegistryRootVerificationOptions = {
+  trustPolicy: registryRootTrustPolicy,
+  didWebVerifier,
+  expectedRootDigest: externalTrust.expectedRootDigest,
+  minimumRevision: externalTrust.minimumRevision,
+};
+
+const manager = await ConfigRegistryManager.open("config/llm", { signedRoot });
 const config = await manager.getPreset("search", "extraction");
 ```
 
-Manager 会暴露 active revision 和 reload health metadata。这样你可以准确说明某个服务正在运行哪一份配置。
+The external trust anchor can come from an environment variable, application config, build-time constant, secret/config manager, Kubernetes or cloud config, or release attestation.
 
 ---
 

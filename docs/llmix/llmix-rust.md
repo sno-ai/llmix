@@ -217,26 +217,23 @@ pipeline.set_key_pool(
 
 ## Config Registry
 
-```rust
-use llmix_rs::{ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir};
+The official secure registry flow is the shared LLMix flow documented in the
+[usage reference](./llmix-usage-ref.md#config-registry) and
+[secure MDA guide](./secure-mda/secure-llmix-configuration.md). Put source
+presets under `config/llm/source/<module>/<preset>.mda`, run the MDA CLI gates,
+then run the official LLMix publisher against `config/llm`.
 
-let root = resolve_config_dir(None)?.config_dir;
-ConfigRegistryPublisher::new(&root)?.publish()?;
-
-let mut manager = ConfigRegistryManager::open(&root)?;
-let config = manager.get_preset("search", "summary")?;
-println!("{:?}", manager.available_presets());
-```
-
-Use the resolved `config` as the `CallInput.config` value.
+Do not build a Rust-local compiler, publisher, or custom directory layout. The
+generated files are always `config/llm/current.json` and
+`config/llm/compiled/`.
 
 ## Direct MDA Loading
 
 ```rust
 use llmix_rs::{load_config, load_config_preset};
 
-let config = load_config("./config/llm/search/summary.mda")?;
-let preset = load_config_preset("summary", "./config/llm/search")?;
+let config = load_config("./config/llm/source/search/summary.mda")?;
+let preset = load_config_preset("summary", "./config/llm/source/search")?;
 ```
 
 Enable MDA safety checks when you load or publish `.mda` files:
@@ -245,7 +242,7 @@ Enable MDA safety checks when you load or publish `.mda` files:
 use llmix_rs::{load_config_with_options, MdaConfigLoadOptions};
 
 let config = load_config_with_options(
-    "./config/llm/search/summary.mda",
+    "./config/llm/source/search/summary.mda",
     &MdaConfigLoadOptions {
         verify_integrity: true,
         enforce_requires: true,

@@ -2,7 +2,7 @@
 
 `mda-config` is the runtime loader for source `.mda` files.
 
-Use the MDA CLI while authoring and releasing. Use `mda-config` inside the app
+Use the MDA CLI while editing and releasing. Use `mda-config` inside the app
 that consumes the file. The split matters. The CLI makes and checks artifacts.
 The loader says whether a specific artifact is acceptable at runtime.
 

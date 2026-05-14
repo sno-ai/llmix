@@ -113,76 +113,26 @@ LLMix will reject that combination to avoid marking the wrong key dead.
 
 ## Config Registry
 
-Use the registry when presets are part of a running service:
+The official secure registry flow is the shared LLMix flow documented in the
+[usage reference](./llmix-usage-ref.md#config-registry) and
+[secure MDA guide](./secure-mda/secure-llmix-configuration.md). Put source
+presets under `config/llm/source/<module>/<preset>.mda`, run the MDA CLI gates,
+then run the official LLMix publisher against `config/llm`.
 
-```python
-from llmix import ConfigRegistryManager, ConfigRegistryPublisher, resolve_config_dir
-
-root = resolve_config_dir().config_dir
-ConfigRegistryPublisher(root).publish()
-
-manager = ConfigRegistryManager.open(root)
-config = manager.get_preset("search", "summary")
-print(manager.available_presets())
-```
-
-For signed production bundles, verify MDA source files while publishing and open
-the registry through a signed root:
-
-```python
-from llmix import (
-    ConfigRegistryManager,
-    ConfigRegistryOpenOptions,
-    ConfigRegistryPublisher,
-    ConfigRegistryPublishOptions,
-    RegistryRootSigningOptions,
-    RegistryRootVerificationOptions,
-)
-
-ConfigRegistryPublisher(root).publish(
-    options=ConfigRegistryPublishOptions(
-        trusted_runtime=True,
-        trust_policy=trust_policy,
-        did_web_verifier=did_web_verifier,
-        registry_root=RegistryRootSigningOptions(signer=registry_root_signer),
-    )
-)
-
-manager = ConfigRegistryManager.open(
-    root,
-    ConfigRegistryOpenOptions(
-        signed_root=RegistryRootVerificationOptions(
-            trust_policy=registry_root_trust_policy,
-            did_web_verifier=did_web_verifier,
-            expected_root_digest=expected_root_digest,
-        )
-    ),
-)
-```
-
-Then pass the resolved config into the pipeline:
-
-```python
-response = await pipeline.call(
-    CallInput(
-        config=config,
-        messages=[{"role": "user", "content": "Summarize this."}],
-    )
-)
-```
+Do not build a Python-local compiler, publisher, or custom directory layout.
+The generated files are always `config/llm/current.json` and
+`config/llm/compiled/`.
 
 ## Direct MDA Loading
 
-Direct loaders are useful for tests, authoring tools, and migrations:
+Direct loaders are useful for tests, editing tools, and migrations:
 
 ```python
 from llmix import load_mda_config, load_mda_config_preset
 
-config = load_mda_config("./config/llm/search/summary.mda")
-preset = load_mda_config_preset("summary", "./config/llm/search")
+config = load_mda_config("./config/llm/source/search/summary.mda")
+preset = load_mda_config_preset("summary", "./config/llm/source/search")
 ```
-
-For production runtime code, prefer `ConfigRegistryManager`.
 
 ## Custom Dispatch
 
