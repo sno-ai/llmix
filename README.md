@@ -68,11 +68,18 @@ or trust-policy enforcement outside LLMix.
 
 ## Documentation
 
-- [Usage reference](docs/llmix/llmix-usage-ref.md)
-- [TypeScript guide](docs/llmix/llmix-typescript.md)
+If you are new to LLMix, read in this order:
+
+1. This README: the product shape and the default registry layout.
+2. [TypeScript guide](docs/llmix/llmix-typescript.md): install, runtime calls, and opening the registry from application code.
+3. [Usage reference](docs/llmix/llmix-usage-ref.md): config shape, provider coverage, and command reference.
+4. [Secure LLMix configuration](docs/llmix/secure-mda/secure-llmix-configuration.md): the full MDA CLI + LLMix release runbook and tamper-rejection proof.
+
+Other runtime and operations docs:
+
 - [Python guide](docs/llmix/llmix-python.md)
 - [Rust guide](docs/llmix/llmix-rust.md)
-- [Secure LLMix configuration](docs/llmix/secure-mda/secure-llmix-configuration.md) ([de](docs/llmix/secure-mda/secure-llmix-configuration.de.md), [es](docs/llmix/secure-mda/secure-llmix-configuration.es.md), [fr](docs/llmix/secure-mda/secure-llmix-configuration.fr.md), [hi](docs/llmix/secure-mda/secure-llmix-configuration.hi.md), [ja](docs/llmix/secure-mda/secure-llmix-configuration.ja.md), [ko](docs/llmix/secure-mda/secure-llmix-configuration.ko.md), [ru](docs/llmix/secure-mda/secure-llmix-configuration.ru.md), [中文](docs/llmix/secure-mda/secure-llmix-configuration.zh.md))
+- [Secure LLMix configuration translations](docs/llmix/secure-mda/secure-llmix-configuration.md) ([de](docs/llmix/secure-mda/secure-llmix-configuration.de.md), [es](docs/llmix/secure-mda/secure-llmix-configuration.es.md), [fr](docs/llmix/secure-mda/secure-llmix-configuration.fr.md), [hi](docs/llmix/secure-mda/secure-llmix-configuration.hi.md), [ja](docs/llmix/secure-mda/secure-llmix-configuration.ja.md), [ko](docs/llmix/secure-mda/secure-llmix-configuration.ko.md), [ru](docs/llmix/secure-mda/secure-llmix-configuration.ru.md), [中文](docs/llmix/secure-mda/secure-llmix-configuration.zh.md))
 - [Key pool operations](docs/llmix/key-pool-operations.md)
 - [Standalone MDA config loader docs](docs/mda-config/README.md)
 
@@ -243,15 +250,21 @@ verifier-hook based signatures while loading or publishing registry output.
 Real Rekor transport and Sigstore cryptography are supplied by caller-provided
 clients/verifiers.
 
+The examples below use this preset path:
+
+```text
+config/llm/source/search_summary/openai_fast.mda
+```
+
 ```mda
 ---
-name: extraction
-description: Entity extraction preset.
+name: openai_fast
+description: Fast OpenAI preset for search summaries.
 metadata:
   snoai-llmix:
     common:
       provider: openai
-      model: gpt-4o-mini
+      model: gpt-5-mini
       temperature: 0.2
       maxOutputTokens: 512
     caching:
@@ -260,9 +273,9 @@ metadata:
       openai:
         reasoningEffort: medium
 ---
-# extraction
+# openai_fast
 
-Extract named entities. Return compact JSON.
+Summarize search results for a research workflow.
 ```
 
 Load it directly when editing or testing a preset:
@@ -270,19 +283,19 @@ Load it directly when editing or testing a preset:
 ```typescript
 import { loadMdaConfig } from "@snoai/llmix";
 
-const config = await loadMdaConfig("./config/llm/source/search/extraction.mda");
+const config = await loadMdaConfig("./config/llm/source/search_summary/openai_fast.mda");
 ```
 
 ```python
 from llmix import load_mda_config
 
-config = load_mda_config("./config/llm/source/search/extraction.mda")
+config = load_mda_config("./config/llm/source/search_summary/openai_fast.mda")
 ```
 
 ```rust
 use llmix_rs::load_config;
 
-let config = load_config("./config/llm/source/search/extraction.mda")?;
+let config = load_config("./config/llm/source/search_summary/openai_fast.mda")?;
 ```
 
 For production services, use the registry.
@@ -314,15 +327,62 @@ The release flow is:
 4. Commit or package generated `config/llm/current.json` and
    `config/llm/compiled/`.
 5. Run MDA CLI release finalize and doctor checks.
-6. Open `config/llm` at runtime through LLMix with the external trust anchor.
+6. Store the trust anchor outside `config/llm`.
+7. Open `config/llm` at runtime through LLMix with the external trust anchor.
 
-```text
-mda validate config/llm/source/search/extraction.mda --target source --json
-mda integrity compute config/llm/source/search/extraction.mda --target source --write --json
-mda release trust policy --target llmix-registry --profile did-web --domain config.example.com --out release/trust-policy.json --json
-mda sign config/llm/source/search/extraction.mda --profile did-web --did did:web:config.example.com --key-id did:web:config.example.com#release --key-file release/did-web-private-key.pem --in-place --json
-mda verify config/llm/source/search/extraction.mda --target source --policy release/trust-policy.json --did-document release/did.json --json
-mda release prepare --target llmix-registry --source config/llm/source --registry-dir config/llm --policy release/trust-policy.json --did-document release/did.json --out release/plan.json --json
+The did:web example assumes these release-identity inputs already exist outside
+`config/llm`: `release/did-web-private-key.pem` and `release/did.json`. Provide
+them from your release system or use the GitHub Actions Sigstore/Rekor profile
+instead.
+
+```bash
+mkdir -p config/llm/source/search_summary release deploy
+
+mda init --template llmix-preset \
+  --module search_summary \
+  --preset openai_fast \
+  --provider openai \
+  --model gpt-5-mini \
+  --out config/llm/source/search_summary/openai_fast.mda
+
+mda validate config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --json
+
+mda integrity compute config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --write \
+  --json
+
+mda release trust policy \
+  --target llmix-registry \
+  --profile did-web \
+  --domain config.example.com \
+  --out release/trust-policy.json \
+  --json
+
+mda sign config/llm/source/search_summary/openai_fast.mda \
+  --profile did-web \
+  --did did:web:config.example.com \
+  --key-id did:web:config.example.com#release \
+  --key-file release/did-web-private-key.pem \
+  --in-place \
+  --json
+
+mda verify config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --json
+
+mda release prepare \
+  --target llmix-registry \
+  --source config/llm/source \
+  --registry-dir config/llm \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --out release/plan.json \
+  --json
 ```
 
 ```bash
@@ -344,6 +404,7 @@ mda release finalize \
   --release-plan release/plan.json \
   --policy release/trust-policy.json \
   --derive-root-digest \
+  --minimum-revision 2026-05-14T000000Z \
   --out deploy/llmix-trust.json \
   --did-document release/did.json \
   --json
@@ -360,7 +421,7 @@ mda doctor release \
 llmix check-registry \
   --root config/llm \
   --trust deploy/llmix-trust.json \
-  --preset search/extraction \
+  --preset search_summary/openai_fast \
   --did-document release/did.json \
   --tamper-proof \
   --json
@@ -379,7 +440,7 @@ const trust = await loadLlmixTrustManifest(process.env.LLMIX_TRUST_ANCHOR!);
 const manager = await ConfigRegistryManager.open("config/llm", {
   signedRoot: registryRootOptionsFromTrustManifest(trust, { didWebVerifier }),
 });
-const config = await manager.getPreset("search", "extraction");
+const config = await manager.getPreset("search_summary", "openai_fast");
 ```
 
 Managers expose the active revision and reload health metadata. That makes it

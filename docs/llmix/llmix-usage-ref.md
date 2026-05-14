@@ -7,13 +7,16 @@ parts that become annoying once an AI product is real: model presets, retries,
 two-tier response cache, key-pool rotation, circuit breakers, singleflight, and
 the same runtime contract across Python, TypeScript, and Rust.
 
-This page is the map. Start with the language guide for the runtime you ship:
+Read this after the README and the language guide for the runtime you ship. It
+is the reference layer: config shape, provider coverage, registry commands, and
+runtime knobs. For the first TypeScript production path, read
+`README.md` -> `llmix-typescript.md` -> this page -> the secure MDA guide.
 
 - [TypeScript guide](llmix-typescript.md)
 - [Python guide](llmix-python.md)
 - [Rust guide](llmix-rust.md)
-- [Key pool operations](key-pool-operations.md)
 - [Secure LLMix configuration](secure-mda/secure-llmix-configuration.md)
+- [Key pool operations](key-pool-operations.md)
 
 ## Packages
 
@@ -135,16 +138,61 @@ The official flow is:
 3. Run `llmix publish-registry`.
 4. Generate `config/llm/current.json` and `config/llm/compiled/`.
 5. Run MDA CLI release finalize and doctor checks.
-6. Open `config/llm` at runtime through LLMix with the external trust anchor.
+6. Store the trust anchor outside `config/llm`.
+7. Open `config/llm` at runtime through LLMix with the external trust anchor.
 
-Minimal release command shape:
+The examples use one preset:
+
+```text
+config/llm/source/search_summary/openai_fast.mda
+```
+
+The did:web example assumes these release-identity inputs already exist outside
+`config/llm`: `release/did-web-private-key.pem` and `release/did.json`. Provide
+them from your release system or use the GitHub Actions Sigstore/Rekor profile
+instead.
+
+Complete release command shape:
 
 ```bash
-mda validate config/llm/source/search/summary.mda --target source --json
-mda integrity compute config/llm/source/search/summary.mda --target source --write --json
-mda release trust policy --target llmix-registry --profile did-web --domain config.example.com --out release/trust-policy.json --json
-mda sign config/llm/source/search/summary.mda --profile did-web --did did:web:config.example.com --key-id did:web:config.example.com#release --key-file release/did-web-private-key.pem --in-place --json
-mda verify config/llm/source/search/summary.mda --target source --policy release/trust-policy.json --did-document release/did.json --json
+mkdir -p config/llm/source/search_summary release deploy
+
+mda init --template llmix-preset \
+  --module search_summary \
+  --preset openai_fast \
+  --provider openai \
+  --model gpt-5-mini \
+  --out config/llm/source/search_summary/openai_fast.mda
+
+mda validate config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --json
+
+mda integrity compute config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --write \
+  --json
+
+mda release trust policy \
+  --target llmix-registry \
+  --profile did-web \
+  --domain config.example.com \
+  --out release/trust-policy.json \
+  --json
+
+mda sign config/llm/source/search_summary/openai_fast.mda \
+  --profile did-web \
+  --did did:web:config.example.com \
+  --key-id did:web:config.example.com#release \
+  --key-file release/did-web-private-key.pem \
+  --in-place \
+  --json
+
+mda verify config/llm/source/search_summary/openai_fast.mda \
+  --target source \
+  --policy release/trust-policy.json \
+  --did-document release/did.json \
+  --json
 
 mda release prepare \
   --target llmix-registry \
@@ -207,7 +255,7 @@ Then run the runtime proof command:
 llmix check-registry \
   --root config/llm \
   --trust deploy/llmix-trust.json \
-  --preset search/summary \
+  --preset search_summary/openai_fast \
   --did-document release/did.json \
   --tamper-proof \
   --json
@@ -234,7 +282,7 @@ const manager = await ConfigRegistryManager.open("config/llm", {
     sigstoreVerifier,
   }),
 });
-const config = await manager.getPreset("search", "summary");
+const config = await manager.getPreset("search_summary", "openai_fast");
 console.log(manager.activeRevision);
 ```
 
@@ -261,9 +309,9 @@ and are handled by the MDA parser.
 
 ```md
 ---
-name: search-summary
-title: Search Summary
-description: Summarize search results for a research workflow.
+name: openai_fast
+title: OpenAI Fast Search Summary
+description: Fast OpenAI preset for search summaries.
 tags:
   - search
   - production
@@ -273,7 +321,7 @@ metadata:
   snoai-llmix:
     common:
       provider: openai
-      model: gpt-4o-mini
+      model: gpt-5-mini
       temperature: 0.2
       maxOutputTokens: 512
       maxRetries: 2

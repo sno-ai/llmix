@@ -2,7 +2,9 @@
 
 Languages: [English](./secure-llmix-configuration.md) | [Deutsch](./secure-llmix-configuration.de.md) | [Español](./secure-llmix-configuration.es.md) | [Français](./secure-llmix-configuration.fr.md) | [हिन्दी](./secure-llmix-configuration.hi.md) | [日本語](./secure-llmix-configuration.ja.md) | [한국어](./secure-llmix-configuration.ko.md) | [Русский](./secure-llmix-configuration.ru.md) | [中文](./secure-llmix-configuration.zh.md)
 
-This is the official secure LLMix registry flow.
+This is the official secure LLMix registry flow. Read it after the README, the
+TypeScript guide, and the usage reference. This page is the production runbook,
+not a second registry design.
 
 Roles are fixed:
 
@@ -76,10 +78,25 @@ config/llm/source/search_summary/openai_fast.mda
 
 Use lowercase letters, numbers, `_`, and `-` for module and preset names.
 
+## Release Identity Inputs
+
+The did:web example assumes these release-identity inputs already exist outside
+`config/llm`:
+
+| Path | Meaning |
+| --- | --- |
+| `release/did-web-private-key.pem` | Private signing key for the release identity. |
+| `release/did.json` | DID document containing `did:web:config.example.com#release`. |
+
+Do not put either file in `config/llm`. Provide them from your release system,
+secret/config manager, or CI environment. If GitHub Actions Sigstore/Rekor is
+your release identity, use that MDA CLI profile instead; the layout and LLMix
+publisher command do not change.
+
 ## MDA CLI Gate
 
-Validate, compute integrity, sign, and verify the source preset before
-publishing:
+Validate, compute integrity, create the trust policy, sign, verify, and prepare
+the release before publishing:
 
 ```bash
 mda validate config/llm/source/search_summary/openai_fast.mda \
@@ -91,19 +108,19 @@ mda integrity compute config/llm/source/search_summary/openai_fast.mda \
   --write \
   --json
 
+mda release trust policy \
+  --target llmix-registry \
+  --profile did-web \
+  --domain config.example.com \
+  --out release/trust-policy.json \
+  --json
+
 mda sign config/llm/source/search_summary/openai_fast.mda \
   --profile did-web \
   --did did:web:config.example.com \
   --key-id did:web:config.example.com#release \
   --key-file release/did-web-private-key.pem \
   --in-place \
-  --json
-
-mda release trust policy \
-  --target llmix-registry \
-  --profile did-web \
-  --domain config.example.com \
-  --out release/trust-policy.json \
   --json
 
 mda verify config/llm/source/search_summary/openai_fast.mda \
@@ -154,9 +171,10 @@ Do not replace this command with a project-local compiler.
 
 ### Advanced Publisher API
 
-Use `ConfigRegistryPublisher` only when your release system must call LLMix as a
-library instead of a command. It is the same publisher behind
-`llmix publish-registry`; it is not a separate registry format.
+Most apps should use the command. Use `ConfigRegistryPublisher` only when your
+release system must call LLMix as a library instead of a command. It is the
+same publisher behind `llmix publish-registry`; it is not a separate registry
+format.
 
 ```typescript
 import { ConfigRegistryPublisher } from "@snoai/llmix";
@@ -373,6 +391,7 @@ is the behavior: a valid registry loads; a modified registry does not.
 
 ## Related Docs
 
-- [LLMix usage reference](../llmix-usage-ref.md)
+- [LLMix README](../../../README.md)
 - [LLMix TypeScript guide](../llmix-typescript.md)
+- [LLMix usage reference](../llmix-usage-ref.md)
 - [MDA Config Runtime Guide](../../mda-config/README.md)
