@@ -36,7 +36,7 @@ static ATOMIC_WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishedRevision {
     pub revision: String,
-    pub snapshot_path: PathBuf,
+    pub compiled_path: PathBuf,
     pub manifest_path: PathBuf,
     pub manifest_sha256: String,
     pub registry_root_path: Option<PathBuf>,
@@ -180,13 +180,13 @@ struct PresetSource {
     module: String,
     preset: String,
     preset_id: String,
-    authoring_path: PathBuf,
+    source_path: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct ManifestPresetEntry {
-    authoring_path: String,
-    authoring_sha256: String,
+    source_path: String,
+    source_sha256: String,
     resolved_path: String,
     resolved_sha256: String,
 }

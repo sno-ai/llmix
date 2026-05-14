@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from llmix.config_registry_common import (
     _current_pointer_sha256,
-    _snapshot_registry_path,
+    _compiled_registry_path,
     _validate_revision,
     _validate_sha256,
 )
@@ -67,7 +67,7 @@ def parse_registry_root_file_digest(
 ) -> dict[str, str]:
     entry = ensure_object(value, f"registry root file entry: {source_path}")
     role = require_string(entry, "role", source_path)
-    if role not in {"authoring", "resolved"}:
+    if role not in {"source", "resolved"}:
         raise InvalidConfigError(
             f"Registry root file entry has invalid role: {source_path}"
         )
@@ -194,7 +194,7 @@ def _validate_registry_root_payload_bindings(
         raise InvalidConfigError(
             f"Registry root current binding digest mismatch: {source_path}"
         )
-    if payload["manifest"]["path"] != _snapshot_registry_path(
+    if payload["manifest"]["path"] != _compiled_registry_path(
         payload["revision"], "manifest.json"
     ):
         raise InvalidConfigError(

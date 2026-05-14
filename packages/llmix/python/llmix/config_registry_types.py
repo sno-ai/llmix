@@ -21,7 +21,7 @@ class PublishedRevision:
     """Result of a successful registry publish."""
 
     revision: str
-    snapshot_path: Path
+    compiled_path: Path
     manifest_path: Path
     manifest_sha256: str
     activated: bool
@@ -32,7 +32,7 @@ class PublishedRevision:
 
 @dataclass(frozen=True)
 class ConfigRegistryPublishOptions:
-    """Options for publishing authoring MDA into an immutable registry snapshot."""
+    """Options for publishing source MDA into an immutable compiled revision."""
 
     verify_integrity: bool = False
     verify_signatures: bool = False
@@ -51,7 +51,7 @@ class _PresetSource:
     module: str
     preset: str
     preset_id: str
-    authoring_path: Path
+    source_path: Path
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,6 @@
 use super::fs_ops::{
-    absolutize_user_path, read_json_object, safe_join_relative, sha256_file,
-    validate_manifest_entry_string, validate_resolved_config, validate_revision,
+    absolutize_user_path, from_registry_resolved_config, read_json_object, safe_join_relative,
+    sha256_file, validate_manifest_entry_string, validate_resolved_config, validate_revision,
 };
 use super::root::validate_sha256;
 use super::root_verify::verify_signed_registry_root_if_needed;
@@ -8,7 +8,7 @@ use super::*;
 
 pub struct ConfigRegistryManager {
     root: PathBuf,
-    snapshots_dir: PathBuf,
+    compiled_dir: PathBuf,
     current_path: PathBuf,
     active_revision: String,
     active_manifest_sha256: String,
@@ -24,7 +24,7 @@ impl std::fmt::Debug for ConfigRegistryManager {
         formatter
             .debug_struct("ConfigRegistryManager")
             .field("root", &self.root)
-            .field("snapshots_dir", &self.snapshots_dir)
+            .field("compiled_dir", &self.compiled_dir)
             .field("current_path", &self.current_path)
             .field("active_revision", &self.active_revision)
             .field("active_manifest_sha256", &self.active_manifest_sha256)
@@ -52,19 +52,19 @@ impl ConfigRegistryManager {
         P: AsRef<Path>,
     {
         let root = absolutize_user_path(root.as_ref())?;
-        let snapshots_dir = root.join("snapshots");
+        let compiled_dir = root.join("compiled");
         let current_path = root.join("current.json");
-        let pointer = read_current_pointer(&current_path, &snapshots_dir)?;
+        let pointer = read_current_pointer(&current_path, &compiled_dir)?;
         let configs = load_revision(
             &current_path,
-            &snapshots_dir,
+            &compiled_dir,
             &pointer,
             open_options.signed_root.as_ref(),
         )?;
 
         Ok(Self {
             root,
-            snapshots_dir,
+            compiled_dir,
             current_path,
             active_revision: pointer.revision,
             active_manifest_sha256: pointer
@@ -94,8 +94,8 @@ impl ConfigRegistryManager {
         &self.current_path
     }
 
-    pub fn snapshots_dir(&self) -> &Path {
-        &self.snapshots_dir
+    pub fn compiled_dir(&self) -> &Path {
+        &self.compiled_dir
     }
 
     pub fn last_reload_error(&self) -> Option<&LlmixError> {
@@ -139,7 +139,7 @@ impl ConfigRegistryManager {
     }
 
     fn refresh_if_needed(&mut self) {
-        let current_pointer = match read_current_pointer(&self.current_path, &self.snapshots_dir) {
+        let current_pointer = match read_current_pointer(&self.current_path, &self.compiled_dir) {
             Ok(value) => value,
             Err(error) => {
                 self.last_reload_error = Some(error);
@@ -160,7 +160,7 @@ impl ConfigRegistryManager {
 
         match load_revision(
             &self.current_path,
-            &self.snapshots_dir,
+            &self.compiled_dir,
             &current_pointer,
             self.open_options.signed_root.as_ref(),
         ) {
@@ -182,7 +182,7 @@ impl ConfigRegistryManager {
 
 fn load_revision(
     current_path: &Path,
-    snapshots_dir: &Path,
+    compiled_dir: &Path,
     pointer: &CurrentPointer,
     signed_root_options: Option<&RegistryRootVerificationOptions>,
 ) -> LlmixResult<BTreeMap<String, Value>> {
@@ -194,29 +194,29 @@ fn load_revision(
             message: "Registry current pointer is missing manifest_sha256".to_string(),
         })?;
     validate_revision(revision)?;
-    let snapshot_path = snapshots_dir.join(revision);
-    match fs::metadata(&snapshot_path) {
+    let compiled_path = compiled_dir.join(revision);
+    match fs::metadata(&compiled_path) {
         Ok(metadata) if metadata.is_dir() => {}
         Ok(_) => {
             return Err(InvalidConfigError {
                 message: format!(
-                    "Config Registry snapshot is not a directory: {}",
-                    snapshot_path.display()
+                    "Config Registry compiled revision is not a directory: {}",
+                    compiled_path.display()
                 ),
             }
             .into())
         }
         Err(error) if error.kind() == ErrorKind::NotFound => {
             return Err(ConfigNotFoundError {
-                path: snapshot_path.display().to_string(),
+                path: compiled_path.display().to_string(),
             }
             .into())
         }
         Err(error) => return Err(error.into()),
     }
 
-    let manifest_path = snapshot_path.join("manifest.json");
-    verify_snapshot_checksum(&manifest_path, manifest_sha256, revision)?;
+    let manifest_path = compiled_path.join("manifest.json");
+    verify_compiled_checksum(&manifest_path, manifest_sha256, revision)?;
     let manifest_value = Value::Object(read_json_object(&manifest_path)?);
     let manifest: RegistryManifest =
         serde_json::from_value(manifest_value).map_err(|error| InvalidConfigError {
@@ -247,30 +247,30 @@ fn load_revision(
         pointer,
         &manifest,
         current_path,
-        &snapshot_path,
+        &compiled_path,
         signed_root_options,
     )?;
 
     let mut configs = BTreeMap::new();
     for (preset_id, entry) in manifest.presets {
-        validate_manifest_entry_string(&entry.authoring_path, "authoring_path", &preset_id)?;
-        validate_manifest_entry_string(&entry.authoring_sha256, "authoring_sha256", &preset_id)?;
+        validate_manifest_entry_string(&entry.source_path, "source_path", &preset_id)?;
+        validate_manifest_entry_string(&entry.source_sha256, "source_sha256", &preset_id)?;
         validate_manifest_entry_string(&entry.resolved_path, "resolved_path", &preset_id)?;
         validate_manifest_entry_string(&entry.resolved_sha256, "resolved_sha256", &preset_id)?;
-        let authoring_path = safe_join_relative(&snapshot_path, &entry.authoring_path)?;
-        let resolved_path = safe_join_relative(&snapshot_path, &entry.resolved_path)?;
-        verify_snapshot_checksum(&authoring_path, &entry.authoring_sha256, &preset_id)?;
-        verify_snapshot_checksum(&resolved_path, &entry.resolved_sha256, &preset_id)?;
+        let source_path = safe_join_relative(&compiled_path, &entry.source_path)?;
+        let resolved_path = safe_join_relative(&compiled_path, &entry.resolved_path)?;
+        verify_compiled_checksum(&source_path, &entry.source_sha256, &preset_id)?;
+        verify_compiled_checksum(&resolved_path, &entry.resolved_sha256, &preset_id)?;
 
         let resolved = Value::Object(read_json_object(&resolved_path)?);
         validate_resolved_config(&resolved_path, &resolved)?;
-        configs.insert(preset_id, resolved);
+        configs.insert(preset_id, from_registry_resolved_config(resolved));
     }
 
     Ok(configs)
 }
 
-fn read_current_pointer(current_path: &Path, snapshots_dir: &Path) -> LlmixResult<CurrentPointer> {
+fn read_current_pointer(current_path: &Path, compiled_dir: &Path) -> LlmixResult<CurrentPointer> {
     let pointer_value = Value::Object(read_json_object(current_path)?);
     let mut pointer: CurrentPointer =
         serde_json::from_value(pointer_value).map_err(|error| InvalidConfigError {
@@ -284,13 +284,13 @@ fn read_current_pointer(current_path: &Path, snapshots_dir: &Path) -> LlmixResul
         validate_sha256(manifest_sha256, "registry current pointer manifest")?;
     } else {
         pointer.manifest_sha256 = Some(sha256_file(
-            &snapshots_dir.join(&pointer.revision).join("manifest.json"),
+            &compiled_dir.join(&pointer.revision).join("manifest.json"),
         )?);
     }
     Ok(pointer)
 }
 
-fn verify_snapshot_checksum(
+fn verify_compiled_checksum(
     artifact_path: &Path,
     expected_sha: &str,
     preset_id: &str,

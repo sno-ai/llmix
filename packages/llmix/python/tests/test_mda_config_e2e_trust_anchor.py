@@ -83,7 +83,7 @@ def _frontmatter(model: str = "gpt-5-mini", temperature: float = 0.17) -> dict[s
 
 
 def _write_signed_mda(root: Path, *, domain: str = TRUSTED_DOMAIN) -> Path:
-    path = root / "authoring" / "research" / "summary.mda"
+    path = root / "source" / "research" / "summary.mda"
     path.parent.mkdir(parents=True, exist_ok=True)
     body = "# Anchored summary preset\nUse concise factual summaries.\n"
     unsigned = _frontmatter()
@@ -217,7 +217,7 @@ def test_e2e_rejects_partially_tampered_signed_mda_and_snapshot(tmp_path: Path) 
     published = ConfigRegistryPublisher(clean_root).publish(
         revision="2026-05-10.1", options=_publish_options()
     )
-    resolved_path = clean_root / "snapshots" / published.revision / "resolved" / "research" / "summary.json"
+    resolved_path = clean_root / "compiled" / published.revision / "resolved" / "research" / "summary.json"
     resolved = _read_json(resolved_path)
     resolved["model"] = "gpt-4o-mini"
     _write_json(resolved_path, resolved)
@@ -241,11 +241,11 @@ def test_e2e_rejects_whole_registry_swap_signed_by_untrusted_anchor(tmp_path: Pa
     (trusted_root / "current.json").write_text(
         (attacker_root / "current.json").read_text(encoding="utf-8"), encoding="utf-8"
     )
-    target_snapshot = trusted_root / "snapshots" / attacker.revision
+    target_snapshot = trusted_root / "compiled" / attacker.revision
     target_snapshot.parent.mkdir(parents=True, exist_ok=True)
-    for path in (attacker_root / "snapshots" / attacker.revision).rglob("*"):
+    for path in (attacker_root / "compiled" / attacker.revision).rglob("*"):
         if path.is_file():
-            copied = target_snapshot / path.relative_to(attacker.snapshot_path)
+            copied = target_snapshot / path.relative_to(attacker.compiled_path)
             copied.parent.mkdir(parents=True, exist_ok=True)
             copied.write_bytes(path.read_bytes())
 

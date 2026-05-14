@@ -43,7 +43,7 @@ fn write_authoring_preset(
     let (model, reasoning_effort, max_output_tokens, provider) =
         options.unwrap_or(("gpt-4.1-mini", "medium", 256, "openai"));
     let file_path = root
-        .join("authoring")
+        .join("source")
         .join(module_name)
         .join(format!("{preset_name}.mda"));
     write_file(
@@ -159,7 +159,7 @@ fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
         .get_preset("search", "summary")
         .expect("preset should load");
     let resolved_path = root
-        .join("snapshots")
+        .join("compiled")
         .join(&published.revision)
         .join("resolved/search/summary.json");
     let resolved: Value = serde_json::from_str(
@@ -172,15 +172,15 @@ fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
     assert_eq!(manager.root(), root.as_path());
     assert_eq!(manager.active_revision(), published.revision);
     assert_eq!(manager.current_path(), root.join("current.json").as_path());
-    assert_eq!(manager.snapshots_dir(), root.join("snapshots").as_path());
+    assert_eq!(manager.compiled_dir(), root.join("compiled").as_path());
     assert_eq!(
         manager.available_presets(),
         vec!["search/summary".to_string()]
     );
     assert!(root
-        .join("snapshots")
+        .join("compiled")
         .join(&published.revision)
-        .join("authoring/search/summary.mda")
+        .join("source/search/summary.mda")
         .is_file());
     assert!(manager.last_successful_reload_at().is_some());
     assert!(manager.last_reload_failure_at().is_none());
@@ -191,9 +191,9 @@ fn publish_creates_active_revision_and_manager_reads_canonical_resolved_json() {
         config["provider_options"]["openai"]["reasoning_effort"],
         json!("high")
     );
-    assert_eq!(resolved["common"]["max_output_tokens"], json!(1024));
+    assert_eq!(resolved["common"]["maxOutputTokens"], json!(1024));
     assert_eq!(
-        resolved["provider_options"]["openai"]["reasoning_effort"],
+        resolved["providerOptions"]["openai"]["reasoningEffort"],
         json!("high")
     );
 }
@@ -224,7 +224,7 @@ fn signed_registry_root_publish_and_open_use_public_options() {
     assert_eq!(published.revision, "signed-1");
     assert_eq!(
         published.registry_root_path.as_deref(),
-        Some(root.join("snapshots/signed-1/registry-root.json").as_path())
+        Some(root.join("compiled/signed-1/registry-root.json").as_path())
     );
     assert!(published.registry_root_sha256.is_some());
     assert_eq!(manager.active_revision(), "signed-1");
@@ -446,7 +446,7 @@ fn publish_uses_unique_staging_dir_for_explicit_revision() {
         "summary",
         Some(("gpt-4.1-mini", "medium", 256, "openai")),
     );
-    let stale_stage_file = root.join("snapshots/.staging/manual.tmp/sentinel");
+    let stale_stage_file = root.join("compiled/.staging/manual.tmp/sentinel");
     write_file(&stale_stage_file, "keep");
 
     let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
@@ -651,7 +651,7 @@ fn manager_rejects_a_tampered_resolved_snapshot_on_startup() {
         .publish()
         .expect("publish should succeed");
     let resolved_path = root
-        .join("snapshots")
+        .join("compiled")
         .join(&published.revision)
         .join("resolved/search/summary.json");
     let mut resolved: Value = serde_json::from_str(
@@ -682,11 +682,11 @@ fn manager_rejects_a_tampered_authoring_snapshot_on_startup() {
         .expect("publisher should open")
         .publish()
         .expect("publish should succeed");
-    let authoring_path = root
-        .join("snapshots")
+    let source_path = root
+        .join("compiled")
         .join(&published.revision)
-        .join("authoring/search/summary.mda");
-    fs::write(&authoring_path, "---\nname: tampered\n---\n")
+        .join("source/search/summary.mda");
+    fs::write(&source_path, "---\nname: tampered\n---\n")
         .expect("authoring artifact should be overwritten");
 
     let error = ConfigRegistryManager::open(&root).expect_err("tampered snapshot should fail");
@@ -707,7 +707,7 @@ fn manager_rejects_manifest_with_empty_artifact_paths_before_opening_them() {
         .publish()
         .expect("publish should succeed");
     let manifest_path = root
-        .join("snapshots")
+        .join("compiled")
         .join(&published.revision)
         .join("manifest.json");
     let mut manifest: Value =
@@ -741,7 +741,7 @@ fn publish_failure_leaves_active_revision_unchanged() {
     let publisher = ConfigRegistryPublisher::new(&root).expect("publisher should open");
     let first = publisher.publish().expect("first publish should succeed");
     write_file(
-        &root.join("authoring/search/summary.mda"),
+        &root.join("source/search/summary.mda"),
         "---\nname: summary\nmetadata:\n  snoai-llmix:\n    common:\n      provider: openai\n      model: [broken\n---\n",
     );
 
@@ -756,7 +756,7 @@ fn publish_failure_leaves_active_revision_unchanged() {
     .expect("current pointer should parse");
     assert_eq!(pointer["revision"], json!(first.revision));
 
-    let staging_dir = root.join("snapshots/.staging");
+    let staging_dir = root.join("compiled/.staging");
     let has_staging_entries = staging_dir
         .read_dir()
         .map(|mut entries| entries.next().is_some())
@@ -796,7 +796,7 @@ fn publish_with_mda_options_uses_mda_verification() {
         "failed publish should not activate a revision"
     );
     assert!(
-        !root.join("snapshots/manual").exists(),
+        !root.join("compiled/manual").exists(),
         "failed publish should not keep a snapshot"
     );
 }
@@ -820,7 +820,7 @@ fn activation_failure_removes_new_snapshot_so_revision_can_retry() {
 
     assert!(matches!(error, LlmixError::Io(_)));
     assert!(
-        !root.join("snapshots/manual").exists(),
+        !root.join("compiled/manual").exists(),
         "failed activation should remove the newly renamed snapshot"
     );
 
@@ -838,7 +838,7 @@ fn publisher_rejects_legacy_yaml_authoring_files() {
     let temp_root = unique_temp_dir("llmix-config-registry-legacy-yaml");
     let root = temp_root.join("config/llm");
     write_file(
-        &root.join("authoring/search/summary.yaml"),
+        &root.join("source/search/summary.yaml"),
         "provider: openai\nmodel: gpt-4.1-mini\n",
     );
 
@@ -875,8 +875,8 @@ metadata:
 "#,
         ),
     );
-    fs::create_dir_all(root.join("authoring")).expect("authoring dir should exist");
-    std::os::unix::fs::symlink(&outside_module, root.join("authoring/search"))
+    fs::create_dir_all(root.join("source")).expect("authoring dir should exist");
+    std::os::unix::fs::symlink(&outside_module, root.join("source/search"))
         .expect("module symlink should be created");
 
     let error = ConfigRegistryPublisher::new(&root)
@@ -910,8 +910,8 @@ metadata:
 "#,
         ),
     );
-    fs::create_dir_all(root.join("authoring/search")).expect("module dir should exist");
-    std::os::unix::fs::symlink(&outside_preset, root.join("authoring/search/summary.mda"))
+    fs::create_dir_all(root.join("source/search")).expect("module dir should exist");
+    std::os::unix::fs::symlink(&outside_preset, root.join("source/search/summary.mda"))
         .expect("preset symlink should be created");
 
     let error = ConfigRegistryPublisher::new(&root)

@@ -58,7 +58,7 @@ impl RegistryRootSigner for DeterministicRegistryRootSigner {
 fn e2e_signed_mda_loads_and_tampering_is_rejected() {
     let temp_root = unique_temp_dir("llmix-e2e-mda-trusted-runtime");
     let root = temp_root.join("config/llm");
-    let mda_path = root.join("authoring/search/summary.mda");
+    let mda_path = root.join("source/search/summary.mda");
     let verifier = DeterministicDidWebVerifier;
     let signer = DeterministicRegistryRootSigner;
 

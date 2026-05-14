@@ -15,8 +15,9 @@ from llmix.config_registry_common import (
     _read_json_file,
     _require_manifest_string,
     _sha256_file,
-    _snapshot_registry_path,
-    _snapshot_relative_path,
+    _compiled_registry_path,
+    _compiled_relative_path,
+    _from_registry_resolved_config,
     _utcnow,
     _validate_resolved_config,
     _validate_revision,
@@ -47,13 +48,13 @@ logger = logging.getLogger(__name__)
 
 
 class ConfigRegistryManager:
-    """Serve the active resolved configs from immutable registry snapshots."""
+    """Serve the active resolved configs from immutable compiled revisions."""
 
     def __init__(
         self, root: str | Path, options: ConfigRegistryOpenOptions | None = None
     ) -> None:
         self.root = Path(root).expanduser().resolve()
-        self.snapshots_dir = self.root / "snapshots"
+        self.compiled_dir = self.root / "compiled"
         self.current_path = self.root / "current.json"
         self.signed_root_options: RegistryRootVerificationOptions | None = (
             options.signed_root if options else None
@@ -173,7 +174,7 @@ class ConfigRegistryManager:
         manifest_sha256 = pointer.get("manifest_sha256")
         if manifest_sha256 is None:
             manifest_sha256 = _sha256_file(
-                self.snapshots_dir / revision / "manifest.json"
+                self.compiled_dir / revision / "manifest.json"
             )
         elif not isinstance(manifest_sha256, str):
             raise InvalidConfigError(
@@ -187,13 +188,13 @@ class ConfigRegistryManager:
     ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
         revision = pointer["revision"]
         _validate_revision(revision)
-        snapshot_dir = self.snapshots_dir / revision
-        if not snapshot_dir.exists():
+        compiled_dir = self.compiled_dir / revision
+        if not compiled_dir.exists():
             raise ConfigNotFoundError(
-                f"Config Registry snapshot not found: {snapshot_dir}"
+                f"Config Registry compiled revision not found: {compiled_dir}"
             )
 
-        manifest_path = snapshot_dir / "manifest.json"
+        manifest_path = compiled_dir / "manifest.json"
         if _sha256_file(manifest_path) != pointer["manifest_sha256"]:
             raise InvalidConfigError(
                 f"Checksum mismatch for Config Registry manifest {manifest_path}"
@@ -215,7 +216,7 @@ class ConfigRegistryManager:
             raise InvalidConfigError(
                 f"Config Registry manifest presets index must be an object: {manifest_path}"
             )
-        self._verify_signed_registry_root_if_needed(pointer, manifest, snapshot_dir)
+        self._verify_signed_registry_root_if_needed(pointer, manifest, compiled_dir)
 
         configs: dict[str, dict[str, Any]] = {}
         for preset_id, entry in presets.items():
@@ -224,33 +225,33 @@ class ConfigRegistryManager:
                     f"Invalid Config Registry manifest entry in {manifest_path}"
                 )
 
-            _require_manifest_string(entry, "authoring_path", preset_id)
-            authoring_path = self._resolve_snapshot_artifact(
-                snapshot_dir, entry, "authoring_path", preset_id
+            _require_manifest_string(entry, "source_path", preset_id)
+            source_path = self._resolve_compiled_artifact(
+                compiled_dir, entry, "source_path", preset_id
             )
-            self._verify_snapshot_checksum(
-                authoring_path, entry, "authoring_sha256", preset_id
+            self._verify_compiled_checksum(
+                source_path, entry, "source_sha256", preset_id
             )
-            resolved_path = self._resolve_snapshot_artifact(
-                snapshot_dir, entry, "resolved_path", preset_id
+            resolved_path = self._resolve_compiled_artifact(
+                compiled_dir, entry, "resolved_path", preset_id
             )
-            self._verify_snapshot_checksum(
+            self._verify_compiled_checksum(
                 resolved_path, entry, "resolved_sha256", preset_id
             )
 
             resolved = _read_json_file(resolved_path)
             _validate_resolved_config(resolved_path, resolved)
-            configs[preset_id] = resolved
+            configs[preset_id] = _from_registry_resolved_config(resolved)
 
         return manifest, configs
 
     def _verify_signed_registry_root_if_needed(
-        self, pointer: dict[str, str], manifest: dict[str, Any], snapshot_dir: Path
+        self, pointer: dict[str, str], manifest: dict[str, Any], compiled_dir: Path
     ) -> None:
         if self.signed_root_options is None:
             return
 
-        root_path = snapshot_dir / REGISTRY_ROOT_FILENAME
+        root_path = compiled_dir / REGISTRY_ROOT_FILENAME
         if self.signed_root_options.expected_root_digest is not None:
             expected_root_digest = _normalize_sha256_digest(
                 self.signed_root_options.expected_root_digest,
@@ -263,14 +264,14 @@ class ConfigRegistryManager:
         envelope = parse_registry_root_envelope(_read_json_file(root_path), str(root_path))
         verify_registry_root_signatures(envelope, self.signed_root_options)
         enforce_registry_root_freshness(envelope, self.signed_root_options)
-        self._verify_registry_root_payload(envelope["payload"], pointer, manifest, snapshot_dir)
+        self._verify_registry_root_payload(envelope["payload"], pointer, manifest, compiled_dir)
 
     def _verify_registry_root_payload(
         self,
         payload: dict[str, Any],
         pointer: dict[str, str],
         manifest: dict[str, Any],
-        snapshot_dir: Path,
+        compiled_dir: Path,
     ) -> None:
         self._verify_registry_root_bindings(payload, pointer, manifest)
         expected_files = registry_root_file_digests(manifest)
@@ -281,9 +282,9 @@ class ConfigRegistryManager:
             )
 
         for file in actual_files:
-            relative_path = _snapshot_relative_path(pointer["revision"], file["path"])
-            artifact_path = snapshot_dir / relative_path
-            _verify_path_containment(artifact_path, snapshot_dir)
+            relative_path = _compiled_relative_path(pointer["revision"], file["path"])
+            artifact_path = compiled_dir / relative_path
+            _verify_path_containment(artifact_path, compiled_dir)
             if _sha256_file(artifact_path) != file["sha256"]:
                 raise SecurityError(f"Registry root file digest mismatch: {file['path']}")
 
@@ -302,26 +303,28 @@ class ConfigRegistryManager:
             raise SecurityError("Registry root current binding does not match current.json")
         if payload["current"]["sha256"] != _sha256_file(self.current_path):
             raise SecurityError("Registry root current binding digest mismatch")
-        if payload["manifest"]["path"] != _snapshot_registry_path(
+        if payload["manifest"]["path"] != _compiled_registry_path(
             revision, "manifest.json"
         ):
-            raise SecurityError("Registry root manifest path does not match the active snapshot")
+            raise SecurityError(
+                "Registry root manifest path does not match the active compiled revision"
+            )
         if payload["manifest"]["sha256"] != pointer["manifest_sha256"]:
             raise SecurityError("Registry root manifest digest does not match current.json")
 
-    def _resolve_snapshot_artifact(
-        self, snapshot_dir: Path, entry: dict[str, Any], key: str, preset_id: str
+    def _resolve_compiled_artifact(
+        self, compiled_dir: Path, entry: dict[str, Any], key: str, preset_id: str
     ) -> Path:
         relative_path = entry.get(key)
         if not isinstance(relative_path, str):
             raise InvalidConfigError(
                 f"Config Registry manifest entry is missing {key}: {preset_id}"
             )
-        artifact_path = snapshot_dir / relative_path
-        _verify_path_containment(artifact_path, snapshot_dir)
+        artifact_path = compiled_dir / relative_path
+        _verify_path_containment(artifact_path, compiled_dir)
         return artifact_path
 
-    def _verify_snapshot_checksum(
+    def _verify_compiled_checksum(
         self, path: Path, entry: dict[str, Any], key: str, preset_id: str
     ) -> None:
         expected = entry.get(key)

@@ -2,10 +2,9 @@ use super::fs_ops::{
     read_json_object, safe_join_relative, sha256_bytes, sha256_file, validate_revision,
 };
 use super::root::{
-    current_pointer_bytes, normalize_sha256_digest, registry_root_file_digests,
-    registry_root_signature_to_mda, registry_root_signing_input, snapshot_registry_path,
-    snapshot_relative_path, sort_registry_root_files, validate_registry_root_signature,
-    validate_sha256,
+    compiled_registry_path, compiled_relative_path, current_pointer_bytes, normalize_sha256_digest,
+    registry_root_file_digests, registry_root_signature_to_mda, registry_root_signing_input,
+    sort_registry_root_files, validate_registry_root_signature, validate_sha256,
 };
 use super::*;
 use chrono::DateTime;
@@ -14,13 +13,13 @@ pub(super) fn verify_signed_registry_root_if_needed(
     pointer: &CurrentPointer,
     manifest: &RegistryManifest,
     current_path: &Path,
-    snapshot_path: &Path,
+    compiled_path: &Path,
     options: Option<&RegistryRootVerificationOptions>,
 ) -> LlmixResult<()> {
     let Some(options) = options else {
         return Ok(());
     };
-    let root_path = snapshot_path.join(REGISTRY_ROOT_FILENAME);
+    let root_path = compiled_path.join(REGISTRY_ROOT_FILENAME);
     let root_digest = sha256_file(&root_path)?;
     let current_digest = sha256_file(current_path)?;
     let envelope = parse_registry_root_envelope(&root_path)?;
@@ -31,7 +30,7 @@ pub(super) fn verify_signed_registry_root_if_needed(
         pointer,
         manifest,
         &current_digest,
-        snapshot_path,
+        compiled_path,
     )
 }
 
@@ -186,7 +185,7 @@ fn verify_registry_root_payload(
     pointer: &CurrentPointer,
     manifest: &RegistryManifest,
     current_digest: &str,
-    snapshot_path: &Path,
+    compiled_path: &Path,
 ) -> LlmixResult<()> {
     verify_registry_root_bindings(payload, pointer, manifest, current_digest)?;
     let expected_files = registry_root_file_digests(manifest)?;
@@ -205,8 +204,8 @@ fn verify_registry_root_payload(
     }
 
     for file in actual_files {
-        let relative_path = snapshot_relative_path(&pointer.revision, &file.path)?;
-        let artifact_path = safe_join_relative(snapshot_path, &relative_path)?;
+        let relative_path = compiled_relative_path(&pointer.revision, &file.path)?;
+        let artifact_path = safe_join_relative(compiled_path, &relative_path)?;
         let actual_sha = sha256_file(&artifact_path)?;
         if actual_sha != file.sha256 {
             return Err(SecurityError {
@@ -250,9 +249,10 @@ fn verify_registry_root_bindings(
         }
         .into());
     }
-    if payload.manifest.path != snapshot_registry_path(&pointer.revision, "manifest.json") {
+    if payload.manifest.path != compiled_registry_path(&pointer.revision, "manifest.json") {
         return Err(SecurityError {
-            message: "Registry root manifest path does not match the active snapshot".to_string(),
+            message: "Registry root manifest path does not match the active compiled revision"
+                .to_string(),
         }
         .into());
     }
@@ -304,7 +304,7 @@ fn validate_registry_root_payload(payload: &RegistryRootPayload, source: &str) -
     }
     validate_sha256(&payload.manifest.sha256, "registry root manifest")?;
     for file in &payload.files {
-        if file.role != "authoring" && file.role != "resolved" {
+        if file.role != "source" && file.role != "resolved" {
             return Err(InvalidConfigError {
                 message: format!("Registry root file entry has invalid role: {source}"),
             }

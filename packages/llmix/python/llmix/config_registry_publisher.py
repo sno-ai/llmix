@@ -15,11 +15,12 @@ from llmix.config_registry_common import (
     _atomic_write_json,
     _canonical_json_bytes,
     _fsync_dir,
-    _is_legacy_yaml_authoring_path,
+    _is_legacy_yaml_source_path,
     _parse_mda_preset_name,
     _read_json_file,
     _sha256_bytes,
     _sha256_file,
+    _to_registry_resolved_config,
     _utcnow,
     _validate_resolved_config,
     _validate_revision,
@@ -51,13 +52,13 @@ def _load_mda_config(path: Path, options: MdaConfigLoadOptions | None) -> dict[s
 
 
 class ConfigRegistryPublisher:
-    """Build immutable registry snapshots from authoring MDA."""
+    """Build immutable registry compiled revisions from source MDA."""
 
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).expanduser().resolve()
-        self.authoring_dir = self.root / "authoring"
-        self.snapshots_dir = self.root / "snapshots"
-        self.staging_dir = self.snapshots_dir / ".staging"
+        self.source_dir = self.root / "source"
+        self.compiled_dir = self.root / "compiled"
+        self.staging_dir = self.compiled_dir / ".staging"
         self.current_path = self.root / "current.json"
 
     def publish(
@@ -82,18 +83,18 @@ class ConfigRegistryPublisher:
         presets = self._discover_presets()
         if not presets:
             raise ConfigNotFoundError(
-                f"No authoring presets found under {self.authoring_dir}"
+                f"No source presets found under {self.source_dir}"
             )
 
         published_at = _utcnow()
         revision_id = revision or self._build_revision_id(presets, published_at)
         _validate_revision(revision_id)
 
-        snapshot_dir = self.snapshots_dir / revision_id
+        compiled_dir = self.compiled_dir / revision_id
         stage_dir = self.staging_dir / f"{revision_id}.tmp"
-        manifest_path = snapshot_dir / "manifest.json"
+        manifest_path = compiled_dir / "manifest.json"
 
-        if snapshot_dir.exists():
+        if compiled_dir.exists():
             raise InvalidConfigError(f"Registry revision already exists: {revision_id}")
 
         if stage_dir.exists():
@@ -123,10 +124,10 @@ class ConfigRegistryPublisher:
             registry_root_sha256 = self._write_registry_root_if_requested(
                 stage_dir, manifest, manifest_sha256, options
             )
-            snapshot_dir.parent.mkdir(parents=True, exist_ok=True)
+            compiled_dir.parent.mkdir(parents=True, exist_ok=True)
             self.staging_dir.mkdir(parents=True, exist_ok=True)
-            stage_dir.rename(snapshot_dir)
-            _fsync_dir(snapshot_dir.parent)
+            stage_dir.rename(compiled_dir)
+            _fsync_dir(compiled_dir.parent)
 
             if activate:
                 _atomic_write_json(
@@ -141,13 +142,13 @@ class ConfigRegistryPublisher:
             logger.info("Config Registry published revision %s", revision_id)
             return PublishedRevision(
                 revision=revision_id,
-                snapshot_path=snapshot_dir,
+                compiled_path=compiled_dir,
                 manifest_path=manifest_path,
                 manifest_sha256=manifest_sha256,
                 activated=activate,
                 preset_ids=tuple(sorted(manifest["presets"].keys())),
                 registry_root_path=(
-                    snapshot_dir / REGISTRY_ROOT_FILENAME
+                    compiled_dir / REGISTRY_ROOT_FILENAME
                     if registry_root_sha256 is not None
                     else None
                 ),
@@ -175,16 +176,16 @@ class ConfigRegistryPublisher:
         return _sha256_file(root_path)
 
     def _discover_presets(self) -> list[_PresetSource]:
-        if not self.authoring_dir.exists():
+        if not self.source_dir.exists():
             raise ConfigNotFoundError(
-                f"Authoring directory not found: {self.authoring_dir}"
+                f"Source directory not found: {self.source_dir}"
             )
 
         presets: list[_PresetSource] = []
-        for module_dir in sorted(self.authoring_dir.iterdir()):
+        for module_dir in sorted(self.source_dir.iterdir()):
             if not module_dir.is_dir():
                 continue
-            _verify_path_containment(module_dir, self.authoring_dir)
+            _verify_path_containment(module_dir, self.source_dir)
 
             module_name = module_dir.name
             validate_module(module_name)
@@ -192,11 +193,11 @@ class ConfigRegistryPublisher:
             for path in sorted(module_dir.iterdir()):
                 if not path.is_file():
                     continue
-                _verify_path_containment(path, self.authoring_dir)
+                _verify_path_containment(path, self.source_dir)
 
-                if _is_legacy_yaml_authoring_path(path):
+                if _is_legacy_yaml_source_path(path):
                     raise InvalidConfigError(
-                        f"Legacy YAML authoring presets are no longer supported; use .mda: {path}"
+                        f"Legacy YAML source presets are no longer supported; use .mda: {path}"
                     )
 
                 preset_name = _parse_mda_preset_name(path)
@@ -210,7 +211,7 @@ class ConfigRegistryPublisher:
                         module=module_name,
                         preset=preset_name,
                         preset_id=f"{module_name}/{preset_name}",
-                        authoring_path=path,
+                        source_path=path,
                     )
                 )
 
@@ -222,12 +223,12 @@ class ConfigRegistryPublisher:
         digest = hashlib.sha256()
         for preset in presets:
             digest.update(
-                str(preset.authoring_path.relative_to(self.authoring_dir)).encode(
+                str(preset.source_path.relative_to(self.source_dir)).encode(
                     "utf-8"
                 )
             )
             digest.update(b"\0")
-            digest.update(preset.authoring_path.read_bytes())
+            digest.update(preset.source_path.read_bytes())
             digest.update(b"\0")
         timestamp = published_at.strftime("%Y-%m-%dT%H-%M-%SZ")
         return f"{timestamp}_{digest.hexdigest()[:8]}"
@@ -244,19 +245,20 @@ class ConfigRegistryPublisher:
         stage_dir.mkdir(parents=True, exist_ok=True)
 
         for preset in presets:
-            authoring_bytes = preset.authoring_path.read_bytes()
-            authoring_rel = Path("authoring") / preset.module / f"{preset.preset}.mda"
+            source_bytes = preset.source_path.read_bytes()
+            source_rel = Path("source") / preset.module / f"{preset.preset}.mda"
             resolved_rel = Path("resolved") / preset.module / f"{preset.preset}.json"
 
-            _write_bytes(stage_dir / authoring_rel, authoring_bytes)
-            resolved_dict = _load_mda_config(stage_dir / authoring_rel, load_options)
-            _validate_resolved_config(stage_dir / authoring_rel, resolved_dict)
-            resolved_bytes = _canonical_json_bytes(resolved_dict)
+            _write_bytes(stage_dir / source_rel, source_bytes)
+            resolved_dict = _load_mda_config(stage_dir / source_rel, load_options)
+            _validate_resolved_config(stage_dir / source_rel, resolved_dict)
+            registry_resolved = _to_registry_resolved_config(resolved_dict)
+            resolved_bytes = _canonical_json_bytes(registry_resolved)
             _write_bytes(stage_dir / resolved_rel, resolved_bytes)
 
             manifest_presets[preset.preset_id] = {
-                "authoring_path": authoring_rel.as_posix(),
-                "authoring_sha256": _sha256_bytes(authoring_bytes),
+                "source_path": source_rel.as_posix(),
+                "source_sha256": _sha256_bytes(source_bytes),
                 "resolved_path": resolved_rel.as_posix(),
                 "resolved_sha256": _sha256_bytes(resolved_bytes),
             }
@@ -292,7 +294,7 @@ class ConfigRegistryPublisher:
                 )
 
             for sha_key, path_key in (
-                ("authoring_sha256", "authoring_path"),
+                ("source_sha256", "source_path"),
                 ("resolved_sha256", "resolved_path"),
             ):
                 relative_path = entry.get(path_key)
