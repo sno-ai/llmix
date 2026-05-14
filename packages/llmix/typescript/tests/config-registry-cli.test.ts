@@ -6,6 +6,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { runCli } from "../src/cli.js"
+import { buildVerificationHooks } from "../src/config-registry-cli-support.js"
 
 let passed = 0
 let failed = 0
@@ -269,6 +270,50 @@ await run("check-registry rejects trust anchor inside config/llm", async () => {
 		])
 		assert.equal(result.exitCode, 1)
 		assert.match(result.stderr, /outside the registry root/)
+	})
+})
+
+await run("rekor fixture lookup requires exact log identity", async () => {
+	await withTempRoot("rekor-fixture-mismatch", async (tempRoot) => {
+		const fixturePath = path.join(tempRoot, "release", "rekor-entry.json")
+		await mkdir(path.dirname(fixturePath), { recursive: true })
+		await writeFile(
+			fixturePath,
+			`${JSON.stringify(
+				{
+					kind: "dsse-v0.0.1",
+					logId: "wrong-log-id",
+					logIndex: 7,
+					inclusionVerified: true,
+					dsseEnvelope: {
+						payloadType: "application/vnd.mda.integrity+json",
+						payload: "e30=",
+						signatures: [],
+					},
+				},
+				null,
+				2,
+			)}\n`,
+		)
+		const hooks = await buildVerificationHooks({
+			didDocumentPaths: [],
+			rekorEntryPaths: [fixturePath],
+			rekorUrl: null,
+			policy: {
+				version: 1,
+				trustedSigners: [
+					{
+						type: "sigstore-oidc",
+						issuer: "https://token.actions.githubusercontent.com",
+						subject: "repo:owner/repo:ref:refs/heads/main",
+					},
+				],
+				rekor: { url: "https://rekor.example.test" },
+			},
+		})
+		assert.ok(hooks.rekorClient)
+		const entry = await hooks.rekorClient.fetchEntry("https://rekor.example.test", "expected-log-id", 42)
+		assert.equal(entry, null)
 	})
 })
 
