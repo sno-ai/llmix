@@ -66,8 +66,12 @@ export function parseCliArgs(argv: readonly string[]): ParsedCliArgs {
 		if (token === undefined) {
 			continue
 		}
-		if (!token.startsWith("--")) {
+		if (!token.startsWith("-")) {
 			positionals.push(token)
+			continue
+		}
+		if (!token.startsWith("--")) {
+			flags.add(token)
 			continue
 		}
 		const equals = token.indexOf("=")

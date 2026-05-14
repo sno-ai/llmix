@@ -71,14 +71,11 @@ or trust-policy enforcement outside LLMix.
 If you are new to LLMix, read in this order:
 
 1. This README: the product shape and the default registry layout.
-2. [TypeScript guide](docs/llmix/llmix-typescript.md): install, runtime calls, and opening the registry from application code.
-3. [Usage reference](docs/llmix/llmix-usage-ref.md): config shape, provider coverage, and command reference.
-4. [Secure LLMix configuration](docs/llmix/secure-mda/secure-llmix-configuration.md): the full MDA CLI + LLMix release runbook and tamper-rejection proof.
+2. The runtime guide for the service you ship: [TypeScript](docs/llmix/llmix-typescript.md), [Python](docs/llmix/llmix-python.md), or [Rust](docs/llmix/llmix-rust.md).
+3. [Secure LLMix configuration](docs/llmix/secure-mda/secure-llmix-configuration.md): the full MDA CLI + LLMix release runbook and tamper-rejection proof.
 
-Other runtime and operations docs:
+Other operations docs:
 
-- [Python guide](docs/llmix/llmix-python.md)
-- [Rust guide](docs/llmix/llmix-rust.md)
 - [Secure LLMix configuration translations](docs/llmix/secure-mda/secure-llmix-configuration.md) ([de](docs/llmix/secure-mda/secure-llmix-configuration.de.md), [es](docs/llmix/secure-mda/secure-llmix-configuration.es.md), [fr](docs/llmix/secure-mda/secure-llmix-configuration.fr.md), [hi](docs/llmix/secure-mda/secure-llmix-configuration.hi.md), [ja](docs/llmix/secure-mda/secure-llmix-configuration.ja.md), [ko](docs/llmix/secure-mda/secure-llmix-configuration.ko.md), [ru](docs/llmix/secure-mda/secure-llmix-configuration.ru.md), [中文](docs/llmix/secure-mda/secure-llmix-configuration.zh.md))
 - [Key pool operations](docs/llmix/key-pool-operations.md)
 - [Standalone MDA config loader docs](docs/mda-config/README.md)
@@ -324,8 +321,7 @@ The release flow is:
 2. Run the MDA CLI validation, integrity, signing, verification, and release
    prepare steps.
 3. Run `llmix publish-registry`.
-4. Commit or package generated `config/llm/current.json` and
-   `config/llm/compiled/`.
+4. Generate `config/llm/current.json` and `config/llm/compiled/`.
 5. Run MDA CLI release finalize and doctor checks.
 6. Store the trust anchor outside `config/llm`.
 7. Open `config/llm` at runtime through LLMix with the external trust anchor.
@@ -442,6 +438,11 @@ const manager = await ConfigRegistryManager.open("config/llm", {
 });
 const config = await manager.getPreset("search_summary", "openai_fast");
 ```
+
+`didWebVerifier` is the app verifier hook required by this did:web policy. For a
+command-line runtime proof, use `llmix check-registry --did-document
+release/did.json`; in app code, pass the verifier hooks required by your trust
+policy.
 
 Managers expose the active revision and reload health metadata. That makes it
 easy to say exactly which config a service is running. See

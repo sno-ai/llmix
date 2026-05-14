@@ -90,6 +90,13 @@ await run("help exposes official registry commands", async () => {
 	assert.match(result.stdout, /check-registry/)
 })
 
+await run("publish-registry help accepts short flag", async () => {
+	const result = await captureCli(["publish-registry", "-h"])
+	assert.equal(result.exitCode, 0)
+	assert.match(result.stdout, /publish-registry/)
+	assert.equal(result.stderr, "")
+})
+
 await run("package exposes llmix bin", async () => {
 	const packagePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json")
 	const packageJson = JSON.parse(await readFile(packagePath, "utf-8")) as {
