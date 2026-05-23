@@ -33,7 +33,7 @@ lru = "0.12.5"
 hyper-rustls = { version = "=0.27.9", optional = true }
 reqwest = { version = "=0.12.28", optional = true, default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.138"
+serde_json = "1.0.150"
 sha2 = "0.10.8"
 snoai-mda-config = { path = "../../mda-config/rust", version = "1.1.2" }
 thiserror = "2.0.18"
