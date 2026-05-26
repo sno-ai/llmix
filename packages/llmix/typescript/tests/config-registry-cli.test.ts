@@ -106,7 +106,7 @@ await run("package exposes llmix bin", async () => {
 	const packageJson = JSON.parse(await readFile(packagePath, "utf-8")) as {
 		bin?: Record<string, string>
 	}
-	assert.equal(packageJson.bin?.["llmix"], "./dist/cli.js")
+	assert.equal(packageJson.bin?.["llmix"], "dist/cli.js")
 })
 
 await run("llmix bin executes through symlink", async () => {
