@@ -86,7 +86,7 @@ jobs:
 
             Use `gh pr comment` with your Bash tool to post your review.
 
-          claude_args: "--model claude-opus-4-6 --allowed-tools \"Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob\""
+          claude_args: "--model opus --allowed-tools \"Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob\""
 
   # Interactive @claude — responds to @claude mentions from repo members only.
   # SECURITY INVARIANT: This job is intentionally read-only (contents: read,
@@ -141,4 +141,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           additional_permissions: |
             actions: read
-          claude_args: "--model claude-opus-4-6 --allowed-tools \"Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh issue comment:*),Bash(gh issue view:*),Read,Grep,Glob\""
+          claude_args: "--model opus --allowed-tools \"Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh issue comment:*),Bash(gh issue view:*),Read,Grep,Glob\""
