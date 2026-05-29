@@ -1,0 +1,35 @@
+name: Release (PyPI)
+
+# PyPI trusted publisher for sno-llmix is bound to this filename (release.yml).
+# OIDC only — no tokens. Trigger with: gh workflow run release.yml
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  pypi:
+    name: Publish PyPI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Build package
+        run: uv build --project packages/llmix/python --out-dir packages/llmix/python/dist
+
+      - name: Publish package
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/llmix/python/dist
