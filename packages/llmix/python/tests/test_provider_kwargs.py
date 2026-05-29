@@ -313,6 +313,18 @@ assert_eq(
     "Sno GPU constructs URL with unknown safe gpu_path",
 )
 
+gpu_ctx_nested_path = {
+    "model": "qwen3.6-27b-reason",
+    "provider": "sno-gpu",
+    "base_url": "https://gpu.example.com/v1",
+    "provider_options": {"sno-gpu": {"gpu_path": "team/extract"}},
+}
+gpu_result6 = sno_gpu_transform_kwargs(gpu_ctx_nested_path, {})  # type: ignore[arg-type]
+assert_eq(
+    gpu_result6["base_url"] == "https://gpu.example.com/team/extract/v1",
+    "Sno GPU constructs URL with nested gpu_path",
+)
+
 threw_on_unsafe_gpu_path = False
 try:
     sno_gpu_transform_kwargs(
@@ -327,6 +339,21 @@ try:
 except ValueError as exc:
     threw_on_unsafe_gpu_path = "safe relative path" in str(exc)
 assert_eq(threw_on_unsafe_gpu_path, "Sno GPU rejects unsafe gpu_path")
+
+threw_on_slash_edge_gpu_path = False
+try:
+    sno_gpu_transform_kwargs(
+        {
+            "model": "qwen3.6-27b-reason",
+            "provider": "sno-gpu",
+            "base_url": "https://gpu.example.com",
+            "provider_options": {"sno-gpu": {"gpu_path": "extract/"}},
+        },
+        {},
+    )
+except ValueError as exc:
+    threw_on_slash_edge_gpu_path = "safe relative path" in str(exc)
+assert_eq(threw_on_slash_edge_gpu_path, "Sno GPU rejects slash-edge gpu_path")
 
 # =============================================================================
 # Registry has expected entries

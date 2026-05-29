@@ -395,6 +395,10 @@ INVALID_GPU_PATHS = [
     "path;with;semicolons",
     "path with spaces",
     "path<script>",
+    "extract/",
+    "/extract",
+    "a//b",
+    "/",
 ]
 
 

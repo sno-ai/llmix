@@ -14,6 +14,8 @@ from typing import Any, Protocol, TypedDict
 
 from llmix.env import get_gpu_base_url
 
+GPU_PATH_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*$")
+
 # =============================================================================
 # Types
 # =============================================================================
@@ -204,8 +206,11 @@ def sno_gpu_transform_kwargs(ctx: TransformKwargsContext, kwargs: dict[str, Any]
         raise ValueError("sno-gpu provider requires a non-empty base_url in config or GPU_BASE_URL env var")
 
     if gpu_path:
-        if '..' in gpu_path or not re.match(r'^[a-zA-Z0-9_/-]+$', gpu_path):
-            raise ValueError(f"Invalid gpu_path: {gpu_path!r}")
+        if len(gpu_path) > 256 or ".." in gpu_path or not GPU_PATH_PATTERN.fullmatch(gpu_path):
+            raise ValueError(
+                f"Invalid gpu_path: {gpu_path!r}. "
+                "Must be a safe relative path using letters, digits, '_', '-', or '/'."
+            )
         kwargs["base_url"] = f"{base}/{gpu_path}/v1"
     else:
         kwargs["base_url"] = f"{base}/v1"

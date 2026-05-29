@@ -318,7 +318,7 @@ class SnoGpuProviderOptions(TypedDict, total=False):
     """Token budget for thinking/reasoning. Only applies when enable_thinking=True."""
 
     gpu_path: str
-    """GPU routing path: 'extract' or 'reason'. Omit for the default path."""
+    """Safe relative GPU routing path. Omit for the default path."""
 
 ProviderOptions = TypedDict(
     "ProviderOptions",

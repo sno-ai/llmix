@@ -203,7 +203,7 @@ def _resolve_gpu_base_url(ctx: DispatchInput) -> str:
 
     sno_gpu_options = _resolve_provider_options(ctx, "sno-gpu")
     gpu_path = sno_gpu_options.get("gpu_path")
-    if isinstance(gpu_path, str) and gpu_path.strip():
+    if isinstance(gpu_path, str) and gpu_path:
         return build_gpu_base_url(gpu_path)
     return build_gpu_base_url()
 

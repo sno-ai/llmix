@@ -11,6 +11,7 @@ request to ensure deterministic behavior with models that default to thinking mo
 
 import asyncio
 import logging
+import re
 import threading
 from typing import Any
 
@@ -24,14 +25,22 @@ from llmix.providers.openai_common import build_retry_config, jittered_delay
 logger = logging.getLogger(__name__)
 
 GPU_DEFAULT_MODEL = "qwen3.6-27b-extract"
-VALID_GPU_PATHS = frozenset({"extract", "reason"})
+GPU_PATH_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*$")
+
+
+def _validate_gpu_path(gpu_path: str) -> None:
+    if len(gpu_path) > 256 or ".." in gpu_path or not GPU_PATH_PATTERN.fullmatch(gpu_path):
+        raise ValueError(
+            f"Invalid gpu_path: {gpu_path!r}. "
+            "Must be a safe relative path using letters, digits, '_', '-', or '/'."
+        )
 
 
 def build_gpu_base_url(gpu_path: str | None = None) -> str:
     """Build GPU base URL with optional path routing.
 
     Args:
-        gpu_path: 'extract', 'reason', or None for the default path.
+        gpu_path: Any safe relative route prefix, or None for the default path.
 
     Returns:
         Full base URL for AsyncOpenAI (e.g. https://llm.example.com/extract/v1).
@@ -39,8 +48,7 @@ def build_gpu_base_url(gpu_path: str | None = None) -> str:
     if not SNO_GPU_BASE_URL:
         raise ValueError("GPU_BASE_URL is required for sno-gpu provider.")
     if gpu_path:
-        if len(gpu_path) > 256 or gpu_path not in VALID_GPU_PATHS:
-            raise ValueError(f"Invalid gpu_path: {gpu_path!r}. Must be one of {sorted(VALID_GPU_PATHS)!r}")
+        _validate_gpu_path(gpu_path)
         return f"{SNO_GPU_BASE_URL}/{gpu_path}/v1"
     return f"{SNO_GPU_BASE_URL}/v1"
 
@@ -53,10 +61,11 @@ class SnoGpuClient(BaseLLMClient):
     The API does not support OpenAI's Response API, so response_completion()
     maps parameters to chat_completion() format internally.
 
-    Supports optional path-based routing via gpu_path:
-    - /extract/v1 → path="extract"
-    - /reason/v1  → path="reason"
-    - /v1         → no path (default)
+    Supports optional path-based routing via any safe relative gpu_path. Examples:
+    - /extract/v1       → path="extract"
+    - /reason/v1        → path="reason"
+    - /graph-extract/v1 → path="graph-extract"
+    - /v1               → no path (default)
     """
 
     def __init__(

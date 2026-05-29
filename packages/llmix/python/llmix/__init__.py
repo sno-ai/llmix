@@ -6,7 +6,7 @@ Config-driven LLM configuration utilities for Python.
 
 from typing import TYPE_CHECKING
 
-__version__ = "2.0.0"
+__version__ = "2.0.7"
 
 # Pricing is always available (no external deps beyond stdlib + json)
 from llmix.pricing import MODEL_PRICING, CostBreakdown, ModelPricing, calculate_cost, calculate_rerank_cost, get_model_pricing, normalize_model_name

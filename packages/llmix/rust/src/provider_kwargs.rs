@@ -233,7 +233,11 @@ pub fn sno_gpu_transform_kwargs(
         Some(path) if !path.is_empty() => {
             if path.len() > MAX_GPU_PATH_LEN || path.contains("..") || !is_valid_gpu_path(path) {
                 return Err(LlmixError::InvalidProviderKwargsConfig(format!(
-                    "Invalid gpu_path: {path:?}"
+                    concat!(
+                        "Invalid gpu_path: {:?}. ",
+                        "Must be a safe relative path using letters, digits, '_', '-', or '/'."
+                    ),
+                    path
                 )));
             }
             format!("{base}/{path}/v1")
@@ -272,6 +276,11 @@ fn get_value_alias<'a>(map: &'a Map<String, Value>, keys: &[&str]) -> Option<&'a
 const MAX_GPU_PATH_LEN: usize = 256;
 
 fn is_valid_gpu_path(path: &str) -> bool {
-    path.chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '/')
+    !path.is_empty()
+        && path.split('/').all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+        })
 }

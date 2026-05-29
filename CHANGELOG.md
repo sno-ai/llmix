@@ -9,6 +9,12 @@ LLMix uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.7] — 2026-05-29
+
+### Added
+
+- Added safe custom Sno GPU path routing support in Python, TypeScript, and Rust.
+
 ### Changed
 
 - Retired the remaining legacy public client/config-loader surface from both

@@ -329,6 +329,18 @@ assert(
   "Sno GPU constructs URL with unknown safe gpuPath",
 )
 
+const gpuCtxNestedPath = {
+  model: "qwen3.6-27b-reason",
+  provider: "sno-gpu",
+  baseUrl: "https://gpu.example.com/v1",
+  providerOptions: { "sno-gpu": { gpuPath: "team/extract" } } as unknown as TransformKwargsContext["providerOptions"],
+} as TransformKwargsContext
+const gpuResult6 = snoGpuTransformKwargs(gpuCtxNestedPath, {})
+assert(
+  gpuResult6["baseUrl"] === "https://gpu.example.com/team/extract/v1",
+  "Sno GPU constructs URL with nested gpuPath",
+)
+
 let threwOnUnsafeGpuPath = false
 try {
   snoGpuTransformKwargs(
@@ -344,6 +356,22 @@ try {
   threwOnUnsafeGpuPath = e instanceof Error && e.message.includes("safe relative path")
 }
 assert(threwOnUnsafeGpuPath, "Sno GPU rejects unsafe gpuPath")
+
+let threwOnSlashEdgeGpuPath = false
+try {
+  snoGpuTransformKwargs(
+    {
+      model: "qwen3.6-27b-reason",
+      provider: "sno-gpu",
+      baseUrl: "https://gpu.example.com",
+      providerOptions: { "sno-gpu": { gpuPath: "extract/" } },
+    },
+    {},
+  )
+} catch (e) {
+  threwOnSlashEdgeGpuPath = e instanceof Error && e.message.includes("safe relative path")
+}
+assert(threwOnSlashEdgeGpuPath, "Sno GPU rejects slash-edge gpuPath")
 
 // Provider options propagate effective thinking controls
 const gpuThinkingCtx: TransformKwargsContext = {

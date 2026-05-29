@@ -376,7 +376,7 @@ export interface SnoGpuProviderOptions {
   /** Token budget for thinking/reasoning. Only applies when enableThinking is true. */
   thinkingBudget?: number | undefined;
 
-  /** GPU routing path: 'extract' (GPU 0, SMR) or 'reason' (GPU 1, EKG). Omit for the default path. */
+  /** Safe relative GPU routing path. Omit for the default path. */
   gpuPath?: string | undefined;
 }
 

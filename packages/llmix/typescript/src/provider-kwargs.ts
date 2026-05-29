@@ -14,6 +14,8 @@ import { getGpuBaseUrl } from "./env.js";
 import { getModelCapabilities } from "./model-capabilities.js";
 import type { ProviderOptions } from "./types.js";
 
+const GPU_PATH_PATTERN = /^[a-zA-Z0-9_-]+(\/[a-zA-Z0-9_-]+)*$/;
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -200,9 +202,11 @@ export function snoGpuTransformKwargs(
     if (
       gpuPath.length > 256 ||
       gpuPath.includes("..") ||
-      !/^[a-zA-Z0-9_/-]+$/.test(gpuPath)
+      !GPU_PATH_PATTERN.test(gpuPath)
     ) {
-      throw new Error(`Invalid gpu_path: "${gpuPath}"`);
+      throw new Error(
+        `Invalid gpu_path: ${JSON.stringify(gpuPath)}. Must be a safe relative path using letters, digits, "_", "-", or "/".`,
+      );
     }
     result["baseUrl"] = `${base}/${gpuPath}/v1`;
   } else {

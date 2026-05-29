@@ -269,6 +269,43 @@ fn sno_gpu_constructs_base_url_and_validates_inputs() {
         with_v1_result.get("base_url"),
         Some(&json!("https://gpu.example.com/reason/v1"))
     );
+
+    let mut graph_extract_context = context.clone();
+    graph_extract_context.model = "qwen3.6-27b-reason".to_string();
+    graph_extract_context.base_url = Some("https://gpu.example.com/v1".to_string());
+    graph_extract_context.provider_options = Some(object(json!({
+        "sno-gpu": { "gpuPath": "graph-extract" }
+    })));
+    let graph_extract_result =
+        sno_gpu_transform_kwargs(&graph_extract_context, Map::new()).unwrap();
+    assert_eq!(
+        graph_extract_result.get("base_url"),
+        Some(&json!("https://gpu.example.com/graph-extract/v1"))
+    );
+
+    let mut future_path_context = context.clone();
+    future_path_context.model = "qwen3.6-27b-reason".to_string();
+    future_path_context.base_url = Some("https://gpu.example.com/v1".to_string());
+    future_path_context.provider_options = Some(object(json!({
+        "sno-gpu": { "gpuPath": "future-safe-path" }
+    })));
+    let future_path_result = sno_gpu_transform_kwargs(&future_path_context, Map::new()).unwrap();
+    assert_eq!(
+        future_path_result.get("base_url"),
+        Some(&json!("https://gpu.example.com/future-safe-path/v1"))
+    );
+
+    let mut nested_path_context = context.clone();
+    nested_path_context.model = "qwen3.6-27b-reason".to_string();
+    nested_path_context.base_url = Some("https://gpu.example.com/v1".to_string());
+    nested_path_context.provider_options = Some(object(json!({
+        "sno-gpu": { "gpuPath": "team/extract" }
+    })));
+    let nested_path_result = sno_gpu_transform_kwargs(&nested_path_context, Map::new()).unwrap();
+    assert_eq!(
+        nested_path_result.get("base_url"),
+        Some(&json!("https://gpu.example.com/team/extract/v1"))
+    );
 }
 
 #[test]
@@ -302,7 +339,27 @@ fn sno_gpu_errors_on_missing_base_url_and_invalid_paths() {
         "sno-gpu": { "gpu_path": "../escape" }
     })));
     let invalid = sno_gpu_transform_kwargs(&context, Map::new()).unwrap_err();
-    assert_eq!(invalid.to_string(), "Invalid gpu_path: \"../escape\"");
+    assert_eq!(
+        invalid.to_string(),
+        concat!(
+            "Invalid gpu_path: \"../escape\". ",
+            "Must be a safe relative path using letters, digits, '_', '-', or '/'."
+        )
+    );
+
+    let mut slash_edge_context = ctx("qwen3.6-27b-reason", "sno-gpu");
+    slash_edge_context.base_url = Some("https://gpu.example.com".to_string());
+    slash_edge_context.provider_options = Some(object(json!({
+        "sno-gpu": { "gpu_path": "extract/" }
+    })));
+    let slash_edge = sno_gpu_transform_kwargs(&slash_edge_context, Map::new()).unwrap_err();
+    assert_eq!(
+        slash_edge.to_string(),
+        concat!(
+            "Invalid gpu_path: \"extract/\". ",
+            "Must be a safe relative path using letters, digits, '_', '-', or '/'."
+        )
+    );
 }
 
 #[test]

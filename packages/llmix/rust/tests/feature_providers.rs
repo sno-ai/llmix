@@ -7,6 +7,8 @@
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -23,7 +25,7 @@ use llmix_rs::SnoGpuChatHelper;
 use llmix_rs::{DispatchContext, DispatchFn, LlmixError};
 
 #[cfg(feature = "providers-sno-gpu")]
-use llmix_rs::{CallInput, CallPipeline, KeyPool, PipelineConfig};
+use llmix_rs::{CallInput, CallPipeline, KeyPool, LlmUsage, PipelineConfig, ProviderResult};
 
 #[derive(Debug)]
 struct CapturedRequest {
@@ -676,4 +678,117 @@ async fn sno_gpu_helper_injects_internal_token_and_thinking_payload() {
         json!(true)
     );
     assert!(request.body.get("enable_thinking").is_none());
+}
+
+#[cfg(feature = "providers-sno-gpu")]
+#[tokio::test]
+async fn sno_gpu_pipeline_accepts_unknown_safe_gpu_path() {
+    let (base_url, request_rx, server) = spawn_json_server(
+        "200 OK",
+        &[],
+        json!({
+            "model": "qwen3.6-27b-reason",
+            "choices": [{
+                "message": { "content": "structured result" }
+            }],
+            "usage": {
+                "prompt_tokens": 3,
+                "completion_tokens": 2,
+                "total_tokens": 5
+            }
+        }),
+    )
+    .await;
+
+    let pipeline = CallPipeline::new(fast_helper_pipeline(
+        SnoGpuChatHelper::new().with_internal_token("internal-secret"),
+    ))
+    .expect("pipeline should construct");
+    pipeline.set_key_pool(
+        "sno-gpu",
+        KeyPool::new(vec!["not-needed".to_string()]).expect("key pool should construct"),
+    );
+
+    let response = pipeline
+        .call(CallInput {
+            config: json!({
+                "provider": "sno-gpu",
+                "model": "qwen3.6-27b-reason",
+                "baseUrl": base_url,
+                "providerOptions": {
+                    "sno-gpu": {
+                        "gpuPath": "future-safe-path",
+                        "enableThinking": false
+                    }
+                },
+                "common": {
+                    "maxOutputTokens": 64
+                }
+            }),
+            messages: vec![json!({ "role": "user", "content": "Extract." })],
+            singleflight_key: None,
+        })
+        .await;
+
+    let request = request_rx.await.expect("request should be captured");
+    server.await.expect("test server should complete");
+
+    assert!(response.success);
+    assert_eq!(response.content, "structured result");
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.path, "/future-safe-path/v1/chat/completions");
+    assert_eq!(
+        request.headers.get("x-internal-token"),
+        Some(&"internal-secret".to_string())
+    );
+}
+
+#[cfg(feature = "providers-sno-gpu")]
+#[tokio::test]
+async fn sno_gpu_pipeline_rejects_unsafe_gpu_path_before_dispatch() {
+    let dispatch_count = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&dispatch_count);
+    let pipeline = CallPipeline::new(fast_helper_pipeline(move |_ctx: DispatchContext| {
+        let counter = Arc::clone(&counter);
+        async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Ok(ProviderResult {
+                content: "should not run".to_string(),
+                model: "test".to_string(),
+                usage: LlmUsage::default(),
+                headers: None,
+                tool_calls: None,
+            })
+        }
+    }))
+    .expect("pipeline should construct");
+    pipeline.set_key_pool(
+        "sno-gpu",
+        KeyPool::new(vec!["not-needed".to_string()]).expect("key pool should construct"),
+    );
+
+    let response = pipeline
+        .call(CallInput {
+            config: json!({
+                "provider": "sno-gpu",
+                "model": "qwen3.6-27b-reason",
+                "baseUrl": "https://gpu.example.com",
+                "providerOptions": {
+                    "sno-gpu": {
+                        "gpuPath": "../escape"
+                    }
+                }
+            }),
+            messages: vec![json!({ "role": "user", "content": "Extract." })],
+            singleflight_key: None,
+        })
+        .await;
+
+    assert!(!response.success);
+    assert_eq!(dispatch_count.load(Ordering::SeqCst), 0);
+    assert!(response
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("safe relative path"));
 }

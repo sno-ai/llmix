@@ -245,9 +245,10 @@ export class CallPipeline {
     const { config, messages } = input;
     const provider = config.provider;
     const model = config.model;
-    const effectiveBaseUrl = this.resolveEffectiveBaseUrl(config, messages);
 
     try {
+      const effectiveBaseUrl = this.resolveEffectiveBaseUrl(config, messages);
+
       // Step 1: Kill Switch
       await this.killSwitch.checkAsync();
 

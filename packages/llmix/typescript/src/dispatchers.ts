@@ -25,7 +25,7 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai";
 const NOVITA_BASE_URL = "https://api.novita.ai/v3/openai";
 const TOGETHER_BASE_URL = "https://api.together.xyz/v1";
-const VALID_GPU_PATHS = new Set(["extract", "reason"]);
+const GPU_PATH_PATTERN = /^[a-zA-Z0-9_-]+(\/[a-zA-Z0-9_-]+)*$/;
 
 const OPENROUTER_MODEL_MAPPINGS: Record<string, string> = {
   "deepseek-chat": "deepseek/deepseek-chat-v3-0324",
@@ -155,8 +155,10 @@ function buildGpuBaseUrl(gpuPath?: string): string {
   if (!gpuPath) {
     return `${baseUrl}/v1`;
   }
-  if (!VALID_GPU_PATHS.has(gpuPath)) {
-    throw new Error(`Invalid gpu_path: ${JSON.stringify(gpuPath)}. Must be one of [\"extract\",\"reason\"]`);
+  if (gpuPath.length > 256 || gpuPath.includes("..") || !GPU_PATH_PATTERN.test(gpuPath)) {
+    throw new Error(
+      `Invalid gpu_path: ${JSON.stringify(gpuPath)}. Must be a safe relative path using letters, digits, "_", "-", or "/".`,
+    );
   }
   return `${baseUrl}/${gpuPath}/v1`;
 }
