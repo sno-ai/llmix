@@ -4,12 +4,14 @@ import { mock } from "bun:test";
 let passed = 0;
 let failed = 0;
 let createOpenAIOptions: Record<string, unknown> | undefined;
+let createAnthropicOptions: Record<string, unknown> | undefined;
 let fetchResponseMode: "default" | "reasoning-only" = "default";
 let openRouterConstructorOptions: Record<string, unknown> | undefined;
 let openRouterRequest: Record<string, unknown> | undefined;
 let openRouterOptions: Record<string, unknown> | undefined;
 const originalHeliconeApiKey = process.env["HELICONE_API_KEY"];
 const originalHeliconeOpenaiBaseUrl = process.env["HELICONE_OPENAI_BASE_URL"];
+const originalGpuBaseUrl = process.env["GPU_BASE_URL"];
 delete process.env["HELICONE_API_KEY"];
 delete process.env["HELICONE_OPENAI_BASE_URL"];
 
@@ -79,6 +81,13 @@ mock.module("@ai-sdk/openai", () => ({
   },
 }));
 
+mock.module("@ai-sdk/anthropic", () => ({
+  createAnthropic: (options: Record<string, unknown>) => {
+    createAnthropicOptions = options;
+    return (modelId: string) => ({ provider: "anthropic", modelId });
+  },
+}));
+
 mock.module("@openrouter/sdk", () => ({
   OpenRouter: class {
     chat = {
@@ -119,7 +128,7 @@ mock.module("@openrouter/sdk", () => ({
   },
 }));
 
-const { openaiDispatch, openrouterDispatch, snoGpuDispatch } = await import("../src/dispatchers.js");
+const { anthropicDispatch, openaiDispatch, openrouterDispatch, snoGpuDispatch } = await import("../src/dispatchers.js");
 
 const dispatch = openaiDispatch();
 const result = await dispatch({
@@ -204,7 +213,7 @@ await dispatch({
   model: "gpt-4o-mini",
   apiKey: "runtime-key",
   messages: [{ role: "user", content: "Say hello." }],
-  kwargs: { baseUrl: "https://llm.example.test/v1" },
+  kwargs: { baseUrl: "https://proxy.example.com/openai/custom/v9" },
   config: {
     provider: "openai",
     model: "gpt-4o-mini",
@@ -213,8 +222,8 @@ await dispatch({
 
 assertEq(
   requireCreateOpenAIOptions()["baseURL"],
-  "https://llm.example.test/v1",
-  "openai dispatch preserves explicit non-Helicone baseURL",
+  "https://proxy.example.com/openai/custom/v9",
+  "openai dispatch preserves explicit custom baseURL path",
 );
 assertEq(
   requireCreateOpenAIOptions()["headers"],
@@ -231,6 +240,24 @@ if (originalHeliconeOpenaiBaseUrl === undefined) {
 } else {
   process.env["HELICONE_OPENAI_BASE_URL"] = originalHeliconeOpenaiBaseUrl;
 }
+
+const anthropic = anthropicDispatch();
+await anthropic({
+  provider: "anthropic",
+  model: "claude-sonnet-4-5",
+  apiKey: "runtime-key",
+  messages: [{ role: "user", content: "Say hello." }],
+  kwargs: { baseUrl: "https://proxy.example.com/anthropic/custom/v9" },
+  config: {
+    provider: "anthropic",
+    model: "claude-sonnet-4-5",
+  },
+});
+assertEq(
+  createAnthropicOptions?.["baseURL"],
+  "https://proxy.example.com/anthropic/custom/v9",
+  "anthropic dispatch preserves explicit custom baseURL path",
+);
 
 const openrouter = openrouterDispatch();
 const openrouterResult = await openrouter({
@@ -266,6 +293,28 @@ const openRouterChatRequest = openRouterRequest?.["chatRequest"] as Record<strin
 assertEq(openRouterChatRequest?.["model"], "deepseek/deepseek-v4-flash", "openrouter dispatch sends mapped model");
 assertEq(openRouterChatRequest?.["maxTokens"], 32, "openrouter dispatch forwards max_tokens");
 assertDeepEq(openRouterChatRequest?.["provider"], { sort: "price" }, "openrouter dispatch forwards provider routing");
+
+await openrouter({
+  provider: "openrouter",
+  model: "deepseek-v4-flash",
+  apiKey: "runtime-key",
+  messages: [{ role: "user", content: "Say hello." }],
+  kwargs: { baseUrl: "https://proxy.example.com/openrouter/custom/v9" },
+  config: {
+    provider: "openrouter",
+    model: "deepseek-v4-flash",
+  },
+});
+assertEq(
+  openRouterConstructorOptions?.["serverURL"],
+  "https://proxy.example.com/openrouter/custom/v9",
+  "openrouter dispatch preserves explicit custom baseURL path",
+);
+assertEq(
+  openRouterOptions?.["serverURL"],
+  "https://proxy.example.com/openrouter/custom/v9",
+  "openrouter dispatch sends explicit custom serverURL option",
+);
 
 await openrouter({
   provider: "openrouter",
@@ -393,8 +442,72 @@ try {
     },
     "sno-gpu dispatch forwards auth header",
   );
-
   const wrappedFetch = requireCreateOpenAIOptions()["fetch"];
+
+  process.env["GPU_BASE_URL"] = "https://gpu.example";
+  await snoDispatch({
+    provider: "sno-gpu",
+    model: "deepseek-r1",
+    apiKey: "runtime-key",
+    messages: [{ role: "user", content: "Extract this." }],
+    kwargs: {},
+    config: {
+      provider: "sno-gpu",
+      model: "deepseek-r1",
+      providerOptions: {
+        "sno-gpu": { gpuPath: "graph-extract" },
+      },
+    },
+  });
+  assertEq(
+    requireCreateOpenAIOptions()["baseURL"],
+    "https://gpu.example/graph-extract/v1",
+    "sno-gpu dispatch allows graph-extract gpuPath",
+  );
+
+  await snoDispatch({
+    provider: "sno-gpu",
+    model: "deepseek-r1",
+    apiKey: "runtime-key",
+    messages: [{ role: "user", content: "Extract this." }],
+    kwargs: {},
+    config: {
+      provider: "sno-gpu",
+      model: "deepseek-r1",
+      providerOptions: {
+        "sno-gpu": { gpuPath: "future-safe-path" },
+      },
+    },
+  });
+  assertEq(
+    requireCreateOpenAIOptions()["baseURL"],
+    "https://gpu.example/future-safe-path/v1",
+    "sno-gpu dispatch accepts unknown safe gpuPath",
+  );
+
+  let threwOnUnsafeGpuPath = false;
+  try {
+    await snoDispatch({
+      provider: "sno-gpu",
+      model: "deepseek-r1",
+      apiKey: "runtime-key",
+      messages: [{ role: "user", content: "Extract this." }],
+      kwargs: {},
+      config: {
+        provider: "sno-gpu",
+        model: "deepseek-r1",
+        providerOptions: {
+          "sno-gpu": { gpuPath: "../../etc/passwd" },
+        },
+      },
+    });
+  } catch (error) {
+    threwOnUnsafeGpuPath = error instanceof Error &&
+      error.message.includes("../../etc/passwd") &&
+      error.message.includes("safe relative path");
+  }
+  assertEq(threwOnUnsafeGpuPath, true, "sno-gpu dispatch still rejects unsafe gpuPath");
+
   if (typeof wrappedFetch === "function") {
     passed++;
     console.log("[PASS] sno-gpu dispatch installs wrapped fetch");
@@ -456,6 +569,11 @@ try {
   }
 } finally {
   globalThis.fetch = originalFetch;
+  if (originalGpuBaseUrl === undefined) {
+    delete process.env["GPU_BASE_URL"];
+  } else {
+    process.env["GPU_BASE_URL"] = originalGpuBaseUrl;
+  }
 }
 
 console.log(`\n${"=".repeat(40)}`);

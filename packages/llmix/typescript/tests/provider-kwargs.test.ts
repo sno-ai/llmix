@@ -305,6 +305,46 @@ assert(
   "Sno GPU strips existing /v1 before reconstructing with gpuPath",
 )
 
+const gpuCtxGraphExtract = {
+  model: "qwen3.6-27b-reason",
+  provider: "sno-gpu",
+  baseUrl: "https://gpu.example.com/v1",
+  providerOptions: { "sno-gpu": { gpuPath: "graph-extract" } } as unknown as TransformKwargsContext["providerOptions"],
+} as TransformKwargsContext
+const gpuResult4 = snoGpuTransformKwargs(gpuCtxGraphExtract, {})
+assert(
+  gpuResult4["baseUrl"] === "https://gpu.example.com/graph-extract/v1",
+  "Sno GPU constructs URL with graph-extract gpuPath",
+)
+
+const gpuCtxFuturePath = {
+  model: "qwen3.6-27b-reason",
+  provider: "sno-gpu",
+  baseUrl: "https://gpu.example.com/v1",
+  providerOptions: { "sno-gpu": { gpuPath: "future-safe-path" } } as unknown as TransformKwargsContext["providerOptions"],
+} as TransformKwargsContext
+const gpuResult5 = snoGpuTransformKwargs(gpuCtxFuturePath, {})
+assert(
+  gpuResult5["baseUrl"] === "https://gpu.example.com/future-safe-path/v1",
+  "Sno GPU constructs URL with unknown safe gpuPath",
+)
+
+let threwOnUnsafeGpuPath = false
+try {
+  snoGpuTransformKwargs(
+    {
+      model: "qwen3.6-27b-reason",
+      provider: "sno-gpu",
+      baseUrl: "https://gpu.example.com",
+      providerOptions: { "sno-gpu": { gpuPath: "../../etc/passwd" } },
+    },
+    {},
+  )
+} catch (e) {
+  threwOnUnsafeGpuPath = e instanceof Error && e.message.includes("safe relative path")
+}
+assert(threwOnUnsafeGpuPath, "Sno GPU rejects unsafe gpuPath")
+
 // Provider options propagate effective thinking controls
 const gpuThinkingCtx: TransformKwargsContext = {
   model: "qwen3.6-27b-reason",

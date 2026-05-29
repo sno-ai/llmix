@@ -509,6 +509,68 @@ async function testCircuitBreakerScopedByEffectiveBaseUrl(): Promise<void> {
   );
 }
 
+async function testSnoGpuPipelineAcceptsUnknownSafeGpuPath(): Promise<void> {
+  let callCount = 0;
+  let capturedContext: DispatchContext | undefined;
+  const dispatch = async (ctx: DispatchContext): Promise<ProviderResult> => {
+    callCount++;
+    capturedContext = ctx;
+    return { content: String(ctx.kwargs["baseUrl"]), model: ctx.model, usage: makeUsage() };
+  };
+
+  const pipeline = new CallPipeline(makePipelineConfig(dispatch));
+  pipeline.setKeyPool("sno-gpu", new KeyPool(["internal-token"]));
+  const result = await pipeline.call({
+    config: makeConfig({
+      provider: "sno-gpu",
+      model: "qwen3.6-27b-reason",
+      baseUrl: "https://gpu.example.com",
+      providerOptions: {
+        "sno-gpu": { gpuPath: "future-safe-path" },
+      },
+    }),
+    messages: [{ role: "user", content: "extract" }],
+  });
+
+  assertEqual(result.success, true, "sno-gpu custom path: pipeline succeeds");
+  assertEqual(callCount, 1, "sno-gpu custom path: dispatch called once");
+  assertEqual(
+    capturedContext?.kwargs["baseUrl"],
+    "https://gpu.example.com/future-safe-path/v1",
+    "sno-gpu custom path: dispatch receives routed baseUrl",
+  );
+  assertEqual(capturedContext?.apiKey, "internal-token", "sno-gpu custom path: dispatch receives key");
+}
+
+async function testSnoGpuPipelineRejectsUnsafeGpuPathBeforeDispatch(): Promise<void> {
+  let callCount = 0;
+  const dispatch = async (_ctx: DispatchContext): Promise<ProviderResult> => {
+    callCount++;
+    return { content: "should not run", model: "qwen3.6-27b-reason", usage: makeUsage() };
+  };
+
+  const pipeline = new CallPipeline(makePipelineConfig(dispatch));
+  pipeline.setKeyPool("sno-gpu", new KeyPool(["internal-token"]));
+  const result = await pipeline.call({
+    config: makeConfig({
+      provider: "sno-gpu",
+      model: "qwen3.6-27b-reason",
+      baseUrl: "https://gpu.example.com",
+      providerOptions: {
+        "sno-gpu": { gpuPath: "../escape" },
+      },
+    }),
+    messages: [{ role: "user", content: "extract" }],
+  });
+
+  assertEqual(result.success, false, "sno-gpu unsafe path: pipeline returns failure");
+  assertEqual(callCount, 0, "sno-gpu unsafe path: dispatch is not called");
+  assert(
+    result.error?.includes("safe relative path") ?? false,
+    "sno-gpu unsafe path: error explains safe relative path requirement",
+  );
+}
+
 async function testCacheKeyIncludesEffectiveBaseUrl(): Promise<void> {
   let callCount = 0;
   const cache = new TwoTierCache("memory", { maxItems: 8, ttlSeconds: 60 });
@@ -641,6 +703,8 @@ async function main(): Promise<void> {
   await testHalfOpenCountsPerAdmittedExecution();
   await testHalfOpenCountsFailedRetrySequenceOnce();
   await testCircuitBreakerScopedByEffectiveBaseUrl();
+  await testSnoGpuPipelineAcceptsUnknownSafeGpuPath();
+  await testSnoGpuPipelineRejectsUnsafeGpuPathBeforeDispatch();
   await testCacheKeyIncludesEffectiveBaseUrl();
   await testSingleflightFallbackKeyIncludesBaseUrl();
   await testCacheSkippedWhenResponseHasToolCalls();
@@ -651,4 +715,4 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+await main();
