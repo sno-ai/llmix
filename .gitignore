@@ -32,6 +32,7 @@ internal/ai-doc
 # Rust
 packages/llmix/rust/target/
 packages/mda-config/rust/target/
+rust/llmix-rs/target/
 .claude/*
 .codex/*
 openspec/*
