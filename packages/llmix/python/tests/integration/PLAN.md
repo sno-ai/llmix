@@ -128,6 +128,7 @@ the active integration gate.
 |---|------|----------------|--------|
 | 4.1 | Extract path — qwen3.6-27b-extract via /extract/v1 | GPU path routing works | success=True, model field correct |
 | 4.2 | Reason path — qwen3.6-27b-reason via /reason/v1 | Dual-GPU routing | success=True, different model |
+| 4.2a | Graph extract path — qwen3.6-27b-reason via /graph-extract/v1 | 5090 structured extraction routing | success=True, model field correct |
 | 4.3 | Path traversal — gpuPath="../../etc/passwd" | Path validation rejects | ValueError raised, no request sent |
 | 4.4 | Thinking enabled — enableThinking=true on Qwen3.6 | Thinking mode activation | Response contains `<think>` blocks |
 | 4.5 | Thinking disabled — enableThinking=false | Default no-thinking mode | No `<think>` tags in raw response |

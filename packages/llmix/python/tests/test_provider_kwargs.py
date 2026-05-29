@@ -289,6 +289,45 @@ assert_eq(
     "Sno GPU strips existing /v1 before reconstructing with gpu_path",
 )
 
+gpu_ctx_graph_extract = {
+    "model": "qwen3.6-27b-reason",
+    "provider": "sno-gpu",
+    "base_url": "https://gpu.example.com/v1",
+    "provider_options": {"sno-gpu": {"gpu_path": "graph-extract"}},
+}
+gpu_result4 = sno_gpu_transform_kwargs(gpu_ctx_graph_extract, {})  # type: ignore[arg-type]
+assert_eq(
+    gpu_result4["base_url"] == "https://gpu.example.com/graph-extract/v1",
+    "Sno GPU constructs URL with graph-extract gpu_path",
+)
+
+gpu_ctx_future_path = {
+    "model": "qwen3.6-27b-reason",
+    "provider": "sno-gpu",
+    "base_url": "https://gpu.example.com/v1",
+    "provider_options": {"sno-gpu": {"gpu_path": "future-safe-path"}},
+}
+gpu_result5 = sno_gpu_transform_kwargs(gpu_ctx_future_path, {})  # type: ignore[arg-type]
+assert_eq(
+    gpu_result5["base_url"] == "https://gpu.example.com/future-safe-path/v1",
+    "Sno GPU constructs URL with unknown safe gpu_path",
+)
+
+threw_on_unsafe_gpu_path = False
+try:
+    sno_gpu_transform_kwargs(
+        {
+            "model": "qwen3.6-27b-reason",
+            "provider": "sno-gpu",
+            "base_url": "https://gpu.example.com",
+            "provider_options": {"sno-gpu": {"gpu_path": "../../etc/passwd"}},
+        },
+        {},
+    )
+except ValueError as exc:
+    threw_on_unsafe_gpu_path = "safe relative path" in str(exc)
+assert_eq(threw_on_unsafe_gpu_path, "Sno GPU rejects unsafe gpu_path")
+
 # =============================================================================
 # Registry has expected entries
 # =============================================================================

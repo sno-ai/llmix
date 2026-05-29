@@ -5,7 +5,7 @@ Every test makes a REAL HTTP call to the SnoGPU endpoint (on-prem GPU).
 No mocking. Requires GPU_BASE_URL and SNO_LLM_API_KEY env vars.
 
 Tests cover:
-  - GPU path routing (/extract/v1, /reason/v1)
+  - GPU path routing (/extract/v1, /reason/v1, /graph-extract/v1)
   - Path traversal validation
   - Thinking mode activation/deactivation
   - Auth header injection
@@ -51,6 +51,7 @@ def _gpu_base_url() -> str:
 _GPU_PATH_MODELS = {
     "extract": "qwen3.6-27b-extract",
     "reason": "qwen3.6-27b-reason",
+    "graph-extract": "qwen3.6-27b-reason",
 }
 
 
@@ -115,6 +116,24 @@ async def test_4_2_reason_path():
     assert_true(len(result.model) > 0, "4.2 model field populated")
     record = inst.records[-1]
     assert_contains(record.kwargs.get("base_url", ""), "reason", "4.2 base_url contains 'reason'")
+
+
+# ---------------------------------------------------------------------------
+# 4.2a Graph extract path — qwen3.6-27b-reason via /graph-extract/v1
+# ---------------------------------------------------------------------------
+
+@skip_unless("GPU_BASE_URL", "SNO_LLM_API_KEY")
+async def test_4_2a_graph_extract_path():
+    pipeline, inst = make_real_pipeline(sno_gpu_dispatch, "sno-gpu", api_key="not-needed")
+    result = await pipeline.call(_sno_gpu_call_input(
+        gpu_path="graph-extract",
+        messages=[{"role": "user", "content": "What is 9 + 10? Reply with just the number."}],
+        max_output_tokens=50,
+    ))
+    assert_success(result, "4.2a graph-extract path")
+    assert_true(len(result.model) > 0, "4.2a model field populated")
+    record = inst.records[-1]
+    assert_contains(record.kwargs.get("base_url", ""), "graph-extract", "4.2a base_url contains 'graph-extract'")
 
 
 # ---------------------------------------------------------------------------

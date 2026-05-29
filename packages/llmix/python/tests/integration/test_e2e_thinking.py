@@ -76,8 +76,11 @@ def _sno_gpu_transform_workaround(ctx: TransformKwargsContext, kwargs: dict[str,
         raise ValueError("sno-gpu provider requires base_url in provider_options['sno-gpu']")
 
     if gpu_path:
-        if ".." in gpu_path or not re.match(r"^[a-zA-Z0-9_/-]+$", gpu_path):
-            raise ValueError(f"Invalid gpu_path: {gpu_path!r}")
+        if len(gpu_path) > 256 or ".." in gpu_path or not re.fullmatch(r"^[a-zA-Z0-9_/-]+$", gpu_path):
+            raise ValueError(
+                f"Invalid gpu_path: {gpu_path!r}. "
+                "Must be a safe relative path using letters, digits, '_', '-', or '/'."
+            )
         kwargs["base_url"] = f"{base}/{gpu_path}/v1"
     else:
         kwargs["base_url"] = f"{base}/v1"

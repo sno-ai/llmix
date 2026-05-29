@@ -11,6 +11,7 @@ from typing import Any, cast
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import llmix.dispatchers as dispatchers
+import llmix.providers.onprem_gpu_client as onprem_gpu_client
 from llmix.pipeline import DispatchInput
 from llmix.providers.base import LLMResponse
 
@@ -331,6 +332,80 @@ async def test_resolve_base_url_accepts_snake_case_from_loader() -> None:
     )
 
 
+async def test_provider_dispatchers_forward_custom_base_url_paths() -> None:
+    init_calls: list[dict[str, Any]] = []
+
+    class InitRecordingClient(RecordingClient):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__()
+            init_calls.append(dict(kwargs))
+
+    original_load = dispatchers._load_provider_attr
+
+    def fake_load(name: str) -> Any:
+        if name in {"AsyncOpenAIClient", "AsyncAnthropicClient", "OpenRouterClient"}:
+            return InitRecordingClient
+        return original_load(name)
+
+    dispatchers._load_provider_attr = fake_load
+    try:
+        await dispatchers.openai_dispatch()(
+            make_ctx(
+                provider="openai",
+                model="gpt-4.1",
+                base_url="https://proxy.example.com/openai/custom/v9",
+            )
+        )
+        await dispatchers.anthropic_dispatch()(
+            make_ctx(
+                provider="anthropic",
+                model="claude-sonnet-4-5",
+                base_url="https://proxy.example.com/anthropic/custom/v9",
+            )
+        )
+        await dispatchers.openrouter_dispatch()(
+            make_ctx(
+                provider="openrouter",
+                model="deepseek-v4-flash",
+                base_url="https://proxy.example.com/openrouter/custom/v9",
+            )
+        )
+    finally:
+        dispatchers._load_provider_attr = original_load
+
+    assert_eq(init_calls[0]["base_url"], "https://proxy.example.com/openai/custom/v9", "openai dispatch: custom base URL path forwarded")
+    assert_eq(
+        init_calls[1]["base_url"],
+        "https://proxy.example.com/anthropic/custom/v9",
+        "anthropic dispatch: custom base URL path forwarded",
+    )
+    assert_eq(
+        init_calls[2]["base_url"],
+        "https://proxy.example.com/openrouter/custom/v9",
+        "openrouter dispatch: custom base URL path forwarded",
+    )
+
+
+def test_sno_gpu_path_validation_is_syntactic_only() -> None:
+    original_base_url = onprem_gpu_client.SNO_GPU_BASE_URL
+    onprem_gpu_client.SNO_GPU_BASE_URL = "https://gpu.example.com"
+    try:
+        assert_eq(
+            onprem_gpu_client.build_gpu_base_url("future-safe-path"),
+            "https://gpu.example.com/future-safe-path/v1",
+            "sno-gpu path validation: unknown safe path builds routed base URL",
+        )
+
+        raised = False
+        try:
+            onprem_gpu_client.build_gpu_base_url("../../etc/passwd")
+        except ValueError as exc:
+            raised = "gpu_path" in str(exc) and "safe relative path" in str(exc)
+        assert_true(raised, "sno-gpu path validation: unsafe path still rejected")
+    finally:
+        onprem_gpu_client.SNO_GPU_BASE_URL = original_base_url
+
+
 async def test_set_key_pool_rejects_prebuilt_client_dispatch() -> None:
     """set_key_pool must raise when the dispatch was built with client=,
     because KeyPool rotation would silently corrupt on auth failures. (GH #7)
@@ -504,6 +579,8 @@ async def main() -> None:
     await test_novita_dispatch_forwards_sampling_controls()
     await test_novita_dispatch_builds_client_with_thinking_controls()
     await test_resolve_base_url_accepts_snake_case_from_loader()
+    await test_provider_dispatchers_forward_custom_base_url_paths()
+    test_sno_gpu_path_validation_is_syntactic_only()
     await test_set_key_pool_rejects_prebuilt_client_dispatch()
     await test_factory_without_client_does_not_gate()
     await test_gemini_client_dispatch_rejects_google_pool()
