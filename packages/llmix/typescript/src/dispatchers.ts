@@ -59,6 +59,12 @@ type OpenAiCompatibleProvider = ((modelId: string) => LanguageModel) & {
 type ResponseFormatConfig =
   | { type: "text" }
   | { type: "json"; schema?: JSONValue; name?: string; description?: string };
+type OpenAiFunctionTool = {
+  type: "function";
+  function: Record<string, unknown> & {
+    name: string;
+  };
+};
 type OpenRouterMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content?: unknown;
@@ -253,9 +259,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isOpenAiFunctionTool(value: unknown): value is OpenAiFunctionTool {
+  if (!isRecord(value) || value["type"] !== "function") {
+    return false;
+  }
+  const fn = value["function"];
+  return isRecord(fn) && typeof fn["name"] === "string" && fn["name"].length > 0;
+}
+
+function resolveOpenAiFunctionTools(tools: readonly unknown[]): ToolSet | undefined {
+  const entries = tools
+    .filter(isOpenAiFunctionTool)
+    .map((tool) => {
+      const description = typeof tool.function["description"] === "string" ? tool.function["description"] : undefined;
+      const parameters = tool.function["parameters"];
+      return [
+        tool.function.name,
+        {
+          ...(description !== undefined ? { description } : {}),
+          ...(parameters !== undefined ? { inputSchema: parameters as JSONValue } : {}),
+        },
+      ] as const;
+    });
+
+  return entries.length > 0 ? Object.fromEntries(entries) as unknown as ToolSet : undefined;
+}
+
 function resolveTools(kwargs: Record<string, unknown>): ToolSet | undefined {
   const tools = kwargs["tools"];
-  if (tools && typeof tools === "object") {
+  if (Array.isArray(tools)) {
+    return resolveOpenAiFunctionTools(tools);
+  }
+  if (isRecord(tools)) {
     return tools as ToolSet;
   }
   return undefined;

@@ -9,6 +9,11 @@ LLMix uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Convert OpenAI-style function tool arrays into AI SDK tool maps in the
+  TypeScript dispatch helpers.
+
 ## [2.0.7] — 2026-05-29
 
 ### Added

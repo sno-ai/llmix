@@ -146,6 +146,20 @@ const result = await dispatch({
     seed: 7,
     max_tokens: 256,
     response_format: { type: "json_object" },
+    tools: [
+      {
+        type: "function",
+        function: {
+          name: "lookup_weather",
+          description: "Look up weather.",
+          parameters: {
+            type: "object",
+            properties: { city: { type: "string" } },
+            required: ["city"],
+          },
+        },
+      },
+    ],
   },
   config: {
     provider: "openai",
@@ -168,6 +182,20 @@ assertDeepEq(capturedOptions?.["stopSequences"], ["END"], "stop forwarded as sto
 assertEq(capturedOptions?.["seed"], 7, "seed forwarded");
 assertEq(capturedOptions?.["maxOutputTokens"], 256, "max_tokens forwarded as maxOutputTokens");
 assertDeepEq(capturedOptions?.["output"], { kind: "json" }, "json_object response_format forwarded via output");
+assertDeepEq(
+  capturedOptions?.["tools"],
+  {
+    lookup_weather: {
+      description: "Look up weather.",
+      inputSchema: {
+        type: "object",
+        properties: { city: { type: "string" } },
+        required: ["city"],
+      },
+    },
+  },
+  "OpenAI function tools forwarded as AI SDK tool map",
+);
 assertEq(
   requireCreateOpenAIOptions()["baseURL"],
   "https://api.openai.com/v1",
