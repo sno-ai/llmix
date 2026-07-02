@@ -44,6 +44,9 @@ function sortJsonValue(value: JsonValue | JsonObject): JsonValue | JsonObject {
 
 	const sorted: JsonObject = {}
 	for (const [key, item] of Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) {
+		if (item === undefined) {
+			continue
+		}
 		sorted[key] = sortJsonValue(item)
 	}
 	return sorted

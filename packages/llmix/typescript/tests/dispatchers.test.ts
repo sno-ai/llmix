@@ -63,9 +63,16 @@ mock.module("ai", () => ({
     capturedOptions = options;
     return {
       text: "ok",
-      response: { modelId: "gpt-4o-mini" },
-      usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
-      toolCalls: [],
+      finalStep: {
+        response: { modelId: "gpt-4o-mini" },
+        usage: {
+          inputTokens: 1,
+          outputTokens: 2,
+          totalTokens: 3,
+          inputTokenDetails: { cacheReadTokens: 1 },
+        },
+        toolCalls: [],
+      },
     };
   },
 }));
@@ -135,7 +142,10 @@ const result = await dispatch({
   provider: "openai",
   model: "gpt-4o-mini",
   apiKey: "runtime-key",
-  messages: [{ role: "user", content: "Say hello." }],
+  messages: [
+    { role: "system", content: "Be concise." },
+    { role: "user", content: "Say hello." },
+  ],
   kwargs: {
     temperature: 0.2,
     top_p: 0.9,
@@ -154,6 +164,18 @@ const result = await dispatch({
 });
 
 assertEq(result.content, "ok", "openai dispatch returns normalized content");
+assertEq(result.model, "gpt-4o-mini", "openai dispatch returns final step model");
+assertDeepEq(
+  result.usage,
+  { inputTokens: 1, outputTokens: 2, totalTokens: 3, cachedInputTokens: 1 },
+  "openai dispatch returns final step usage",
+);
+assertEq(capturedOptions?.["instructions"], "Be concise.", "system message forwarded as instructions");
+assertDeepEq(
+  capturedOptions?.["messages"],
+  [{ role: "user", content: "Say hello." }],
+  "system message removed from AI SDK messages",
+);
 assertEq(
   (capturedOptions?.["model"] as { provider?: string } | undefined)?.provider,
   "openai-responses",

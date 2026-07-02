@@ -9,6 +9,16 @@ LLMix uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-07-02
+
+### Changed
+
+- Upgraded the TypeScript dispatcher integration to AI SDK 7 and `@ai-sdk/*` 4.
+- Raised the TypeScript LLMix runtime requirement to Node.js 22 or newer.
+- Converted system-role messages to AI SDK 7 `instructions` before generation.
+- Normalized generation metadata from the final AI SDK step for model, usage,
+  and tool-call reporting.
+
 ## [2.0.7] — 2026-05-29
 
 ### Added

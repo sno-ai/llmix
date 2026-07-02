@@ -1,4 +1,4 @@
-import type { JSONValue, SharedV3ProviderOptions as AiProviderOptions } from "@ai-sdk/provider";
+import type { JSONValue, SharedV4ProviderOptions as AiProviderOptions } from "@ai-sdk/provider";
 import type { LanguageModel, ModelMessage, ToolSet } from "ai";
 import {
   getAnthropicApiKey,
@@ -83,6 +83,10 @@ type OpenRouterChatResult = {
   }>;
   model?: string;
   usage?: unknown;
+};
+type GenerationMessages = {
+  messages: ModelMessage[];
+  instructions?: string;
 };
 
 function requireApiKey(
@@ -294,6 +298,31 @@ function extractUsage(usage: unknown): LLMUsage {
       ? inputTokenDetails["cacheReadTokens"]
       : undefined;
   return { inputTokens, outputTokens, totalTokens, cachedInputTokens };
+}
+
+function splitGenerationMessages(messages: ModelMessage[]): GenerationMessages {
+  const nextMessages: ModelMessage[] = [];
+  const instructions: string[] = [];
+
+  for (const message of messages) {
+    if (isRecord(message) && message["role"] === "system") {
+      const content = message["content"];
+      if (typeof content !== "string") {
+        throw new Error("AI SDK v7 requires system messages to use string content for LLMix instructions");
+      }
+      instructions.push(content);
+      continue;
+    }
+    nextMessages.push(message);
+  }
+
+  if (instructions.length === 0) {
+    return { messages: nextMessages };
+  }
+  return {
+    messages: nextMessages,
+    instructions: instructions.join("\n\n"),
+  };
 }
 
 function normalizeResult(
@@ -714,7 +743,7 @@ async function generateWithModel(
   providerOptions?: AiProviderOptions,
 ): Promise<ProviderResult> {
   const { generateText, Output } = await getAi();
-  const messages = ctx.messages as ModelMessage[];
+  const { messages, instructions } = splitGenerationMessages(ctx.messages as ModelMessage[]);
   const temperature = typeof ctx.kwargs["temperature"] === "number" ? ctx.kwargs["temperature"] : undefined;
   const seed = typeof ctx.kwargs["seed"] === "number" ? ctx.kwargs["seed"] : undefined;
   const maxOutputTokens = resolveMaxOutputTokens(ctx.kwargs);
@@ -746,6 +775,7 @@ async function generateWithModel(
 
   const result = await generateText({
     model,
+    ...(instructions !== undefined ? { instructions } : {}),
     messages,
     ...(temperature !== undefined ? { temperature } : {}),
     ...(topP !== undefined ? { topP } : {}),
@@ -759,7 +789,12 @@ async function generateWithModel(
     ...(tools ? { tools } : {}),
     ...(providerOptions ? { providerOptions } : {}),
   });
-  return normalizeResult(result.text, result.response.modelId ?? ctx.model, result.usage, result.toolCalls as unknown[] | undefined);
+  return normalizeResult(
+    result.text,
+    result.finalStep.response.modelId ?? ctx.model,
+    result.finalStep.usage,
+    result.finalStep.toolCalls as unknown[] | undefined,
+  );
 }
 
 export function openaiDispatch(): ProviderDispatchFn {
@@ -792,8 +827,8 @@ export function anthropicDispatch(): ProviderDispatchFn {
 
 export function geminiDispatch(): ProviderDispatchFn {
   return async (ctx) => {
-    const { createGoogleGenerativeAI } = await getGoogleSdk();
-    const google = createGoogleGenerativeAI({
+    const { createGoogle } = await getGoogleSdk();
+    const google = createGoogle({
       apiKey: requireApiKey(ctx.apiKey, getGeminiApiKey(), "GEMINI_API_KEY", "google"),
       baseURL: resolveBaseUrl(ctx, GOOGLE_BASE_URL),
     });

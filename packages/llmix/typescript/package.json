@@ -1,6 +1,6 @@
 {
   "name": "@snoai/llmix",
-  "version": "2.0.7",
+  "version": "2.1.0",
   "description": "Config-driven harness around your LLM SDK. MDA-driven model swap, two-tier cache, circuit breaker, key-pool rotation.",
   "author": "Sno AI",
   "license": "Apache-2.0",
@@ -18,7 +18,7 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -50,7 +50,7 @@
     "prepublishOnly": "bun run clean && bun run build"
   },
   "dependencies": {
-    "@ai-sdk/provider": "^3.0.10",
+    "@ai-sdk/provider": "^4.0.1",
     "@snoai/mda-config": "^1.1.2",
     "@openrouter/sdk": "^0.12.21",
     "lru-cache": "^11.3.0",
@@ -58,11 +58,11 @@
     "zod": "^4.4.3"
   },
   "peerDependencies": {
-    "@ai-sdk/anthropic": ">=3.0.0",
-    "@ai-sdk/google": ">=3.0.0",
-    "@ai-sdk/openai": ">=3.0.0",
+    "@ai-sdk/anthropic": ">=4.0.0",
+    "@ai-sdk/google": ">=4.0.0",
+    "@ai-sdk/openai": ">=4.0.0",
     "@anthropic-ai/sdk": ">=0.80.0",
-    "ai": ">=6.0.0",
+    "ai": ">=7.0.0",
     "ioredis": ">=5.0.0"
   },
   "peerDependenciesMeta": {
@@ -86,13 +86,13 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "^3.0.66",
-    "@ai-sdk/google": "^3.0.0",
-    "@ai-sdk/openai": "^3.0.0",
+    "@ai-sdk/anthropic": "^4.0.5",
+    "@ai-sdk/google": "^4.0.6",
+    "@ai-sdk/openai": "^4.0.5",
     "@anthropic-ai/sdk": "^0.98.0",
     "@types/node": "^25.6.2",
     "@types/proper-lockfile": "^4.1.4",
-    "ai": "^6.0.0",
+    "ai": "^7.0.11",
     "ioredis": "^5.4.1",
     "typescript": "^6.0.3"
   },

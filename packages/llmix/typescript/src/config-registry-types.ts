@@ -17,7 +17,7 @@ export const SHA256_PATTERN = /^[a-f0-9]{64}$/
 export type ConfigRegistryJsonValue = null | boolean | number | string | ConfigRegistryJsonValue[] | ConfigRegistryJsonObject
 
 export interface ConfigRegistryJsonObject {
-	[key: string]: ConfigRegistryJsonValue
+	[key: string]: ConfigRegistryJsonValue | undefined
 }
 
 export type JsonValue = ConfigRegistryJsonValue

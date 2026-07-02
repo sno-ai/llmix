@@ -6,7 +6,7 @@
  * Investigation results (Tasks 42-44):
  *
  * OpenAI (Task 42-43):
- *   AI SDK v6 doesn't directly expose HTTP transport configuration.
+ *   AI SDK doesn't directly expose an HTTP/2 transport toggle.
  *   To use HTTP/2 with OpenAI in Node.js, options are:
  *   1. Use the `openai` SDK directly with a custom `fetch` that uses undici HTTP/2
  *   2. Override the `fetch` option on the AI SDK provider
@@ -78,7 +78,7 @@ export function getProviderTransport(provider: string): ProviderTransportConfig 
  * The Python side uses httpx.AsyncClient(http2=True) which works today.
  */
 export function createOpenAITransport(): undefined {
-  // TODO: Implement once AI SDK v6 exposes transport hooks or we adopt undici.
+  // TODO: Implement once AI SDK exposes an HTTP/2 transport hook or we adopt undici.
   // See investigation notes in module docstring.
   return undefined;
 }

@@ -2,7 +2,7 @@
  * LLMix Types
  *
  * Type definitions for the LLM Config Loader package.
- * Schema mirrors AI SDK v6 exactly - no parameter renaming required.
+ * Schema mirrors AI SDK v7 generation options where LLMix passes values through.
  *
  * @see https://ai-sdk.dev/docs/reference/ai-sdk-core/generate-text
  */
@@ -114,7 +114,7 @@ export interface TimeoutConfig {
 }
 
 // =============================================================================
-// LLM CONFIG SCHEMA - AI SDK V6 ALIGNED
+// LLM CONFIG SCHEMA - AI SDK V7 ALIGNED
 // =============================================================================
 
 /**
@@ -135,7 +135,7 @@ export type Provider =
 export type ProviderOrUnknown = Provider | "unknown";
 
 /**
- * Common AI SDK v6 parameters
+ * Common AI SDK v7 parameters
  *
  * These map directly to generateText/streamText params.
  * @see https://ai-sdk.dev/docs/reference/ai-sdk-core/generate-text
@@ -180,7 +180,7 @@ export interface CommonParams {
 }
 
 // =============================================================================
-// PROVIDER-SPECIFIC OPTIONS - AI SDK V6 ALIGNED
+// PROVIDER-SPECIFIC OPTIONS - AI SDK V7 ALIGNED
 // =============================================================================
 
 /**
@@ -383,7 +383,7 @@ export interface SnoGpuProviderOptions {
 /**
  * Union type for all provider options
  *
- * Keys match AI SDK v6 providerOptions structure.
+ * Keys match AI SDK v7 providerOptions structure.
  */
 export interface ProviderOptions {
   openai?: OpenAIProviderOptions | undefined;
@@ -400,8 +400,8 @@ export interface ProviderOptions {
 /**
  * Full LLM configuration schema
  *
- * This schema mirrors AI SDK v6 exactly - values are passed directly
- * to generateText/streamText without translation.
+ * This schema mirrors AI SDK v7 generation options where values are passed directly
+ * to generateText/streamText.
  */
 export interface LLMConfig {
   /** LLM provider (required) */
@@ -410,7 +410,7 @@ export interface LLMConfig {
   /** Provider-specific model ID (required) */
   model: string;
 
-  /** Common AI SDK v6 parameters */
+  /** Common AI SDK v7 parameters */
   common?: CommonParams | undefined;
 
   /** Provider-specific options */
