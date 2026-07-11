@@ -90,7 +90,7 @@
     "@ai-sdk/google": "^4.0.6",
     "@ai-sdk/openai": "^4.0.5",
     "@anthropic-ai/sdk": "^0.98.0",
-    "@types/node": "^25.6.2",
+    "@types/node": "^26.1.1",
     "@types/proper-lockfile": "^4.1.4",
     "ai": "^7.0.11",
     "ioredis": "^5.4.1",
