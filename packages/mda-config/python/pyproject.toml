@@ -36,7 +36,7 @@ dev = [
   "pyright>=1.1,<2",
   "pytest>=9,<10",
   "ruff>=0.14,<1",
-  "twine>=6,<7",
+  "twine>=6,<8",
 ]
 
 [project.urls]

@@ -52,7 +52,7 @@
   "dependencies": {
     "@ai-sdk/provider": "^4.0.1",
     "@snoai/mda-config": "^1.1.2",
-    "@openrouter/sdk": "^0.12.21",
+    "@openrouter/sdk": "^1.1.19",
     "lru-cache": "^11.3.0",
     "proper-lockfile": "^4.1.2",
     "zod": "^4.4.3"
@@ -89,12 +89,12 @@
     "@ai-sdk/anthropic": "^4.0.5",
     "@ai-sdk/google": "^4.0.6",
     "@ai-sdk/openai": "^4.0.5",
-    "@anthropic-ai/sdk": "^0.98.0",
-    "@types/node": "^25.6.2",
+    "@anthropic-ai/sdk": "^0.115.0",
+    "@types/node": "^26.1.2",
     "@types/proper-lockfile": "^4.1.4",
     "ai": "^7.0.11",
     "ioredis": "^5.4.1",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   },
   "keywords": [
     "llm",

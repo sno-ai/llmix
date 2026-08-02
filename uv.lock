@@ -1055,7 +1055,7 @@ requires-dist = [
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
-    { name = "redis", marker = "extra == 'redis'", specifier = ">=6.4.0,<8" },
+    { name = "redis", marker = "extra == 'redis'", specifier = ">=6.4.0,<9" },
     { name = "snoai-mda-config", editable = "packages/mda-config/python" },
 ]
 provides-extras = ["redis", "dev"]
@@ -1094,7 +1094,7 @@ dev = [
     { name = "pyright", specifier = ">=1.1,<2" },
     { name = "pytest", specifier = ">=9,<10" },
     { name = "ruff", specifier = ">=0.14,<1" },
-    { name = "twine", specifier = ">=6,<7" },
+    { name = "twine", specifier = ">=6,<8" },
 ]
 
 [[package]]

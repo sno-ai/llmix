@@ -49,15 +49,15 @@
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "js-yaml": "^4.1.0",
-    "sigstore": "^4.1.0"
+    "sigstore": "^5.0.0"
   },
   "peerDependencies": {
     "zod": "^3.22.0 || ^4.0.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^25.9.1",
-    "typescript": "^6.0.3",
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.7",
     "zod": "^3.23.0"
   },
