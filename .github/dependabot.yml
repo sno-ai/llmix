@@ -1,18 +1,11 @@
 version: 2
 updates:
   - package-ecosystem: "npm"
-    directory: "/packages/llmix/typescript"
+    directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     labels: ["dependencies", "typescript"]
-
-  - package-ecosystem: "npm"
-    directory: "/packages/mda-config/typescript"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    labels: ["dependencies", "typescript", "mda-config"]
 
   - package-ecosystem: "pip"
     directory: "/packages/llmix/python"
