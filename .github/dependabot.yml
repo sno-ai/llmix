@@ -6,6 +6,9 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     labels: ["dependencies", "typescript"]
+    ignore:
+      - dependency-name: "js-yaml"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "pip"
     directory: "/packages/llmix/python"
@@ -27,6 +30,9 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     labels: ["dependencies", "rust"]
+    ignore:
+      - dependency-name: "lru"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "cargo"
     directory: "/packages/mda-config/rust"
