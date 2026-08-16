@@ -20,6 +20,8 @@
  * @see https://ai-sdk.dev/providers/ai-sdk-providers/openai
  */
 
+import capabilityRules from "../data/model-capabilities.json" with { type: "json" };
+import { stripVendorPrefix } from "./model-id.js";
 import type { OpenAIProviderOptions } from "./types.js";
 
 /**
@@ -37,65 +39,48 @@ export interface ModelCapabilities {
 }
 
 /**
- * Check if model is a reasoning model
+ * Classification rules, compiled once from data/model-capabilities.json.
  *
- * Based on AI SDK's isReasoningModel() but narrowed for o-series:
- * ```js
- * // AI SDK original: modelId.startsWith("o")
- * // Narrowed to: /^o\d/.test(modelId) — matches o1, o3, o4 but not opus, omni, orca
- * ```
+ * `^o\d` is narrower than the AI SDK's `startsWith("o")` on purpose: it matches
+ * o1/o3/o4 but not opus, omni, or orca.
  *
- * Extended to also include codex- and computer-use- prefixes from getResponsesModelConfig()
+ * `fixedTemperature` is deliberately a separate list from `reasoningModel`.
+ * Being a reasoning model and being forbidden to send a temperature are
+ * different facts — the temperature restriction belongs to the OpenAI
+ * families, and a reasoning model from another vendor keeps its temperature.
  */
-function isReasoningModel(modelId: string): boolean {
-  const lower = modelId.toLowerCase();
-  // TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
-  // Reasoning models: o{digit}* (o1, o3, o4...), gpt-5*, codex-*, computer-use-*
-  // All gpt-5 variants are reasoning models — none support temperature.
-  return (
-    /^o\d/.test(lower) ||
-    lower.startsWith("gpt-5") ||
-    lower.startsWith("codex-") ||
-    lower.startsWith("computer-use")
-  );
-}
+const REASONING_PATTERNS = capabilityRules.reasoningModelPrefixes.map((p) => new RegExp(p));
+const TEXT_VERBOSITY_PATTERNS = capabilityRules.textVerbosityPrefixes.map((p) => new RegExp(p));
+const FIXED_TEMPERATURE_PATTERNS = capabilityRules.fixedTemperaturePrefixes.map(
+  (p) => new RegExp(p)
+);
+const MODEL_CLASS_PATTERNS = capabilityRules.modelClassRules.map((rule) => ({
+  pattern: new RegExp(rule.prefix),
+  class: rule.class as ModelCapabilities["modelClass"],
+}));
+const DEFAULT_MODEL_CLASS = capabilityRules.defaultModelClass as ModelCapabilities["modelClass"];
 
-/**
- * Check if model supports textVerbosity
- *
- * Currently only GPT-5 series supports textVerbosity.
- * o-series and other reasoning models do NOT support it.
- */
-function supportsTextVerbosity(modelId: string): boolean {
-  const lower = modelId.toLowerCase();
-  return lower.startsWith("gpt-5");
+function matchesAny(patterns: readonly RegExp[], normalizedId: string): boolean {
+  return patterns.some((pattern) => pattern.test(normalizedId));
 }
 
 /**
  * Detect model capabilities based on model ID
  *
- * Uses same logic as AI SDK's internal implementation.
+ * Rules come from data/model-capabilities.json, which Python consumes too.
+ * The id is normalized first so a gateway-addressed model
+ * (`openai/gpt-5.6-luna`) classifies identically to its bare form.
  */
 export function getModelCapabilities(modelId: string): ModelCapabilities {
-  const lower = modelId.toLowerCase();
-  const reasoning = isReasoningModel(modelId);
+  const normalized = stripVendorPrefix(modelId);
 
-  // Determine model class for logging
-  let modelClass: ModelCapabilities["modelClass"] = "standard";
-  if (lower.startsWith("gpt-5")) {
-    modelClass = "gpt5";
-  // TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
-  } else if (/^o\d/.test(lower)) {
-    modelClass = "o-series";
-  } else if (lower.startsWith("codex-") || lower.startsWith("computer-use")) {
-    modelClass = "codex";
-  }
+  const matchedClass = MODEL_CLASS_PATTERNS.find(({ pattern }) => pattern.test(normalized));
 
   return {
-    isReasoningModel: reasoning,
-    supportsTextVerbosity: supportsTextVerbosity(modelId),
-    fixedTemperature: reasoning,
-    modelClass,
+    isReasoningModel: matchesAny(REASONING_PATTERNS, normalized),
+    supportsTextVerbosity: matchesAny(TEXT_VERBOSITY_PATTERNS, normalized),
+    fixedTemperature: matchesAny(FIXED_TEMPERATURE_PATTERNS, normalized),
+    modelClass: matchedClass?.class ?? DEFAULT_MODEL_CLASS,
   };
 }
 

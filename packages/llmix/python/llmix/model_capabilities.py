@@ -17,12 +17,57 @@ Parameter Support:
 Ported from package/llmix/src/model-capabilities.ts
 """
 
+import json
 import re
+from importlib import resources
 from typing import Literal, TypedDict, cast
 
+from llmix.model_id import strip_vendor_prefix
 from llmix.types import OpenAIProviderOptions
 
 ModelClass = Literal["gpt5", "o-series", "codex", "standard"]
+
+
+def _load_capability_rules() -> dict[str, object]:
+    """Load classification rules from packaged JSON data.
+
+    The same file ships in the TypeScript package at ``data/model-capabilities.json``;
+    the two copies are kept byte-identical the way the two ``pricing.json`` files are.
+    """
+    json_path = resources.files("llmix").joinpath("model-capabilities.json")
+    return cast("dict[str, object]", json.loads(json_path.read_text(encoding="utf-8")))
+
+
+_RULES = _load_capability_rules()
+
+
+def _compile(key: str) -> tuple[re.Pattern[str], ...]:
+    patterns = cast("list[str]", _RULES[key])
+    return tuple(re.compile(pattern) for pattern in patterns)
+
+
+_REASONING_PATTERNS = _compile("reasoningModelPrefixes")
+_TEXT_VERBOSITY_PATTERNS = _compile("textVerbosityPrefixes")
+# Being a reasoning model and being forbidden to send a temperature are different
+# facts. The temperature restriction belongs to the OpenAI families; a reasoning
+# model from another vendor keeps its temperature.
+_FIXED_TEMPERATURE_PATTERNS = _compile("fixedTemperaturePrefixes")
+_MODEL_CLASS_RULES: tuple[tuple[re.Pattern[str], ModelClass], ...] = tuple(
+    (re.compile(rule["prefix"]), cast("ModelClass", rule["class"]))
+    for rule in cast("list[dict[str, str]]", _RULES["modelClassRules"])
+)
+_DEFAULT_MODEL_CLASS: ModelClass = cast("ModelClass", _RULES["defaultModelClass"])
+
+
+def _matches_any(patterns: tuple[re.Pattern[str], ...], normalized_id: str) -> bool:
+    return any(pattern.search(normalized_id) for pattern in patterns)
+
+
+def _classify(normalized_id: str) -> ModelClass:
+    for pattern, model_class in _MODEL_CLASS_RULES:
+        if pattern.search(normalized_id):
+            return model_class
+    return _DEFAULT_MODEL_CLASS
 
 
 class ModelCapabilities(TypedDict):
@@ -49,31 +94,12 @@ class FilteredParams(TypedDict, total=False):
     temperature: float
 
 
-def _is_reasoning_model(model_id: str) -> bool:
-    """Check if model is a reasoning model.
-
-    Reasoning models: o{digit}* (o1, o3, o4...), gpt-5*, codex-*, computer-use-*
-    All gpt-5 variants are reasoning models — none support temperature.
-    # TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
-    """
-    lower = model_id.lower()
-    return bool(re.match(r"^o\d", lower)) or lower.startswith(("gpt-5", "codex-", "computer-use"))
-
-
-def _supports_text_verbosity(model_id: str) -> bool:
-    """Check if model supports textVerbosity.
-
-    Currently only GPT-5 series supports textVerbosity.
-    o-series and other reasoning models do NOT support it.
-    """
-    lower = model_id.lower()
-    return lower.startswith("gpt-5")
-
-
 def get_model_capabilities(model_id: str) -> ModelCapabilities:
     """Detect model capabilities based on model ID.
 
-    Uses same logic as AI SDK's internal implementation.
+    Rules come from the packaged model-capabilities.json, which the TypeScript
+    package consumes too. The id is normalized first so a gateway-addressed
+    model (``openai/gpt-5.6-luna``) classifies identically to its bare form.
 
     Args:
         model_id: The model identifier string.
@@ -81,21 +107,15 @@ def get_model_capabilities(model_id: str) -> ModelCapabilities:
     Returns:
         ModelCapabilities with detected flags.
     """
-    lower = model_id.lower()
-    reasoning = _is_reasoning_model(model_id)
+    normalized = strip_vendor_prefix(model_id)
 
-    # Determine model class for logging
-    model_class: ModelClass = "standard"
-    if lower.startswith("gpt-5"):
-        model_class = "gpt5"
-    # TEMP: regex patch — migrate to config-driven model capabilities (see model-capabilities.json)
-    elif re.match(r"^o\d", lower):
-        model_class = "o-series"
-    elif lower.startswith(("codex-", "computer-use")):
-        model_class = "codex"
+    model_class = _classify(normalized)
 
     return ModelCapabilities(
-        is_reasoning_model=reasoning, supports_text_verbosity=_supports_text_verbosity(model_id), fixed_temperature=reasoning, model_class=model_class
+        is_reasoning_model=_matches_any(_REASONING_PATTERNS, normalized),
+        supports_text_verbosity=_matches_any(_TEXT_VERBOSITY_PATTERNS, normalized),
+        fixed_temperature=_matches_any(_FIXED_TEMPERATURE_PATTERNS, normalized),
+        model_class=model_class,
     )
 
 

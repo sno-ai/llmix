@@ -9,6 +9,37 @@ LLMix uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-08-16
+
+### Fixed
+
+- Model capability detection and pricing lookup now strip a gateway vendor
+  prefix before matching. A model addressed as `openai/gpt-5.6-luna` or
+  `z-ai/glm-5.2` previously failed every anchored rule, so it was classified as
+  a standard model, `reasoningEffort` was silently deleted from the request, and
+  the pricing lookup returned nothing. Setting an effort level had no effect and
+  produced no warning.
+- Pricing normalization enumerated three vendor prefixes (`models/`,
+  `qwen/qwen`, `deepseek/`) and therefore lost pricing for every other vendor.
+  One shared `stripVendorPrefix` / `strip_vendor_prefix` now handles all of them.
+
+### Changed
+
+- Capability rules are read from `model-capabilities.json` instead of the
+  hardcoded regexes that duplicated it. The file already shipped in both
+  packages and claimed to be the source of parity; nothing read it. Python now
+  carries a byte-identical copy alongside `pricing.json`.
+- `fixedTemperature` is no longer an alias for `isReasoningModel`. The
+  temperature restriction belongs to the OpenAI families and now has its own
+  `fixedTemperaturePrefixes` list, so a reasoning model from another vendor
+  keeps its temperature.
+- GLM is recognised as a reasoning model, so its effort level survives.
+
+### Added
+
+- Pricing entries for `gpt-5.6-luna`, `glm-5.2`, and `deepseek-v4-flash-0731`,
+  and a refreshed price for `deepseek-v4-flash`.
+
 ## [2.1.0] — 2026-07-02
 
 ### Changed
