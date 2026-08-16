@@ -29,6 +29,6 @@
     "clean": "bun run --cwd packages/llmix/typescript clean && rm -rf packages/mda-config/typescript/dist"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0"
+    "@types/node": "^26.2.0"
   }
 }
