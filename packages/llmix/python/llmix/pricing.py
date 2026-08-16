@@ -19,6 +19,8 @@ from importlib import resources
 from math import isfinite
 from typing import TypedDict
 
+from llmix.model_id import strip_vendor_prefix
+
 
 class ModelPricing(TypedDict):
     """Pricing for a model in USD per 1M tokens."""
@@ -68,16 +70,9 @@ def normalize_model_name(name: str) -> str:
     """
     normalized = name.lower()
 
-    # Remove models/ prefix
-    if normalized.startswith("models/"):
-        normalized = normalized[7:]
-
-    # Remove Qwen/ prefix and normalize (qwen/qwen -> qwen)
-    normalized = re.sub(r"^qwen/qwen", "qwen", normalized)
-
-    # Remove OpenRouter DeepSeek provider prefix
-    if normalized.startswith("deepseek/"):
-        normalized = normalized[9:]
+    # Remove any gateway vendor prefix: models/, qwen/, deepseek/, openai/, z-ai/ ...
+    # Enumerating individual vendors silently lost pricing for every vendor not listed.
+    normalized = strip_vendor_prefix(normalized)
 
     # Strip date suffixes:
     # -2025-08-07 (OpenAI YYYY-MM-DD)

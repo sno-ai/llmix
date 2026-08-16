@@ -15,6 +15,7 @@
  */
 
 import pricingData from "../../data/pricing.json" with { type: "json" }
+import { stripVendorPrefix } from "../model-id.js"
 
 // ============================================
 // Types
@@ -85,18 +86,9 @@ const hasOwn = (key: string): boolean => Object.hasOwn(MODEL_PRICING, key)
 function normalizeModelName(name: string): string {
 	let normalized = name.toLowerCase()
 
-	// Remove models/ prefix
-	if (normalized.startsWith("models/")) {
-		normalized = normalized.slice(7)
-	}
-
-	// Remove Qwen/ prefix and normalize
-	normalized = normalized.replace(/^qwen\/qwen/, "qwen")
-
-	// Remove OpenRouter DeepSeek provider prefix
-	if (normalized.startsWith("deepseek/")) {
-		normalized = normalized.slice(9)
-	}
+	// Remove any gateway vendor prefix: models/, qwen/, deepseek/, openai/, z-ai/ ...
+	// Enumerating individual vendors silently lost pricing for every vendor not listed.
+	normalized = stripVendorPrefix(normalized)
 
 	// Strip date suffixes:
 	// -2025-08-07 (OpenAI YYYY-MM-DD)
