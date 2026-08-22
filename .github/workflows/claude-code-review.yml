@@ -51,7 +51,7 @@ jobs:
           github.event.pull_request.head.repo.full_name == github.repository &&
           github.event.pull_request.user.login != 'dependabot[bot]'
         id: claude-review
-        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+        uses: anthropics/claude-code-action@e2a4b761cd77a1138a5b41410eda9b28581f9bcd # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -176,7 +176,7 @@ jobs:
           ((github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review') &&
            github.event.pull_request.head.repo.full_name == github.repository)
         id: claude
-        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+        uses: anthropics/claude-code-action@e2a4b761cd77a1138a5b41410eda9b28581f9bcd # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
