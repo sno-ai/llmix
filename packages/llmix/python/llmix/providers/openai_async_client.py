@@ -42,7 +42,7 @@ from llmix.providers.openai_common import (
 
 # Hardcoded defaults replacing legacy MeMu config
 _DEFAULT_MAX_OUTPUT_TOKENS = 16384
-_DEFAULT_MODEL = "gpt-5-mini"
+_DEFAULT_MODEL = "gpt-5.6-terra"
 
 logger = logging.getLogger(__name__)
 
