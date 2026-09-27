@@ -9,6 +9,16 @@ LLMix uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The TypeScript dispatchers now accept OpenAI-style `tools` arrays
+  (`[{ type: "function", function: { name, description, parameters } }]`). Such an
+  array was previously passed to the AI SDK as a tool map, so the provider received a
+  tool named `0` with no description and an empty parameter schema. Each function is
+  now converted to an AI SDK tool whose JSON Schema is sent unchanged; an entry that is
+  not a named function tool raises an error. Reported by
+  [@slegarraga](https://github.com/slegarraga) in #120.
+
 ## [2.2.0] — 2026-08-16
 
 ### Fixed
