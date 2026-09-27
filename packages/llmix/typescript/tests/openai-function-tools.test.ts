@@ -1,7 +1,7 @@
 /**
  * OpenAI function tools through the real AI SDK.
  *
- * `kwargs.tools` in the OpenAI array shape must reach the provider as the same function tools.
+ * `kwargs.tools` in either OpenAI array shape must reach the provider as the same function tools.
  * Only the network endpoint is local; dispatch, the AI SDK and the OpenAI provider run for real,
  * so schema handling inside the AI SDK is exercised.
  */
@@ -62,35 +62,40 @@ const server = Bun.serve({
   },
 });
 
-const originalGpuBaseUrl = process.env["GPU_BASE_URL"];
-process.env["GPU_BASE_URL"] = `http://127.0.0.1:${server.port}`;
-try {
-  const result = await snoGpuDispatch()({
+function dispatchWithTools(tools: unknown[]) {
+  requestBody = undefined;
+  return snoGpuDispatch()({
     provider: "sno-gpu",
     model: "local-model",
     apiKey: "local-key",
     messages: [{ role: "user", content: "Weather in Paris?" }],
-    kwargs: {
-      tools: [
-        {
-          type: "function",
-          function: {
-            name: "lookup_weather",
-            description: "Look up the weather for a city.",
-            parameters: weatherParameters,
-          },
-        },
-      ],
-    },
+    kwargs: { tools },
     config: { provider: "sno-gpu", model: "local-model" },
   });
+}
 
-  const sentTools = (requestBody?.["tools"] as Array<Record<string, unknown>> | undefined)?.map((tool) => {
+function sentFunctions(): unknown {
+  return (requestBody?.["tools"] as Array<Record<string, unknown>> | undefined)?.map((tool) => {
     const fn = tool["function"] as Record<string, unknown>;
-    return { type: tool["type"], name: fn["name"], description: fn["description"], parameters: fn["parameters"] };
+    return { type: tool["type"], ...fn };
   });
+}
+
+const originalGpuBaseUrl = process.env["GPU_BASE_URL"];
+process.env["GPU_BASE_URL"] = `http://127.0.0.1:${server.port}`;
+try {
+  const result = await dispatchWithTools([
+    {
+      type: "function",
+      function: {
+        name: "lookup_weather",
+        description: "Look up the weather for a city.",
+        parameters: weatherParameters,
+      },
+    },
+  ]);
   assertDeepEq(
-    sentTools,
+    sentFunctions(),
     [
       {
         type: "function",
@@ -99,12 +104,31 @@ try {
         parameters: weatherParameters,
       },
     ],
-    "OpenAI function tool reaches the provider with its name, description and parameters",
+    "nested OpenAI function tool reaches the provider with its name, description and parameters",
   );
   assertDeepEq(
     (result.toolCalls as Array<Record<string, unknown>> | undefined)?.map((call) => [call["toolName"], call["input"]]),
     [["lookup_weather", { city: "Paris" }]],
     "the model's call of that tool comes back to the caller",
+  );
+
+  await dispatchWithTools([{ type: "function", name: "lookup_weather", parameters: weatherParameters, strict: true }]);
+  assertDeepEq(
+    sentFunctions(),
+    [{ type: "function", name: "lookup_weather", parameters: weatherParameters, strict: true }],
+    "flat Responses-shape function tool reaches the provider with its strict flag",
+  );
+
+  let thrown: unknown;
+  try {
+    await dispatchWithTools([{ type: "function", function: { description: "no name" } }]);
+  } catch (error) {
+    thrown = error;
+  }
+  assertDeepEq(
+    [thrown instanceof TypeError, thrown instanceof Error ? thrown.message : undefined, requestBody],
+    [true, "kwargs.tools[0] is not an OpenAI function tool with a name", undefined],
+    "a tool without a name fails as a local TypeError before any request is sent",
   );
 } catch (error) {
   failed++;
