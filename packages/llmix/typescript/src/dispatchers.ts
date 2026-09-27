@@ -264,6 +264,7 @@ function resolveTools(
 ): ToolSet | undefined {
   const tools = kwargs["tools"];
   if (Array.isArray(tools)) {
+    const names = new Set<string>();
     return Object.fromEntries(
       tools.map((tool, index) => {
         // Nested Chat Completions shape or flat Responses shape, as the Python runtime accepts.
@@ -272,6 +273,10 @@ function resolveTools(
           // TypeError: the pipeline treats it as a local caller error, never retried or counted against the provider.
           throw new TypeError(`kwargs.tools[${index}] is not an OpenAI function tool with a name`);
         }
+        if (names.has(fn["name"])) {
+          throw new TypeError(`kwargs.tools[${index}] repeats the tool name ${JSON.stringify(fn["name"])}`);
+        }
+        names.add(fn["name"]);
         const description = typeof fn["description"] === "string" ? fn["description"] : undefined;
         const strict = typeof fn["strict"] === "boolean" ? fn["strict"] : undefined;
         // OpenAI function parameters are JSON Schema; a function without them takes no arguments.
