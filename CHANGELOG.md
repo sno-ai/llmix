@@ -17,7 +17,8 @@ LLMix uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   array was previously passed to the AI SDK as a tool map, so the provider received a
   tool named `0` with no description and an empty parameter schema. Each function is
   now converted to an AI SDK tool whose JSON Schema and `strict` flag are sent
-  unchanged; an entry that is not a named function tool raises a `TypeError`, which
+  unchanged; an entry that is not a named function tool, or repeats a name, raises a
+  `TypeError`, which
   the pipeline treats as a caller error and never retries. Reported by
   [@slegarraga](https://github.com/slegarraga) in #120.
 

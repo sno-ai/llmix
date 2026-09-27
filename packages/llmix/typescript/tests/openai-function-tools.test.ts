@@ -130,6 +130,21 @@ try {
     [true, "kwargs.tools[0] is not an OpenAI function tool with a name", undefined],
     "a tool without a name fails as a local TypeError before any request is sent",
   );
+
+  let duplicate: unknown;
+  try {
+    await dispatchWithTools([
+      { type: "function", name: "lookup_weather", parameters: weatherParameters },
+      { type: "function", function: { name: "lookup_weather", parameters: weatherParameters } },
+    ]);
+  } catch (error) {
+    duplicate = error;
+  }
+  assertDeepEq(
+    [duplicate instanceof TypeError, duplicate instanceof Error ? duplicate.message : undefined, requestBody],
+    [true, 'kwargs.tools[1] repeats the tool name "lookup_weather"', undefined],
+    "a repeated tool name fails as a local TypeError instead of silently dropping a tool",
+  );
 } catch (error) {
   failed++;
   console.log(`[FAIL] dispatch with OpenAI function tools threw: ${String(error)}`);
