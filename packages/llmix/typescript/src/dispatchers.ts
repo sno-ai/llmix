@@ -266,14 +266,24 @@ function resolveTools(
   if (Array.isArray(tools)) {
     return Object.fromEntries(
       tools.map((tool, index) => {
-        const fn = isRecord(tool) && tool["type"] === "function" ? tool["function"] : undefined;
-        if (!isRecord(fn) || typeof fn["name"] !== "string" || fn["name"] === "") {
-          throw new Error(`kwargs.tools[${index}] is not an OpenAI function tool with a name`);
+        // Nested Chat Completions shape or flat Responses shape, as the Python runtime accepts.
+        const fn = isRecord(tool) && tool["type"] === "function" ? (isRecord(tool["function"]) ? tool["function"] : tool) : undefined;
+        if (!fn || typeof fn["name"] !== "string" || fn["name"] === "") {
+          // TypeError: the pipeline treats it as a local caller error, never retried or counted against the provider.
+          throw new TypeError(`kwargs.tools[${index}] is not an OpenAI function tool with a name`);
         }
         const description = typeof fn["description"] === "string" ? fn["description"] : undefined;
+        const strict = typeof fn["strict"] === "boolean" ? fn["strict"] : undefined;
         // OpenAI function parameters are JSON Schema; a function without them takes no arguments.
         const parameters = (fn["parameters"] ?? { type: "object", properties: {} }) as Parameters<typeof jsonSchema>[0];
-        return [fn["name"], { ...(description !== undefined ? { description } : {}), inputSchema: jsonSchema(parameters) }];
+        return [
+          fn["name"],
+          {
+            ...(description !== undefined ? { description } : {}),
+            ...(strict !== undefined ? { strict } : {}),
+            inputSchema: jsonSchema(parameters),
+          },
+        ];
       }),
     ) as ToolSet;
   }
