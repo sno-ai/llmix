@@ -148,6 +148,7 @@ export {
   ConfigAccessError,
   ConfigNotFoundError,
   InvalidConfigError,
+  InvalidToolsError,
   LLMConfigError,
   SecurityError,
 } from "./types.js";

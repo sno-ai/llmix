@@ -753,6 +753,17 @@ export class SecurityError extends LLMConfigError {
   }
 }
 
+/**
+ * Thrown when `kwargs.tools` is malformed. A caller error: nothing was sent to the provider.
+ */
+export class InvalidToolsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidToolsError";
+    Object.setPrototypeOf(this, InvalidToolsError.prototype);
+  }
+}
+
 // =============================================================================
 // VALIDATION CONSTANTS
 // =============================================================================

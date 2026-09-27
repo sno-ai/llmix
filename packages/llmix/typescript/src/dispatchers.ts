@@ -17,6 +17,7 @@ import {
 import { lazyImport } from "./lazy-import.js";
 import type { DispatchContext, ProviderDispatchFn, ProviderResult } from "./pipeline.js";
 import type { LLMConfig, LLMUsage, ProviderOptions as LLMixProviderOptions } from "./types.js";
+import { InvalidToolsError } from "./types.js";
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
@@ -257,10 +258,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// On the AI SDK path (every dispatcher except OpenRouter, which forwards `tools` verbatim),
 // `kwargs.tools` is either an AI SDK tool map or an OpenAI-style array of function tools.
+// `forceStrict` matches the Python OpenAI client, which sets `strict: true` on every function tool.
 function resolveTools(
   kwargs: Record<string, unknown>,
   jsonSchema: (typeof import("ai"))["jsonSchema"],
+  forceStrict: boolean,
 ): ToolSet | undefined {
   const tools = kwargs["tools"];
   if (Array.isArray(tools)) {
@@ -270,15 +274,14 @@ function resolveTools(
         // Nested Chat Completions shape or flat Responses shape, as the Python runtime accepts.
         const fn = isRecord(tool) && tool["type"] === "function" ? (isRecord(tool["function"]) ? tool["function"] : tool) : undefined;
         if (!fn || typeof fn["name"] !== "string" || fn["name"] === "") {
-          // TypeError: the pipeline treats it as a local caller error, never retried or counted against the provider.
-          throw new TypeError(`kwargs.tools[${index}] is not an OpenAI function tool with a name`);
+          throw new InvalidToolsError(`kwargs.tools[${index}] is not an OpenAI function tool with a name`);
         }
         if (names.has(fn["name"])) {
-          throw new TypeError(`kwargs.tools[${index}] repeats the tool name ${JSON.stringify(fn["name"])}`);
+          throw new InvalidToolsError(`kwargs.tools[${index}] repeats the tool name ${JSON.stringify(fn["name"])}`);
         }
         names.add(fn["name"]);
         const description = typeof fn["description"] === "string" ? fn["description"] : undefined;
-        const strict = typeof fn["strict"] === "boolean" ? fn["strict"] : undefined;
+        const strict = forceStrict ? true : typeof fn["strict"] === "boolean" ? fn["strict"] : undefined;
         // OpenAI function parameters are JSON Schema; a function without them takes no arguments.
         const parameters = (fn["parameters"] ?? { type: "object", properties: {} }) as Parameters<typeof jsonSchema>[0];
         return [
@@ -797,7 +800,7 @@ async function generateWithModel(
               ...(responseFormat.description !== undefined ? { description: responseFormat.description } : {}),
             })
           : undefined;
-  const tools = resolveTools(ctx.kwargs, jsonSchema);
+  const tools = resolveTools(ctx.kwargs, jsonSchema, ctx.provider === "openai");
   const topP = typeof ctx.kwargs["top_p"] === "number" ? ctx.kwargs["top_p"] : undefined;
   const topK = typeof ctx.kwargs["top_k"] === "number" ? ctx.kwargs["top_k"] : undefined;
   const presencePenalty =

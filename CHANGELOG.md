@@ -11,15 +11,18 @@ LLMix uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- The TypeScript dispatchers now accept OpenAI-style `tools` arrays, in the nested
-  (`{ type: "function", function: { name, ... } }`) and flat Responses
+- The TypeScript dispatchers that go through the AI SDK (all except OpenRouter,
+  which forwards `tools` unchanged) now accept OpenAI-style `tools` arrays in the
+  nested (`{ type: "function", function: { name, ... } }`) and flat Responses
   (`{ type: "function", name, ... }`) shapes, as the Python runtime does. Such an
   array was previously passed to the AI SDK as a tool map, so the provider received a
   tool named `0` with no description and an empty parameter schema. Each function is
-  now converted to an AI SDK tool whose JSON Schema and `strict` flag are sent
-  unchanged; an entry that is not a named function tool, or repeats a name, raises a
-  `TypeError`, which
-  the pipeline treats as a caller error and never retries. Reported by
+  now converted to an AI SDK tool whose JSON Schema is sent unchanged. The `openai`
+  provider always sends function tools with `strict: true`, as the Python OpenAI
+  client does; other providers forward the caller's `strict` flag. An entry that is
+  not a named function tool, or repeats a name, raises the new exported
+  `InvalidToolsError`, which the pipeline treats as a caller error: never retried and
+  never counted against the circuit breaker. Reported by
   [@slegarraga](https://github.com/slegarraga) in #120.
 
 ## [2.2.0] — 2026-08-16
