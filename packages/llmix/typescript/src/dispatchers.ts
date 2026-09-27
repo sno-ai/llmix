@@ -257,9 +257,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function resolveTools(kwargs: Record<string, unknown>): ToolSet | undefined {
+// `kwargs.tools` is either an AI SDK tool map or an OpenAI-style array of function tools.
+function resolveTools(
+  kwargs: Record<string, unknown>,
+  jsonSchema: (typeof import("ai"))["jsonSchema"],
+): ToolSet | undefined {
   const tools = kwargs["tools"];
-  if (tools && typeof tools === "object") {
+  if (Array.isArray(tools)) {
+    return Object.fromEntries(
+      tools.map((tool, index) => {
+        const fn = isRecord(tool) && tool["type"] === "function" ? tool["function"] : undefined;
+        if (!isRecord(fn) || typeof fn["name"] !== "string" || fn["name"] === "") {
+          throw new Error(`kwargs.tools[${index}] is not an OpenAI function tool with a name`);
+        }
+        const description = typeof fn["description"] === "string" ? fn["description"] : undefined;
+        // OpenAI function parameters are JSON Schema; a function without them takes no arguments.
+        const parameters = (fn["parameters"] ?? { type: "object", properties: {} }) as Parameters<typeof jsonSchema>[0];
+        return [fn["name"], { ...(description !== undefined ? { description } : {}), inputSchema: jsonSchema(parameters) }];
+      }),
+    ) as ToolSet;
+  }
+  if (isRecord(tools)) {
     return tools as ToolSet;
   }
   return undefined;
@@ -742,7 +760,7 @@ async function generateWithModel(
   model: LanguageModel,
   providerOptions?: AiProviderOptions,
 ): Promise<ProviderResult> {
-  const { generateText, Output } = await getAi();
+  const { generateText, Output, jsonSchema } = await getAi();
   const { messages, instructions } = splitGenerationMessages(ctx.messages as ModelMessage[]);
   const temperature = typeof ctx.kwargs["temperature"] === "number" ? ctx.kwargs["temperature"] : undefined;
   const seed = typeof ctx.kwargs["seed"] === "number" ? ctx.kwargs["seed"] : undefined;
@@ -764,7 +782,7 @@ async function generateWithModel(
               ...(responseFormat.description !== undefined ? { description: responseFormat.description } : {}),
             })
           : undefined;
-  const tools = resolveTools(ctx.kwargs);
+  const tools = resolveTools(ctx.kwargs, jsonSchema);
   const topP = typeof ctx.kwargs["top_p"] === "number" ? ctx.kwargs["top_p"] : undefined;
   const topK = typeof ctx.kwargs["top_k"] === "number" ? ctx.kwargs["top_k"] : undefined;
   const presencePenalty =
