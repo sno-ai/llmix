@@ -20,6 +20,7 @@ import {
 import { KeyPool } from "../src/key-pool.js";
 import { TwoTierCache } from "../src/response-cache.js";
 import type { LLMConfig, LLMUsage } from "../src/types.js";
+import { InvalidToolsError } from "../src/types.js";
 
 let passed = 0;
 let failed = 0;
@@ -277,6 +278,34 @@ async function testCircuitBreakerOnlyCountsRetryable(): Promise<void> {
   await pipeline.call({ config, messages, singleflightKey: "a3" });
 
   assertEqual(callCount, 3, "non-retryable: all 3 dispatches executed (breaker not tripped)");
+}
+
+async function testInvalidToolsIsLocal(): Promise<void> {
+  let callCount = 0;
+  const dispatch = async (_ctx: DispatchContext): Promise<ProviderResult> => {
+    callCount++;
+    throw new InvalidToolsError("kwargs.tools[0] is not an OpenAI function tool with a name");
+  };
+
+  const pipeline = new CallPipeline(
+    makePipelineConfig(dispatch, {
+      maxRetries: 2,
+      retryBaseMs: 1,
+      retryMaxDelayMs: 1,
+      circuitBreakerThreshold: 2,
+    }),
+  );
+  pipeline.setKeyPool("openai", new KeyPool(["test-key"]));
+
+  const config = makeConfig();
+  const messages = [{ role: "user", content: "bad tools" }];
+  for (const key of ["b1", "b2", "b3"]) {
+    const result = await pipeline.call({ config, messages, singleflightKey: key });
+    assertEqual(result.success, false, `invalid tools: call ${key} fails`);
+  }
+
+  // Never retried (3 calls, 3 dispatches) and never opens the breaker (third call still dispatched).
+  assertEqual(callCount, 3, "invalid tools: one dispatch per call, breaker stays closed");
 }
 
 async function testKeyPoolRotation(): Promise<void> {
@@ -697,6 +726,7 @@ async function main(): Promise<void> {
   await testSemaphoreReleaseOnFailure();
   await testCircuitBreakerTrips();
   await testCircuitBreakerOnlyCountsRetryable();
+  await testInvalidToolsIsLocal();
   await testKeyPoolRotation();
   await testKillSwitch();
   await testRetryOnTransientError();

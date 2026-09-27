@@ -5,7 +5,8 @@
  * Only the network endpoint is local; dispatch, the AI SDK and the OpenAI provider run for real,
  * so schema handling inside the AI SDK is exercised.
  */
-import { snoGpuDispatch } from "../src/dispatchers.js";
+import { openaiDispatch, snoGpuDispatch } from "../src/dispatchers.js";
+import { InvalidToolsError } from "../src/types.js";
 
 let passed = 0;
 let failed = 0;
@@ -35,6 +36,25 @@ const server = Bun.serve({
   port: 0,
   async fetch(request: Request): Promise<Response> {
     requestBody = (await request.json()) as Record<string, unknown>;
+    if (new URL(request.url).pathname.endsWith("/responses")) {
+      return Response.json({
+        id: "resp_local",
+        object: "response",
+        created_at: 1790000000,
+        status: "completed",
+        model: "gpt-local",
+        output: [
+          {
+            type: "message",
+            id: "msg_local",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: "ok", annotations: [] }],
+          },
+        ],
+        usage: { input_tokens: 5, output_tokens: 1, total_tokens: 6 },
+      });
+    }
     return Response.json({
       id: "chatcmpl-local",
       object: "chat.completion",
@@ -126,9 +146,9 @@ try {
     thrown = error;
   }
   assertDeepEq(
-    [thrown instanceof TypeError, thrown instanceof Error ? thrown.message : undefined, requestBody],
+    [thrown instanceof InvalidToolsError, thrown instanceof Error ? thrown.message : undefined, requestBody],
     [true, "kwargs.tools[0] is not an OpenAI function tool with a name", undefined],
-    "a tool without a name fails as a local TypeError before any request is sent",
+    "a tool without a name fails as InvalidToolsError before any request is sent",
   );
 
   let duplicate: unknown;
@@ -141,9 +161,27 @@ try {
     duplicate = error;
   }
   assertDeepEq(
-    [duplicate instanceof TypeError, duplicate instanceof Error ? duplicate.message : undefined, requestBody],
+    [duplicate instanceof InvalidToolsError, duplicate instanceof Error ? duplicate.message : undefined, requestBody],
     [true, 'kwargs.tools[1] repeats the tool name "lookup_weather"', undefined],
-    "a repeated tool name fails as a local TypeError instead of silently dropping a tool",
+    "a repeated tool name fails as InvalidToolsError instead of silently dropping a tool",
+  );
+
+  requestBody = undefined;
+  await openaiDispatch()({
+    provider: "openai",
+    model: "gpt-local",
+    apiKey: "local-key",
+    messages: [{ role: "user", content: "Weather in Paris?" }],
+    kwargs: {
+      baseUrl: `http://127.0.0.1:${server.port}/v1`,
+      tools: [{ type: "function", function: { name: "lookup_weather", parameters: weatherParameters } }],
+    },
+    config: { provider: "openai", model: "gpt-local" },
+  });
+  assertDeepEq(
+    (requestBody?.["tools"] as Array<Record<string, unknown>> | undefined)?.map((tool) => [tool["name"], tool["strict"]]),
+    [["lookup_weather", true]],
+    "the OpenAI provider always sends function tools in strict mode, like the Python OpenAI client",
   );
 } catch (error) {
   failed++;

@@ -31,6 +31,7 @@ import type {
   LLMUsage,
   ProviderOptions,
 } from "./types.js";
+import { InvalidToolsError } from "./types.js";
 import { type TwoTierCache, generateCacheKey, shouldSkipCache, sortReplacer } from "./response-cache.js";
 
 // ---------------------------------------------------------------------------
@@ -476,7 +477,7 @@ export class CallPipeline {
 
   /** Check if an error is a local/config error that never contacted the provider. */
   private isLocalError(err: unknown): boolean {
-    if (err instanceof KeyPoolExhaustedError) return true;
+    if (err instanceof KeyPoolExhaustedError || err instanceof InvalidToolsError) return true;
     if (
       err instanceof TypeError ||
       err instanceof RangeError ||
