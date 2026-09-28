@@ -1,7 +1,9 @@
 version: 2
 updates:
-  - package-ecosystem: "npm"
+  # bun: updates bun.lock, which CI installs with --frozen-lockfile
+  - package-ecosystem: "bun"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
@@ -12,6 +14,7 @@ updates:
 
   - package-ecosystem: "pip"
     directory: "/packages/llmix/python"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -19,6 +22,7 @@ updates:
 
   - package-ecosystem: "pip"
     directory: "/packages/mda-config/python"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -26,6 +30,7 @@ updates:
 
   - package-ecosystem: "cargo"
     directory: "/packages/llmix/rust"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -36,14 +41,23 @@ updates:
 
   - package-ecosystem: "cargo"
     directory: "/packages/mda-config/rust"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
     labels: ["dependencies", "rust", "mda-config"]
+    ignore:
+      # 2.14 requires Rust 1.85; the crates promise rust-version 1.83
+      - dependency-name: "indexmap"
+        versions: [">= 2.14"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 3
     labels: ["dependencies", "ci"]
+    ignore:
+      # pinned to the crates' rust-version (1.83); raise it with that promise, not by bot
+      - dependency-name: "dtolnay/rust-toolchain"
