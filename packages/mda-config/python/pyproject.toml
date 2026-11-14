@@ -24,7 +24,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "jcs>=0.2.1,<0.3",
+  "jcs>=0.2.1,<0.4",
   "jsonschema>=4.20,<5",
   "pydantic>=2,<3",
   "ruamel.yaml>=0.18,<0.20",
